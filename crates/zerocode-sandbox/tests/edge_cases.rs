@@ -13,12 +13,17 @@
 #![cfg(all(target_os = "linux", feature = "edge-cases"))]
 
 mod edge_cases {
-    mod harness;
-    mod common;
-    mod python;
-    mod node;
+    mod batch_a;
+    mod batch_b;
+    mod batch_c;
+    mod batch_d;
+    mod batch_efg;
     mod c_cpp;
+    mod common;
     mod go_lang;
-    mod rust_lang;
+    mod harness;
     mod java;
+    mod node;
+    mod python;
+    mod rust_lang;
 }

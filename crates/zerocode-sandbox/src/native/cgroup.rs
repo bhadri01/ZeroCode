@@ -22,9 +22,8 @@ impl Cgroup {
     /// Create a fresh cgroup under `parent/<id>/` and apply the resource limits.
     pub fn create(parent: &Path, id: &str, limits: &ResourceLimits) -> Result<Self, SandboxError> {
         let path = parent.join(id);
-        fs::create_dir(&path).map_err(|e| {
-            SandboxError::CgroupSetup(format!("create {}: {e}", path.display()))
-        })?;
+        fs::create_dir(&path)
+            .map_err(|e| SandboxError::CgroupSetup(format!("create {}: {e}", path.display())))?;
 
         // memory.max = limit in bytes; memory.swap.max = 0 to refuse swap.
         write_file(
@@ -45,10 +44,7 @@ impl Cgroup {
         // simplest sane policy is: 100% of a single CPU within the wall window.
         // Cgroup-level CPU enforcement runs the parent timer separately.
         let quota = PERIOD_US;
-        write_file(
-            &path.join("cpu.max"),
-            &format!("{} {}", quota, PERIOD_US),
-        )?;
+        write_file(&path.join("cpu.max"), &format!("{} {}", quota, PERIOD_US))?;
 
         // pids.max controls fork bombs / thread bombs.
         write_file(&path.join("pids.max"), &format!("{}", limits.max_pids))?;
@@ -125,10 +121,9 @@ impl Cgroup {
 }
 
 fn write_file(path: &Path, value: &str) -> Result<(), SandboxError> {
-    let mut f = fs::OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(|e| SandboxError::CgroupSetup(format!("open {} for write: {e}", path.display())))?;
+    let mut f = fs::OpenOptions::new().write(true).open(path).map_err(|e| {
+        SandboxError::CgroupSetup(format!("open {} for write: {e}", path.display()))
+    })?;
     f.write_all(value.as_bytes())
         .map_err(|e| SandboxError::CgroupSetup(format!("write {}: {e}", path.display())))?;
     Ok(())

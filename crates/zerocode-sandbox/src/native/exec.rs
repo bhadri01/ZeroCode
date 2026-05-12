@@ -373,14 +373,8 @@ fn substitute_limits(input: &str, limits: &ResourceLimits) -> String {
     input
         .replace("${memory_mb}", &limits.memory_mb.to_string())
         .replace("${jvm_heap_mb}", &jvm_heap.to_string())
-        .replace(
-            "${cpu_time}",
-            &format!("{:.3}", limits.cpu_time),
-        )
-        .replace(
-            "${wall_time}",
-            &format!("{:.3}", limits.wall_time),
-        )
+        .replace("${cpu_time}", &format!("{:.3}", limits.cpu_time))
+        .replace("${wall_time}", &format!("{:.3}", limits.wall_time))
         .replace("${max_pids}", &limits.max_pids.to_string())
 }
 
@@ -505,9 +499,10 @@ mod tests {
         let mut limits = ResourceLimits::default();
         limits.memory_mb = 256;
         let env = build_env(&spec, &limits);
-        assert!(env
-            .iter()
-            .any(|c| c.to_bytes() == b"NODE_OPTIONS=--max-old-space-size=256"));
+        assert!(
+            env.iter()
+                .any(|c| c.to_bytes() == b"NODE_OPTIONS=--max-old-space-size=256")
+        );
     }
 
     #[test]
@@ -517,8 +512,10 @@ mod tests {
         limits.cpu_time = 2.5;
         limits.wall_time = 5.0;
         limits.max_pids = 64;
-        let out =
-            substitute_limits("m=${memory_mb} c=${cpu_time} w=${wall_time} p=${max_pids}", &limits);
+        let out = substitute_limits(
+            "m=${memory_mb} c=${cpu_time} w=${wall_time} p=${max_pids}",
+            &limits,
+        );
         assert_eq!(out, "m=128 c=2.500 w=5.000 p=64");
     }
 

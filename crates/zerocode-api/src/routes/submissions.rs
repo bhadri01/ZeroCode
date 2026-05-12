@@ -40,17 +40,16 @@ pub async fn create(
 ) -> ApiResult<Response> {
     // Decode base64-encoded payloads (Judge0 compatibility).
     if req.base64_encoded {
-        let raw = req
-            .source_code
-            .as_utf8()
-            .map_err(|_| ApiError::Validation("base64_encoded source_code must be a UTF-8 string".into()))?;
+        let raw = req.source_code.as_utf8().map_err(|_| {
+            ApiError::Validation("base64_encoded source_code must be a UTF-8 string".into())
+        })?;
         req.source_code = Payload::from_base64(raw)
             .map_err(|e| ApiError::Validation(format!("source_code base64 decode: {e}")))?;
 
         if let Some(stdin) = &req.stdin {
-            let raw = stdin
-                .as_utf8()
-                .map_err(|_| ApiError::Validation("base64_encoded stdin must be a UTF-8 string".into()))?;
+            let raw = stdin.as_utf8().map_err(|_| {
+                ApiError::Validation("base64_encoded stdin must be a UTF-8 string".into())
+            })?;
             req.stdin = Some(
                 Payload::from_base64(raw)
                     .map_err(|e| ApiError::Validation(format!("stdin base64 decode: {e}")))?,
@@ -160,10 +159,7 @@ pub async fn create(
         .into_response())
 }
 
-async fn wait_for_completion(
-    pool: &sqlx::PgPool,
-    token: Token,
-) -> ApiResult<Option<Submission>> {
+async fn wait_for_completion(pool: &sqlx::PgPool, token: Token) -> ApiResult<Option<Submission>> {
     use tokio_stream::StreamExt;
 
     // Try LISTEN/NOTIFY first — wakes us as soon as the worker publishes
@@ -241,19 +237,10 @@ pub async fn list(
     let offset = ((page - 1) * per_page) as i64;
     let limit = per_page as i64;
 
-    let result = db::list_submissions(
-        state.pool(),
-        params.status.as_deref(),
-        limit,
-        offset,
-    )
-    .await?;
+    let result =
+        db::list_submissions(state.pool(), params.status.as_deref(), limit, offset).await?;
 
-    let items = result
-        .items
-        .into_iter()
-        .map(SubmissionView::from)
-        .collect();
+    let items = result.items.into_iter().map(SubmissionView::from).collect();
 
     Ok(Json(SubmissionList {
         items,
@@ -394,8 +381,16 @@ impl From<Submission> for Base64SubmissionView {
 async fn populate_result_cache(state: &AppState, key: &CacheKey, sub: &Submission) {
     let outcome = zerocode_cache::CachedOutcome {
         status_json: serde_json::to_value(sub.status).unwrap_or_default(),
-        stdout: sub.stdout.as_ref().map(|p| p.as_bytes().to_vec()).unwrap_or_default(),
-        stderr: sub.stderr.as_ref().map(|p| p.as_bytes().to_vec()).unwrap_or_default(),
+        stdout: sub
+            .stdout
+            .as_ref()
+            .map(|p| p.as_bytes().to_vec())
+            .unwrap_or_default(),
+        stderr: sub
+            .stderr
+            .as_ref()
+            .map(|p| p.as_bytes().to_vec())
+            .unwrap_or_default(),
         compile_output: sub.compile_output.as_ref().map(|p| p.as_bytes().to_vec()),
         exit_code: sub.exit_code,
         cpu_time: sub.cpu_time.unwrap_or(0.0),
@@ -448,10 +443,11 @@ fn idempotency_hash(req: &SubmissionRequest) -> Vec<u8> {
     h.update(&(req.source_code.len() as u64).to_le_bytes());
     h.update(req.source_code.as_bytes());
     if let Some(stdin) = &req.stdin {
+        h.update(&[1]); // discriminant: Some
         h.update(&(stdin.len() as u64).to_le_bytes());
         h.update(stdin.as_bytes());
     } else {
-        h.update(&0_u64.to_le_bytes());
+        h.update(&[0]); // discriminant: None
     }
     h.finalize().as_bytes().to_vec()
 }
@@ -484,7 +480,13 @@ fn validate_callback_url(url: &url::Url) -> ApiResult<()> {
             "callback_url host '.internal' is on the deny list".into(),
         ));
     }
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+    // Check IP addresses via url's typed host enum (handles both v4 and v6)
+    let ip = match url.host() {
+        Some(url::Host::Ipv4(v4)) => Some(std::net::IpAddr::V4(v4)),
+        Some(url::Host::Ipv6(v6)) => Some(std::net::IpAddr::V6(v6)),
+        _ => host.parse::<std::net::IpAddr>().ok(),
+    };
+    if let Some(ip) = ip {
         if is_private_or_loopback(ip) {
             return Err(ApiError::Validation(format!(
                 "callback_url ip {ip} is private/loopback"
@@ -533,7 +535,10 @@ mod tests {
 
     #[test]
     fn idempotency_hash_changes_with_source() {
-        assert_ne!(idempotency_hash(&req("print(1)")), idempotency_hash(&req("print(2)")));
+        assert_ne!(
+            idempotency_hash(&req("print(1)")),
+            idempotency_hash(&req("print(2)"))
+        );
     }
 
     #[test]
@@ -568,5 +573,95 @@ mod tests {
         assert!(validate_callback_url(&u).is_err());
         let u = url::Url::parse("http://169.254.0.1/cb").unwrap();
         assert!(validate_callback_url(&u).is_err());
+    }
+
+    // --- API-level edge case tests (table C from plan) ---
+
+    #[test]
+    fn validate_callback_rejects_internal_suffix() {
+        let u = url::Url::parse("http://metadata.google.internal/v1/metadata").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+        let u = url::Url::parse("http://anything.internal/path").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn validate_callback_rejects_ipv6_loopback() {
+        let u = url::Url::parse("http://[::1]/cb").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn validate_callback_rejects_link_local_ipv6() {
+        let u = url::Url::parse("http://[fe80::1]/cb").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn validate_callback_rejects_ula_ipv6() {
+        let u = url::Url::parse("http://[fd12::1]/cb").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn validate_callback_rejects_non_http_scheme() {
+        let u = url::Url::parse("ftp://example.com/cb").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+        let u = url::Url::parse("file:///etc/passwd").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn validate_callback_accepts_public_ipv4() {
+        let u = url::Url::parse("https://93.184.216.34/cb").unwrap();
+        assert!(validate_callback_url(&u).is_ok());
+    }
+
+    #[test]
+    fn validate_callback_rejects_unspecified_ip() {
+        let u = url::Url::parse("http://0.0.0.0/cb").unwrap();
+        assert!(validate_callback_url(&u).is_err());
+    }
+
+    #[test]
+    fn idempotency_hash_differs_for_different_language() {
+        let a = req("print(1)");
+        let mut b = req("print(1)");
+        b.language_id = 60;
+        assert_ne!(idempotency_hash(&a), idempotency_hash(&b));
+    }
+
+    #[test]
+    fn idempotency_hash_differs_with_stdin() {
+        let mut a = req("x");
+        a.stdin = Some(Payload::from("input1"));
+        let mut b = req("x");
+        b.stdin = Some(Payload::from("input2"));
+        assert_ne!(idempotency_hash(&a), idempotency_hash(&b));
+    }
+
+    #[test]
+    fn idempotency_hash_none_stdin_differs_from_empty() {
+        let mut a = req("x");
+        a.stdin = None;
+        let mut b = req("x");
+        b.stdin = Some(Payload::from(""));
+        assert_ne!(idempotency_hash(&a), idempotency_hash(&b));
+    }
+
+    #[test]
+    fn base64_encoded_field_defaults_false() {
+        let json = r#"{"language_id":71,"source_code":"print(1)"}"#;
+        let parsed: SubmissionRequest = serde_json::from_str(json).unwrap();
+        assert!(!parsed.base64_encoded);
+    }
+
+    #[test]
+    fn base64_encoded_field_parses_true() {
+        let json = r#"{"language_id":71,"source_code":"cHJpbnQoMSk","base64_encoded":true}"#;
+        let parsed: SubmissionRequest = serde_json::from_str(json).unwrap();
+        assert!(parsed.base64_encoded);
+        // source_code arrives as the raw base64 string (decoding happens in the handler)
+        assert_eq!(parsed.source_code.as_bytes(), b"cHJpbnQoMSk");
     }
 }

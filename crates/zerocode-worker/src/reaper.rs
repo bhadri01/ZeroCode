@@ -33,7 +33,9 @@ pub fn install_subreaper() -> anyhow::Result<()> {
 pub fn set_oom_score_adj() {
     match std::fs::write("/proc/self/oom_score_adj", "-500") {
         Ok(()) => tracing::info!("set oom_score_adj=-500"),
-        Err(e) => tracing::warn!(error = %e, "could not set oom_score_adj (needs CAP_SYS_RESOURCE or root)"),
+        Err(e) => {
+            tracing::warn!(error = %e, "could not set oom_score_adj (needs CAP_SYS_RESOURCE or root)")
+        }
     }
 }
 

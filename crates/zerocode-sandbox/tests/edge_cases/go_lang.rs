@@ -1,7 +1,7 @@
 //! Go edge cases.
 
-use zerocode_core::status::TimeLimitKind;
 use zerocode_core::Status;
+use zerocode_core::status::TimeLimitKind;
 
 use super::harness::*;
 
@@ -62,7 +62,10 @@ func main() {
 "#;
     let result = run(job_tight(GO, source)).await;
     assert!(
-        matches!(result.status, Status::TimeLimitExceeded(TimeLimitKind::Wall)),
+        matches!(
+            result.status,
+            Status::TimeLimitExceeded(TimeLimitKind::Wall)
+        ),
         "goroutine leak + sleep should wall-TLE, got {:?}",
         result.status,
     );

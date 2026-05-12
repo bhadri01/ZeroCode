@@ -53,12 +53,12 @@ pub async fn stream(
                 .map_err(axum::Error::new)
         }
         Err(e) => {
-            let event = SseEvent::default()
-                .event("error")
-                .data(e.to_string());
+            let event = SseEvent::default().event("error").data(e.to_string());
             Ok(event)
         }
     }));
 
-    Ok(Sse::new(sse_stream).keep_alive(KeepAlive::default()).into_response())
+    Ok(Sse::new(sse_stream)
+        .keep_alive(KeepAlive::default())
+        .into_response())
 }

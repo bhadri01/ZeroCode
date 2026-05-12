@@ -2,8 +2,8 @@
 //! the simplest to express adversarial patterns in, but these tests exercise
 //! cgroup / namespace / seccomp / landlock enforcement, not Python semantics.
 
-use zerocode_core::status::TimeLimitKind;
 use zerocode_core::Status;
+use zerocode_core::status::TimeLimitKind;
 
 use super::harness::*;
 
@@ -13,7 +13,10 @@ use super::harness::*;
 async fn infinite_loop_hits_wall_tle() {
     let result = run(job_tight(PYTHON, "while True: pass")).await;
     assert!(
-        matches!(result.status, Status::TimeLimitExceeded(TimeLimitKind::Wall)),
+        matches!(
+            result.status,
+            Status::TimeLimitExceeded(TimeLimitKind::Wall)
+        ),
         "expected wall TLE, got {:?}",
         result.status,
     );
@@ -25,7 +28,10 @@ async fn infinite_loop_hits_wall_tle() {
 async fn sleep_hits_wall_tle() {
     let result = run(job_tight(PYTHON, "import time; time.sleep(999)")).await;
     assert!(
-        matches!(result.status, Status::TimeLimitExceeded(TimeLimitKind::Wall)),
+        matches!(
+            result.status,
+            Status::TimeLimitExceeded(TimeLimitKind::Wall)
+        ),
         "expected wall TLE from sleep, got {:?}",
         result.status,
     );
@@ -95,13 +101,17 @@ async fn output_bomb_stdout_capped() {
 #[tokio::test]
 async fn stdin_eof_no_hang() {
     // input() with no stdin provided → reads /box/stdin which is empty → EOFError
-    let result = run(job(PYTHON, r#"
+    let result = run(job(
+        PYTHON,
+        r#"
 try:
     x = input()
     print(x)
 except EOFError:
     print("got eof")
-"#)).await;
+"#,
+    ))
+    .await;
     assert!(
         matches!(result.status, Status::Accepted),
         "expected Accepted after stdin EOF, got {:?}",
@@ -152,11 +162,15 @@ async fn non_zero_exit() {
 
 #[tokio::test]
 async fn exit_zero_with_stderr_is_accepted() {
-    let result = run(job(PYTHON, r#"
+    let result = run(job(
+        PYTHON,
+        r#"
 import sys
 print("out", flush=True)
 print("err", file=sys.stderr, flush=True)
-"#)).await;
+"#,
+    ))
+    .await;
     assert!(matches!(result.status, Status::Accepted));
     let stdout = String::from_utf8_lossy(&result.stdout);
     let stderr = String::from_utf8_lossy(&result.stderr);
@@ -215,12 +229,18 @@ ctypes.string_at(0)
     let result = run(job(PYTHON, source)).await;
     // Should be a signal death (SIGSEGV from null deref)
     assert!(
-        matches!(result.status, Status::RuntimeError(_) | Status::NonZeroExit(_)),
+        matches!(
+            result.status,
+            Status::RuntimeError(_) | Status::NonZeroExit(_)
+        ),
         "expected crash after output, got {:?}",
         result.status,
     );
     let stdout = String::from_utf8_lossy(&result.stdout);
-    assert!(stdout.contains("before"), "partial output should be captured");
+    assert!(
+        stdout.contains("before"),
+        "partial output should be captured"
+    );
 }
 
 // ── mmap huge anonymous region → cgroup OOM ─────────────────────────────

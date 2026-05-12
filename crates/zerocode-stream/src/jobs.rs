@@ -46,12 +46,12 @@ pub async fn listen_for_jobs(
 ) -> Result<impl Stream<Item = Result<Token, StreamError>> + Unpin, StreamError> {
     let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(JOBS_CHANNEL).await?;
-    Ok(Box::pin(listener.into_stream().map(parse_token_notification)))
+    Ok(Box::pin(
+        listener.into_stream().map(parse_token_notification),
+    ))
 }
 
-fn parse_token_notification(
-    n: Result<PgNotification, sqlx::Error>,
-) -> Result<Token, StreamError> {
+fn parse_token_notification(n: Result<PgNotification, sqlx::Error>) -> Result<Token, StreamError> {
     let n = n?;
     n.payload()
         .parse::<Token>()

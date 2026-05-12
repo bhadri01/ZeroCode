@@ -5,11 +5,11 @@ use chrono::Utc;
 
 use crate::{SandboxError, SandboxJob, SandboxResult};
 
+use super::NativeSandboxConfig;
 use super::cgroup::Cgroup;
 use super::exec;
 use super::scratch::Scratch;
 use super::triage;
-use super::NativeSandboxConfig;
 
 pub fn execute(
     config: &NativeSandboxConfig,

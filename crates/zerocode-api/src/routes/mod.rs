@@ -1,10 +1,11 @@
+use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post};
-use axum::Router;
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, MakeSpan, TraceLayer};
+use tracing::Level;
 
 use crate::auth;
 use crate::state::AppState;
@@ -16,6 +17,22 @@ mod streaming;
 mod submissions;
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
+
+/// Custom span maker that logs method, URI, and version but redacts
+/// the Authorization header so API keys never appear in trace spans.
+#[derive(Clone, Debug)]
+struct SanitizedMakeSpan;
+
+impl<B> MakeSpan<B> for SanitizedMakeSpan {
+    fn make_span(&mut self, request: &http::Request<B>) -> tracing::Span {
+        tracing::info_span!(
+            "http_request",
+            method = %request.method(),
+            uri = %request.uri(),
+            version = ?request.version(),
+        )
+    }
+}
 
 pub fn router(state: AppState) -> Router {
     let public = Router::new()
@@ -40,10 +57,15 @@ pub fn router(state: AppState) -> Router {
         .layer(GovernorLayer::new(governor_conf))
         .layer(from_fn_with_state(state.clone(), auth::require_bearer));
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(SanitizedMakeSpan)
+        .on_request(DefaultOnRequest::new().level(Level::INFO))
+        .on_response(DefaultOnResponse::new().level(Level::INFO));
+
     Router::new()
         .merge(public)
         .merge(authed)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .layer(TraceLayer::new_for_http())
+        .layer(trace_layer)
         .with_state(state)
 }

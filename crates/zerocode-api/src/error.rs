@@ -91,9 +91,10 @@ impl IntoResponse for ApiError {
 
         let mut response = (status, Json(body)).into_response();
         if matches!(self, ApiError::Unauthorized) {
-            response
-                .headers_mut()
-                .insert(axum::http::header::WWW_AUTHENTICATE, "Bearer".parse().unwrap());
+            response.headers_mut().insert(
+                axum::http::header::WWW_AUTHENTICATE,
+                "Bearer".parse().unwrap(),
+            );
         }
         response
     }

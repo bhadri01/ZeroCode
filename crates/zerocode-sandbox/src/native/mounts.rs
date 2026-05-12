@@ -28,14 +28,8 @@ use crate::SandboxError;
 #[cfg(target_os = "linux")]
 pub fn make_namespace_private() -> Result<(), SandboxError> {
     use nix::mount::{MsFlags, mount};
-    mount::<str, str, str, str>(
-        None,
-        "/",
-        None,
-        MsFlags::MS_PRIVATE | MsFlags::MS_REC,
-        None,
-    )
-    .map_err(|e| SandboxError::MountSetup(format!("make rprivate /: {e}")))?;
+    mount::<str, str, str, str>(None, "/", None, MsFlags::MS_PRIVATE | MsFlags::MS_REC, None)
+        .map_err(|e| SandboxError::MountSetup(format!("make rprivate /: {e}")))?;
     Ok(())
 }
 
@@ -95,9 +89,8 @@ pub fn pivot_into_runner(
 
     // 1. Materialise new_root and bind the runner image at it. Recursive so
     // any mounts inside the runner image come along.
-    std::fs::create_dir_all(&new_root).map_err(|e| {
-        SandboxError::MountSetup(format!("mkdir {}: {e}", new_root.display()))
-    })?;
+    std::fs::create_dir_all(&new_root)
+        .map_err(|e| SandboxError::MountSetup(format!("mkdir {}: {e}", new_root.display())))?;
     mount::<Path, Path, str, str>(
         Some(runner_rootfs),
         &new_root,
@@ -110,8 +103,8 @@ pub fn pivot_into_runner(
     // 2. Per-submission tmpfs at /box. The runner image already provides the
     // mount-point (`runners/Dockerfile` creates /box at build time).
     let box_path = new_root.join("box");
-    let box_opts = CString::new(format!("size={box_size_mb}m,mode=0700"))
-        .expect("box mount option string");
+    let box_opts =
+        CString::new(format!("size={box_size_mb}m,mode=0700")).expect("box mount option string");
     mount::<str, Path, str, [u8]>(
         Some("tmpfs"),
         &box_path,
@@ -123,8 +116,8 @@ pub fn pivot_into_runner(
 
     // 3. Per-submission tmpfs at /tmp.
     let tmp_path = new_root.join("tmp");
-    let tmp_opts = CString::new(format!("size={tmp_size_mb}m,mode=1777"))
-        .expect("tmp mount option string");
+    let tmp_opts =
+        CString::new(format!("size={tmp_size_mb}m,mode=1777")).expect("tmp mount option string");
     mount::<str, Path, str, [u8]>(
         Some("tmpfs"),
         &tmp_path,
@@ -146,9 +139,8 @@ pub fn pivot_into_runner(
     // never touches the read-only runner image. Each submission has its own
     // tmpfs; no race possible.
     let put_old_host = box_path.join(".zc-old");
-    std::fs::create_dir(&put_old_host).map_err(|e| {
-        SandboxError::MountSetup(format!("mkdir put_old: {e}"))
-    })?;
+    std::fs::create_dir(&put_old_host)
+        .map_err(|e| SandboxError::MountSetup(format!("mkdir put_old: {e}")))?;
 
     // 6. Make new_root the root. put_old captures the old root mount.
     pivot_root(&new_root, &put_old_host)

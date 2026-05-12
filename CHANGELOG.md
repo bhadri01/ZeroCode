@@ -8,6 +8,49 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### CI, tests & polish (post-hardening)
+
+#### Added
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): 7-job workflow — check,
+  test, clippy (warnings-as-errors), rustfmt, cargo-deny, Docker runner image
+  build, Docker service image build. All pinned to Rust 1.85 via
+  `dtolnay/rust-toolchain` with `Swatinem/rust-cache`.
+- **End-to-end smoke test** (`scripts/smoke-test.sh`): brings up the full
+  docker-compose stack, runs 6 test cases (health, readiness, Python hello,
+  wait=true, streaming, bad auth), tears down. Colored output with pass/fail.
+- **54 edge-case tests for v1.5 languages** (Batch A–G), gated behind
+  `#[cfg(all(target_os = "linux", feature = "edge-cases"))]`:
+  - `batch_a.rs` (21 tests): Bash, Lua, Perl, Ruby, R, PHP, TypeScript —
+    hello world + infinite loop TLE + fork bomb per language.
+  - `batch_b.rs` (12 tests): Fortran, Pascal, D, Objective-C, Assembly, Ada —
+    hello world + compile error per language.
+  - `batch_c.rs` (4 tests): Kotlin, Scala, Groovy, Clojure — hello world.
+  - `batch_d.rs` (5 tests): Haskell, OCaml, Erlang, Elixir, Common Lisp —
+    hello world.
+  - `batch_efg.rs` (12 tests): C#, F#, COBOL, Prolog, Swift, Octave, SQL,
+    Zig, Nim, Crystal, Dart, Julia — hello world.
+- **12 API-level edge case tests** in `routes/submissions.rs`: IPv6 SSRF
+  validation (loopback, link-local, ULA), base64 field parsing, idempotency
+  hash (determinism, language sensitivity, stdin sensitivity, None-vs-empty
+  stdin discriminant).
+- **7 webhook unit tests** in `worker/webhook.rs`: HMAC-SHA256 determinism,
+  body and secret sensitivity, consumer-side verification, retry count
+  assertions, jitter bounds.
+- **Harness expanded** with 30 new language ID constants for Batch A–G.
+
+#### Changed
+- **`SanitizedMakeSpan`** in `routes/mod.rs` replaces the default `TraceLayer`
+  span maker — logs method, URI, version but omits the `Authorization` header
+  so API keys never appear in trace spans.
+- **Idempotency hash** now uses a discriminant byte (`0x01` for `Some`, `0x00`
+  for `None`) so `stdin: None` and `stdin: Some("")` produce different hashes.
+
+#### Test count
+| Env | After hardening | After CI/tests | Delta |
+|---|---|---|---|
+| macOS (default features) | 57 | 76 | +19 (API + webhook + hash tests) |
+| Linux (`--features edge-cases`) | — | +54 | (Batch A–G edge cases) |
+
 ### Operational hardening (post-v1.5)
 
 #### Added

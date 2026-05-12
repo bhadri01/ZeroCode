@@ -27,7 +27,9 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .json()
         .init();
 
@@ -46,10 +48,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("loading migrations from {:?}", args.migrations_dir))?;
 
     if args.dry_run {
-        tracing::info!(
-            count = migrator.migrations.len(),
-            "would apply (dry-run)"
-        );
+        tracing::info!(count = migrator.migrations.len(), "would apply (dry-run)");
         for m in migrator.iter() {
             tracing::info!(version = m.version, name = %m.description, "pending");
         }

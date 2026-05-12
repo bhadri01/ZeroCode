@@ -20,13 +20,9 @@ fn channel(token: &Token) -> String {
 }
 
 /// Worker calls this to broadcast events to anyone streaming the submission.
-pub async fn publish_event(
-    pool: &PgPool,
-    token: Token,
-    event: &Event,
-) -> Result<(), StreamError> {
-    let payload = serde_json::to_string(event)
-        .map_err(|e| StreamError::BadPayload(e.to_string()))?;
+pub async fn publish_event(pool: &PgPool, token: Token, event: &Event) -> Result<(), StreamError> {
+    let payload =
+        serde_json::to_string(event).map_err(|e| StreamError::BadPayload(e.to_string()))?;
     sqlx::query("SELECT pg_notify($1, $2)")
         .bind(channel(&token))
         .bind(payload)

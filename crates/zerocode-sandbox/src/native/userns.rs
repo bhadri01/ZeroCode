@@ -29,21 +29,18 @@ pub fn write_maps(child_pid: i32) -> Result<(), SandboxError> {
     // unprivileged process. Errors here are typically "already denied" on
     // newer kernels; we only fail if the write itself errors.
     let setgroups_path = base.join("setgroups");
-    write_atomic(&setgroups_path, b"deny\n").map_err(|e| {
-        SandboxError::NamespaceSetup(format!("write setgroups: {e}"))
-    })?;
+    write_atomic(&setgroups_path, b"deny\n")
+        .map_err(|e| SandboxError::NamespaceSetup(format!("write setgroups: {e}")))?;
 
     let uid_map_path = base.join("uid_map");
     let map = format!("0 {host_uid} 1\n");
-    write_atomic(&uid_map_path, map.as_bytes()).map_err(|e| {
-        SandboxError::NamespaceSetup(format!("write uid_map: {e}"))
-    })?;
+    write_atomic(&uid_map_path, map.as_bytes())
+        .map_err(|e| SandboxError::NamespaceSetup(format!("write uid_map: {e}")))?;
 
     let gid_map_path = base.join("gid_map");
     let map = format!("0 {host_gid} 1\n");
-    write_atomic(&gid_map_path, map.as_bytes()).map_err(|e| {
-        SandboxError::NamespaceSetup(format!("write gid_map: {e}"))
-    })?;
+    write_atomic(&gid_map_path, map.as_bytes())
+        .map_err(|e| SandboxError::NamespaceSetup(format!("write gid_map: {e}")))?;
 
     Ok(())
 }

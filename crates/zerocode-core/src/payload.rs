@@ -110,7 +110,9 @@ mod serde_bytes_or_string {
                 Ok(Bytes::from(s.into_bytes()))
             }
             fn visit_map<M: MapAccess<'de>>(self, mut m: M) -> Result<Bytes, M::Error> {
-                let key: String = m.next_key()?.ok_or_else(|| de::Error::missing_field("_b64"))?;
+                let key: String = m
+                    .next_key()?
+                    .ok_or_else(|| de::Error::missing_field("_b64"))?;
                 if key != "_b64" {
                     return Err(de::Error::unknown_field(&key, &["_b64"]));
                 }

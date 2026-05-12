@@ -68,7 +68,10 @@ pub fn apply_default() -> Result<(), SandboxError> {
             // Skip syscalls that don't exist on this arch — better than
             // failing the whole sandbox over a missing entry.
             Err(_) => {
-                tracing::debug!(syscall = name, "seccomp: syscall not on this arch; skipping");
+                tracing::debug!(
+                    syscall = name,
+                    "seccomp: syscall not on this arch; skipping"
+                );
                 continue;
             }
         };

@@ -73,10 +73,7 @@ impl CompileCache {
     }
 
     /// Evict rows older than `cutoff`. Called periodically by the retention job.
-    pub async fn purge_before(
-        &self,
-        cutoff: DateTime<Utc>,
-    ) -> Result<u64, CompileCacheError> {
+    pub async fn purge_before(&self, cutoff: DateTime<Utc>) -> Result<u64, CompileCacheError> {
         let res = sqlx::query("DELETE FROM compile_artifacts WHERE created_at < $1")
             .bind(cutoff)
             .execute(&self.pool)

@@ -1,7 +1,7 @@
 //! Node.js 22 edge cases.
 
-use zerocode_core::status::TimeLimitKind;
 use zerocode_core::Status;
+use zerocode_core::status::TimeLimitKind;
 
 use super::harness::*;
 
@@ -48,7 +48,10 @@ async fn event_loop_hang_wall_tle() {
     let source = "setInterval(() => {}, 100);";
     let result = run(job_tight(NODE, source)).await;
     assert!(
-        matches!(result.status, Status::TimeLimitExceeded(TimeLimitKind::Wall)),
+        matches!(
+            result.status,
+            Status::TimeLimitExceeded(TimeLimitKind::Wall)
+        ),
         "infinite setInterval should wall-TLE, got {:?}",
         result.status,
     );

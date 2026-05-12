@@ -79,9 +79,11 @@ async fn main() -> Result<()> {
     // failing fast if the host is missing cgroup v2, landlock, or user namespaces.
     let sandbox = sandbox_select::pick().context("constructing sandbox")?;
 
-    let parallelism = args
-        .max_parallel
-        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
+    let parallelism = args.max_parallel.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2)
+    });
 
     let webhook_secret = args.webhook_secret.clone().unwrap_or_default();
 

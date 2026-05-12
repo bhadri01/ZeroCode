@@ -19,8 +19,8 @@ fn languages_toml() -> String {
 
 #[test]
 fn registry_file_parses_and_contains_core_7() {
-    let reg = LanguageRegistry::from_toml(&languages_toml())
-        .expect("runners/languages.toml is valid");
+    let reg =
+        LanguageRegistry::from_toml(&languages_toml()).expect("runners/languages.toml is valid");
 
     let by_id: std::collections::HashMap<u32, &str> = reg
         .list()
@@ -63,9 +63,13 @@ fn compiled_languages_have_both_compile_and_run_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // Core 7 compiled + Batch B + Batch C compiled (Kotlin, Scala) + Batch D compiled (Haskell, OCaml, Erlang)
     // + Batch E compiled (C#) + Batch F compiled (COBOL, Swift) + Batch G compiled (Zig, Nim, Crystal, Dart)
-    for id in [48, 52, 60, 62, 73, 110, 111, 112, 113, 114, 115, 120, 121,
-               130, 131, 132, 140, 150, 152, 160, 161, 162, 163] {
-        let spec = reg.require(id).unwrap_or_else(|_| panic!("id {id} should exist"));
+    for id in [
+        48, 52, 60, 62, 73, 110, 111, 112, 113, 114, 115, 120, 121, 130, 131, 132, 140, 150, 152,
+        160, 161, 162, 163,
+    ] {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("id {id} should exist"));
         assert!(
             spec.is_compiled(),
             "{} (id {id}) should be a compiled language",
@@ -83,7 +87,9 @@ fn compiled_languages_have_both_compile_and_run_cmd() {
 fn interpreted_languages_have_no_compile_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     for id in [63, 71, 100, 101, 102, 103, 104, 105, 106] {
-        let spec = reg.require(id).unwrap_or_else(|_| panic!("id {id} should exist"));
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("id {id} should exist"));
         assert!(
             !spec.is_compiled(),
             "{} (id {id}) should be interpreted (no compile step)",
@@ -230,7 +236,9 @@ fn total_language_count() {
 #[test]
 fn typescript_spec_uses_tsx_runner() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let ts = reg.require(106).expect("TypeScript id 106 must be registered");
+    let ts = reg
+        .require(106)
+        .expect("TypeScript id 106 must be registered");
     let run_joined = ts.run_cmd.join(" ");
     assert!(
         run_joined.contains("tsx"),

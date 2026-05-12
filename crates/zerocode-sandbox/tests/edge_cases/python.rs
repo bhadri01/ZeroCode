@@ -48,7 +48,10 @@ async fn unhandled_exception_nze() {
         result.status,
     );
     let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(stderr.contains("ValueError"), "stderr should contain traceback");
+    assert!(
+        stderr.contains("ValueError"),
+        "stderr should contain traceback"
+    );
 }
 
 // ── PYTHONDONTWRITEBYTECODE prevents .pyc outside /box ──────────────────

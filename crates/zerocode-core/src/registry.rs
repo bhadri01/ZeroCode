@@ -120,9 +120,7 @@ mod tests {
         assert_eq!(node.name, "Node.js");
         assert!(!node.is_compiled());
         assert!(
-            node.env
-                .iter()
-                .any(|(k, _)| k == "NODE_OPTIONS"),
+            node.env.iter().any(|(k, _)| k == "NODE_OPTIONS"),
             "Node.js spec should carry NODE_OPTIONS env entry"
         );
         let py = reg.require(71).unwrap();

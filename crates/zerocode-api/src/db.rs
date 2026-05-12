@@ -77,10 +77,7 @@ pub struct IdempotencyHit {
     pub body_matches: bool,
 }
 
-pub async fn fetch_submission(
-    pool: &PgPool,
-    token: Token,
-) -> Result<Option<Submission>, ApiError> {
+pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Submission>, ApiError> {
     let row = sqlx::query(
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, \
@@ -148,10 +145,7 @@ fn parse_status(text: &str, detail: Option<&serde_json::Value>) -> Result<Status
         .map_err(|e| ApiError::Internal(format!("unparseable status '{text}': {e}")))
 }
 
-pub async fn sync_languages(
-    pool: &PgPool,
-    registry: &LanguageRegistry,
-) -> Result<(), ApiError> {
+pub async fn sync_languages(pool: &PgPool, registry: &LanguageRegistry) -> Result<(), ApiError> {
     for spec in registry.list() {
         sqlx::query(
             "INSERT INTO languages (id, name, version, source_file, compile_cmd, run_cmd, env, is_archived, updated_at) \
@@ -265,11 +259,9 @@ pub async fn list_submissions(
 
 /// Used by the queue-depth admission control on `/v1/ready`.
 pub async fn queue_depth(pool: &PgPool) -> Result<i64, ApiError> {
-    let row = sqlx::query(
-        "SELECT count(*)::bigint AS n FROM submissions WHERE status = 'queued'",
-    )
-    .fetch_one(pool)
-    .await?;
+    let row = sqlx::query("SELECT count(*)::bigint AS n FROM submissions WHERE status = 'queued'")
+        .fetch_one(pool)
+        .await?;
     Ok(row.get("n"))
 }
 
@@ -318,5 +310,4 @@ mod tests {
             Status::TimeLimitExceeded(zerocode_core::status::TimeLimitKind::Wall)
         );
     }
-
 }

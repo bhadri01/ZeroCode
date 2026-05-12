@@ -31,19 +31,13 @@ impl Scratch {
         // Write the source file using the language spec's source filename.
         let source_path = path.join(&job.language.source_file);
         fs::write(&source_path, &job.source_code).map_err(|e| {
-            SandboxError::MountSetup(format!(
-                "write source {}: {e}",
-                source_path.display()
-            ))
+            SandboxError::MountSetup(format!("write source {}: {e}", source_path.display()))
         })?;
 
         // Always write a stdin file (empty if the request didn't include one).
         let stdin_path = path.join("stdin");
         fs::write(&stdin_path, &job.stdin).map_err(|e| {
-            SandboxError::MountSetup(format!(
-                "write stdin {}: {e}",
-                stdin_path.display()
-            ))
+            SandboxError::MountSetup(format!("write stdin {}: {e}", stdin_path.display()))
         })?;
 
         Ok(Self { path })

@@ -139,7 +139,9 @@ impl Runner {
             tokio::spawn(async move {
                 if let Err(e) = process(pool.clone(), sandbox, langs, &http, &secret, claim).await {
                     tracing::error!(error = %e, %token, "submission failed at worker layer");
-                    if let Err(write_err) = db::write_sandbox_failure(&pool, token, &e.to_string()).await {
+                    if let Err(write_err) =
+                        db::write_sandbox_failure(&pool, token, &e.to_string()).await
+                    {
                         tracing::error!(error = %write_err, %token, "could not write failure row");
                     }
                 }

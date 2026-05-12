@@ -168,9 +168,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
   stdin, threading
 - [x] Harness: `LazyLock` shared sandbox, helper functions, language ID constants
 - [x] `edge-cases` feature implies `native` in Cargo.toml
-- [ ] `tests/edge_cases/api/` — API-level (table C from plan): deferred to Phase 5
+- [x] **Batch A–G edge-case tests** (54 tests in 5 files): `batch_a.rs` (21),
+      `batch_b.rs` (12), `batch_c.rs` (4), `batch_d.rs` (5), `batch_efg.rs` (12)
+- [x] API-level edge case tests (12 tests): IPv6 SSRF validation, base64 field
+      parsing, idempotency hash (determinism, language/stdin sensitivity,
+      None-vs-empty stdin discriminant)
+- [x] Webhook unit tests (7 tests): HMAC determinism, body/secret sensitivity,
+      consumer verification, retry policy assertions, jitter bounds
 - [ ] `tests/edge_cases/ops/` — DB drop, queue overflow, worker kill mid-job: deferred
-- [ ] `tests/edge_cases/webhook/` — retry policy, HMAC, SSRF rejection: deferred
 - [ ] Nightly matrix across kernel versions: deferred to CI setup
 
 ### Phase 4.6 — Performance hot path ✅ done (core items)
@@ -238,7 +243,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] `runners/languages.toml` — 41 languages registered, 16 integration tests pass
 - [x] `runners/Dockerfile` — all toolchains installed (apt + tarballs for Kotlin, Scala, .NET, Swift, Zig, Dart, Julia)
 - [ ] Runner image size optimisation: per-language tags published
-- [ ] Per-language edge-case smoke tests for new languages (Batch A–G)
+- [x] Per-language edge-case smoke tests for new languages (Batch A–G) — 54 tests in 5 files
 
 ---
 
@@ -281,13 +286,13 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 ## Tech debt & cleanups
 
 - [ ] Move runtime-checked `sqlx::query()` to compile-time `query!` once CI provisions a test Postgres
-- [ ] Replace `tower-http`'s default `TraceLayer` with a span filter that drops sensitive headers
+- [x] Replace `tower-http`'s default `TraceLayer` with `SanitizedMakeSpan` that drops `Authorization` header from spans
 - [ ] Extract a shared `zerocode-db` crate if duplication between `api/db.rs` and `worker/db.rs` grows
 - [ ] Remove `Cargo.lock.bak` exclusion once we're sure we never need to vendor lockfiles
 - [x] `cargo deny` config (`deny.toml`): license allowlist, advisory DB, ban openssl-sys, wildcard dep ban
-- [ ] CI: GitHub Actions for `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`,
-      docker build, integration smoke test against a Postgres service
+- [x] CI: GitHub Actions — 7-job workflow (check, test, clippy, fmt, cargo-deny, docker-runner, docker-service)
+- [x] End-to-end smoke test script (`scripts/smoke-test.sh`): docker-compose lifecycle, 6 test cases
 
 ---
 
-_Last updated: 2026-05-12 (operational hardening: retention, OOM, base64, deny.toml)._
+_Last updated: 2026-05-12 (CI, edge-case tests, trace filter, idempotency hash fix, webhook tests)._
