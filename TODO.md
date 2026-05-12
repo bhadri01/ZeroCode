@@ -101,7 +101,12 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ### Phase 3 — Remaining Core 6 languages
 
-- [ ] **Phase 3a — Node.js 22** (interpreted, single file `node script.js`)
+- [x] **Phase 3a — Node.js 22** (interpreted, single file `node script.js`)
+  - [x] runners/Dockerfile installs Debian trixie `nodejs` (22.x LTS)
+  - [x] runners/languages.toml id=63 with `NODE_NO_WARNINGS=1` and templated
+        `NODE_OPTIONS=--max-old-space-size=${memory_mb} --unhandled-rejections=strict`
+  - [x] `${memory_mb}` / `${cpu_time}` / `${wall_time}` / `${max_pids}`
+        substitution in `build_env`
 - [ ] **Phase 3b — compile-then-run, single binary**
   - [ ] Rust (latest stable; single-file `main.rs` via rustc)
   - [ ] Go (latest stable; `go run` for v1, two-phase `go build` later)

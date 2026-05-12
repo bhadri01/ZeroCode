@@ -2,6 +2,28 @@
 # here and in `runners/Dockerfile`. ID space:
 #   1–99    Core 6 (v1)
 #   100+    v1.5 expansion (see plan)
+#
+# Substitutions available in env values:
+#   ${memory_mb}   the per-submission memory cap, in MB
+#   ${cpu_time}    CPU budget in seconds
+#   ${wall_time}   wall-clock budget in seconds
+#   ${max_pids}    max processes/threads in the cgroup
+
+[[language]]
+id = 63
+name = "Node.js"
+version = "22"
+source_file = "main.js"
+compile_cmd = []
+run_cmd = ["/usr/bin/node", "main.js"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    # NODE_OPTIONS lets us size V8's old-generation heap against the cgroup
+    # cap and surface unhandled promise rejections as non-zero exits instead
+    # of warnings. Phase 4 will add --experimental-fetch as needed.
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
+]
+is_archived = false
 
 [[language]]
 id = 71

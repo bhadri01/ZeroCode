@@ -8,6 +8,39 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Phase 3a — Node.js 22 + env templating
+
+#### Added
+- **Node.js 22** runs end-to-end as the second supported language:
+  - `runners/Dockerfile` installs `nodejs` from Debian trixie (which ships 22.x LTS)
+    and adds a `/usr/bin/node` symlink fallback if Debian only ships `nodejs`.
+  - `runners/languages.toml` registers id `63` Node.js 22 with
+    `NODE_NO_WARNINGS=1` and a templated
+    `NODE_OPTIONS=--max-old-space-size=${memory_mb} --unhandled-rejections=strict`
+    so V8's old-generation heap matches the cgroup memory cap and unhandled
+    promise rejections surface as non-zero exits.
+- **`${var}` substitution in env values** — `${memory_mb}`, `${cpu_time}`,
+  `${wall_time}`, `${max_pids}` are replaced from the per-submission
+  `ResourceLimits` before the env vector is handed to `execvpe`. Cheap string
+  replace; enough for JVM/Node/Go runtime hooks without a full template
+  engine. Implemented in `native::exec::substitute_limits` with 3 unit tests
+  covering positive substitution, all-placeholder coverage, and pass-through.
+- **`tests/registry_file.rs`** integration test that loads the actual
+  shipped `runners/languages.toml` and asserts:
+  1. it parses with the current `LanguageRegistry` types,
+  2. it contains Python (id 71) and Node.js (id 63),
+  3. the Node.js spec carries `NODE_OPTIONS` with `${memory_mb}` and
+     `unhandled-rejections=strict`.
+
+#### Changed
+- **`exec::run` signature** now takes `&ResourceLimits` instead of three
+  duplicate `wall_time`/`max_stdout`/`max_stderr` parameters; the wall-clock
+  budget is derived from `limits.wall_time` inside the function. Cleaner
+  caller, one fewer place where the three args could drift out of sync.
+- **`build_env` signature** now takes `(spec, limits)` and runs every spec
+  env value through `substitute_limits` before pushing it onto the C-string
+  vector.
+
 ### Phase 2.5 — `pivot_root` into runner rootfs
 
 #### Added

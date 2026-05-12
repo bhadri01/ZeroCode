@@ -18,20 +18,11 @@ pub fn execute(
     let cgroup = Cgroup::create(&config.cgroup_parent, &job.token.to_string(), &job.limits)?;
     let scratch = Scratch::create(&config.scratch_dir, &job)?;
 
-    let wall_time = std::time::Duration::from_secs_f64(job.limits.wall_time);
     let cpu_time = std::time::Duration::from_secs_f64(job.limits.cpu_time);
     let started_at = Utc::now();
     let started_inst = std::time::Instant::now();
 
-    let raw = match exec::run(
-        config,
-        &job.language,
-        &scratch,
-        &cgroup,
-        wall_time,
-        job.limits.max_stdout as usize,
-        job.limits.max_stderr as usize,
-    ) {
+    let raw = match exec::run(config, &job.language, &scratch, &cgroup, &job.limits) {
         Ok(r) => r,
         Err(e) => {
             // Best-effort cleanup before we surface the error.

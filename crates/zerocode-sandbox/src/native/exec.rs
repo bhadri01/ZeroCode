@@ -26,7 +26,7 @@ use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{
     ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, read, write,
 };
-use zerocode_core::LanguageSpec;
+use zerocode_core::{LanguageSpec, ResourceLimits};
 
 use crate::SandboxError;
 
@@ -63,10 +63,11 @@ pub fn run(
     spec: &LanguageSpec,
     scratch: &Scratch,
     cgroup: &Cgroup,
-    wall_time: std::time::Duration,
-    max_stdout: usize,
-    max_stderr: usize,
+    limits: &ResourceLimits,
 ) -> Result<RawOutcome, SandboxError> {
+    let wall_time = std::time::Duration::from_secs_f64(limits.wall_time);
+    let max_stdout = limits.max_stdout as usize;
+    let max_stderr = limits.max_stderr as usize;
     // Three pipes drive the parent ↔ child handshake:
     //   stdout / stderr — captured by the parent reader threads
     //   ready_pipe     — child→parent: "I've called unshare(NEWUSER)"
@@ -83,7 +84,7 @@ pub fn run(
     let scratch_path = scratch.path.clone();
     let runner_rootfs = config.runner_rootfs.clone();
     let source_file = spec.source_file.clone();
-    let env_strings = build_env(spec);
+    let env_strings = build_env(spec, limits);
     let argv_strings = build_argv(spec);
 
     // SAFETY: fork is unsafe in any Rust runtime. Inside the child block we
@@ -269,7 +270,7 @@ fn build_argv(spec: &LanguageSpec) -> Vec<CString> {
         .collect()
 }
 
-fn build_env(spec: &LanguageSpec) -> Vec<CString> {
+fn build_env(spec: &LanguageSpec, limits: &ResourceLimits) -> Vec<CString> {
     let mut env = vec![
         cstring("LANG=C.UTF-8"),
         cstring("LC_ALL=C.UTF-8"),
@@ -277,11 +278,30 @@ fn build_env(spec: &LanguageSpec) -> Vec<CString> {
         cstring("PATH=/usr/local/bin:/usr/bin:/bin"),
     ];
     for (k, v) in &spec.env {
-        if let Ok(s) = CString::new(format!("{k}={v}").into_bytes()) {
+        let expanded = substitute_limits(v, limits);
+        if let Ok(s) = CString::new(format!("{k}={expanded}").into_bytes()) {
             env.push(s);
         }
     }
     env
+}
+
+/// Substitute `${memory_mb}`, `${cpu_time}`, `${wall_time}`, `${max_pids}` in a
+/// language-spec env value with the per-submission limits. Cheap string
+/// replace, not a full template language — that's enough for the
+/// JVM/Node/Go runtime hooks we care about.
+fn substitute_limits(input: &str, limits: &ResourceLimits) -> String {
+    input
+        .replace("${memory_mb}", &limits.memory_mb.to_string())
+        .replace(
+            "${cpu_time}",
+            &format!("{:.3}", limits.cpu_time),
+        )
+        .replace(
+            "${wall_time}",
+            &format!("{:.3}", limits.wall_time),
+        )
+        .replace("${max_pids}", &limits.max_pids.to_string())
 }
 
 fn cstring(s: &str) -> CString {
@@ -379,9 +399,55 @@ mod tests {
             compile_limits: None,
             is_archived: false,
         };
-        let env = build_env(&spec);
+        let env = build_env(&spec, &ResourceLimits::default());
         let any = |needle: &str| env.iter().any(|c| c.to_bytes() == needle.as_bytes());
         assert!(any("LANG=C.UTF-8"));
         assert!(any("PYTHONUNBUFFERED=1"));
+    }
+
+    #[test]
+    fn build_env_substitutes_memory_mb() {
+        let spec = LanguageSpec {
+            id: 63,
+            name: "Node.js".into(),
+            version: "22".into(),
+            source_file: "main.js".into(),
+            compile_cmd: None,
+            run_cmd: vec!["/usr/bin/node".into(), "main.js".into()],
+            env: vec![(
+                "NODE_OPTIONS".into(),
+                "--max-old-space-size=${memory_mb}".into(),
+            )],
+            default_limits: None,
+            compile_limits: None,
+            is_archived: false,
+        };
+        let mut limits = ResourceLimits::default();
+        limits.memory_mb = 256;
+        let env = build_env(&spec, &limits);
+        assert!(env
+            .iter()
+            .any(|c| c.to_bytes() == b"NODE_OPTIONS=--max-old-space-size=256"));
+    }
+
+    #[test]
+    fn substitute_limits_handles_all_placeholders() {
+        let mut limits = ResourceLimits::default();
+        limits.memory_mb = 128;
+        limits.cpu_time = 2.5;
+        limits.wall_time = 5.0;
+        limits.max_pids = 64;
+        let out =
+            substitute_limits("m=${memory_mb} c=${cpu_time} w=${wall_time} p=${max_pids}", &limits);
+        assert_eq!(out, "m=128 c=2.500 w=5.000 p=64");
+    }
+
+    #[test]
+    fn substitute_limits_passes_through_unrecognised() {
+        let limits = ResourceLimits::default();
+        assert_eq!(
+            substitute_limits("nothing to substitute here", &limits),
+            "nothing to substitute here"
+        );
     }
 }

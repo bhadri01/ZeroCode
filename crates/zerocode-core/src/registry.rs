@@ -89,4 +89,46 @@ mod tests {
         let reg = LanguageRegistry::default();
         assert!(reg.require(999).is_err());
     }
+
+    #[test]
+    fn parses_node_and_python_side_by_side() {
+        let input = r#"
+            [[language]]
+            id = 63
+            name = "Node.js"
+            version = "22"
+            source_file = "main.js"
+            compile_cmd = []
+            run_cmd = ["/usr/bin/node", "main.js"]
+            env = [
+                ["NODE_NO_WARNINGS", "1"],
+                ["NODE_OPTIONS", "--max-old-space-size=${memory_mb}"],
+            ]
+
+            [[language]]
+            id = 71
+            name = "Python"
+            version = "3.13"
+            source_file = "main.py"
+            compile_cmd = []
+            run_cmd = ["/usr/bin/python3.13", "main.py"]
+            env = []
+        "#;
+        let reg = LanguageRegistry::from_toml(input).unwrap();
+        assert_eq!(reg.len(), 2);
+        let node = reg.require(63).unwrap();
+        assert_eq!(node.name, "Node.js");
+        assert!(!node.is_compiled());
+        assert!(
+            node.env
+                .iter()
+                .any(|(k, _)| k == "NODE_OPTIONS"),
+            "Node.js spec should carry NODE_OPTIONS env entry"
+        );
+        let py = reg.require(71).unwrap();
+        assert_eq!(py.name, "Python");
+        // List order is insertion order so registry.list() preserves it.
+        let ids: Vec<u32> = reg.list().into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![63, 71]);
+    }
 }
