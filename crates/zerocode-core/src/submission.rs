@@ -24,6 +24,10 @@ pub struct SubmissionRequest {
     pub memory_limit_mb: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callback_url: Option<Url>,
+    /// When true, `source_code` and `stdin` are base64-encoded strings.
+    /// The API decodes them before storing. Judge0-compatible convenience.
+    #[serde(default)]
+    pub base64_encoded: bool,
 }
 
 impl SubmissionRequest {
@@ -106,6 +110,7 @@ mod tests {
             wall_time_limit: None,
             memory_limit_mb: Some(64),
             callback_url: None,
+            base64_encoded: false,
         };
         let default = ResourceLimits::default();
         let ceiling = ResourceLimits {
@@ -131,6 +136,7 @@ mod tests {
             wall_time_limit: None,
             memory_limit_mb: None,
             callback_url: None,
+            base64_encoded: false,
         };
         let default = ResourceLimits::default();
         let ceiling = ResourceLimits::default();

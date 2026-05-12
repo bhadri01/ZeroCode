@@ -12,6 +12,7 @@ use zerocode_core::LanguageRegistry;
 
 mod db;
 mod reaper;
+mod retention;
 mod runner;
 mod sandbox_select;
 mod sweeper;
@@ -74,6 +75,8 @@ async fn main() -> Result<()> {
     let languages = load_languages(&args.languages_file)?;
     tracing::info!(count = languages.len(), "loaded language registry");
 
+    // Sandbox selection also runs kernel_check::preflight() on `--features native`,
+    // failing fast if the host is missing cgroup v2, landlock, or user namespaces.
     let sandbox = sandbox_select::pick().context("constructing sandbox")?;
 
     let parallelism = args
@@ -90,19 +93,32 @@ async fn main() -> Result<()> {
         parallelism,
         webhook_secret,
     );
+    // Lower the worker's OOM score so the kernel preferentially kills sandbox
+    // children rather than the worker process under host memory pressure.
+    reaper::set_oom_score_adj();
+
     let runner_shutdown = runner.shutdown_handle();
     let sweeper_shutdown = Arc::new(Notify::new());
     let reaper_shutdown = Arc::new(Notify::new());
+    let retention_shutdown = Arc::new(Notify::new());
+
+    let retention_config = retention::RetentionConfig::from_env();
 
     let runner_handle = tokio::spawn(runner.run());
     let sweeper_handle = tokio::spawn(sweeper::run(pool.clone(), sweeper_shutdown.clone()));
     let reaper_handle = tokio::spawn(reaper::run(reaper_shutdown.clone()));
+    let retention_handle = tokio::spawn(retention::run(
+        pool.clone(),
+        retention_config,
+        retention_shutdown.clone(),
+    ));
 
     shutdown_signal().await;
     tracing::info!(%worker_id, "shutdown signal received, draining");
     runner_shutdown.notify_waiters();
     sweeper_shutdown.notify_waiters();
     reaper_shutdown.notify_waiters();
+    retention_shutdown.notify_waiters();
 
     if let Err(e) = runner_handle.await {
         tracing::error!(error = %e, "runner task join failed");
@@ -112,6 +128,9 @@ async fn main() -> Result<()> {
     }
     if let Err(e) = reaper_handle.await {
         tracing::error!(error = %e, "reaper task join failed");
+    }
+    if let Err(e) = retention_handle.await {
+        tracing::error!(error = %e, "retention task join failed");
     }
 
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");

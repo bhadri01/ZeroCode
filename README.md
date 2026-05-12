@@ -8,7 +8,9 @@ landlock, seccomp BPF, capability drop, and per-submission cgroup limits.
 Designed as a drop-in replacement for [Judge0](https://judge0.com) with a
 focus on security, performance, and modern toolchains.
 
-## Supported languages (v1)
+## Supported languages (41)
+
+**Core 7 (v1)**
 
 | ID | Language | Version | Type |
 |----|----------|---------|------|
@@ -19,6 +21,24 @@ focus on security, performance, and modern toolchains.
 | 48 | C | gcc-14, C17 | Compiled |
 | 52 | C++ | g++-14, C++23 | Compiled |
 | 62 | Java | 21 LTS | Compiled |
+
+**v1.5 expansion (34 languages)**
+
+| ID | Language | ID | Language | ID | Language |
+|----|----------|----|----------|----|----------|
+| 100 | Bash | 120 | Kotlin | 150 | COBOL |
+| 101 | Lua | 121 | Scala 3 | 151 | Prolog |
+| 102 | Perl | 122 | Groovy | 152 | Swift 6 |
+| 103 | Ruby | 123 | Clojure | 153 | Octave |
+| 104 | R | 130 | Haskell | 154 | SQL |
+| 105 | PHP | 131 | OCaml | 160 | Zig |
+| 106 | TypeScript | 132 | Erlang | 161 | Nim |
+| 110 | Fortran | 133 | Elixir | 162 | Crystal |
+| 111 | Pascal | 134 | Common Lisp | 163 | Dart |
+| 112 | D | 140 | C# | 164 | Julia |
+| 113 | Objective-C | 141 | F# | | |
+| 114 | Assembly | | | | |
+| 115 | Ada | | | | |
 
 ## API
 

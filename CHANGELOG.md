@@ -8,6 +8,70 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Operational hardening (post-v1.5)
+
+#### Added
+- **Retention enforcer** (`crates/zerocode-worker/src/retention.rs`): periodic
+  background task (5 min cadence) with two TTLs:
+  - **Payload TTL** (default 1 h, `ZEROCODE_PAYLOAD_TTL_SECS`): NULLs out
+    `source_code`, `stdin`, `stdout`, `stderr`, `compile_output` on finished
+    rows. The audit stub (token, language, status, timings) stays for the full
+    row TTL.
+  - **Row TTL** (default 24 h, `ZEROCODE_RETENTION_HOURS`): deletes finished
+    rows past the retention window.
+- **OOM score adjustment** (`reaper::set_oom_score_adj`): writes `-500` to
+  `/proc/self/oom_score_adj` on Linux so the kernel preferentially kills
+  sandbox children under host memory pressure rather than the worker process.
+- **`base64_encoded` on POST**: when `base64_encoded: true` in the request body,
+  `source_code` and `stdin` are decoded from base64 strings before validation
+  and storage. Judge0-compatible convenience for binary payloads.
+- **`?base64_encoded=true` on GET**: when set as a query param on
+  `GET /v1/submissions/{token}`, all output fields (`stdout`, `stderr`,
+  `compile_output`) are returned as base64-encoded strings instead of the
+  default auto-detect format.
+- **`deny.toml`** for `cargo-deny`: license allowlist (MIT, Apache-2.0, BSD,
+  ISC, etc.), RustSec advisory DB vulnerability checks, ban on `openssl-sys`
+  (prefer rustls), wildcard dependency ban, unknown registry/git deny.
+
+#### Test count
+| Env | After v1.5 | After hardening | Delta |
+|---|---|---|---|
+| macOS (default features) | 56 | 57 | +1 (retention config_defaults) |
+
+### v1.5 — Judge0 catalog parity (41 languages)
+
+#### Added
+- **34 new languages** across 7 batches, bringing the total from 7 to 41:
+  - **Batch A — Interpreted** (ids 100–106): Bash, Lua, Perl, Ruby, R, PHP,
+    TypeScript (via globally pre-installed `tsx`).
+  - **Batch B — Compiled (GCC family)** (ids 110–115): Fortran (gfortran-14),
+    Pascal (FPC), D (LDC), Objective-C (clang), Assembly (NASM+ld), Ada (GNAT).
+  - **Batch C — JVM** (ids 120–123): Kotlin 2.1, Scala 3.5, Groovy, Clojure.
+    All carry `JAVA_TOOL_OPTIONS` with `${jvm_heap_mb}` and elevated
+    `default_limits` / `compile_limits` matching Java's JVM profile.
+  - **Batch D — Functional** (ids 130–134): Haskell (GHC), OCaml, Erlang (OTP),
+    Elixir, Common Lisp (SBCL).
+  - **Batch E — .NET** (ids 140–141): C# and F# via .NET 9 SDK.
+    `DOTNET_CLI_TELEMETRY_OPTOUT=1` set in env.
+  - **Batch F — Niche** (ids 150–154): COBOL (GnuCOBOL), Prolog (SWI-Prolog),
+    Swift 6, Octave 9, SQL (SQLite3).
+  - **Batch G — Modern** (ids 160–164): Zig 0.13, Nim, Crystal, Dart 3.6,
+    Julia 1.11.
+- **`runners/Dockerfile`** expanded with all toolchains: apt packages for
+  Batch A–D/F/G plus tarball installs for Kotlin, Scala 3, .NET 9, Swift 6,
+  Zig, Dart, and Julia. TypeScript via `npm install -g tsx`.
+- **16 registry integration tests** covering all batches: `batch_a_languages_present_and_interpreted`,
+  `batch_b_compiled_languages_present`, `batch_c_jvm_languages_present`,
+  `batch_d_functional_languages_present`, `batch_efg_languages_present`,
+  `total_language_count` (asserts 41), `typescript_spec_uses_tsx_runner`.
+  Updated `compiled_languages_have_both_compile_and_run_cmd` and
+  `interpreted_languages_have_no_compile_cmd` to cover all new language IDs.
+
+#### Test count
+| Env | After Phase 5 | After v1.5 | Delta |
+|---|---|---|---|
+| macOS (default features) | 49 | 56 | +7 (registry tests for Batches A–G) |
+
 ### Phase 5 — Threat model + docs + hardening
 
 #### Added

@@ -61,7 +61,10 @@ fn node_spec_carries_node_options_with_memory_placeholder() {
 #[test]
 fn compiled_languages_have_both_compile_and_run_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    for id in [48, 52, 60, 62, 73] {
+    // Core 7 compiled + Batch B + Batch C compiled (Kotlin, Scala) + Batch D compiled (Haskell, OCaml, Erlang)
+    // + Batch E compiled (C#) + Batch F compiled (COBOL, Swift) + Batch G compiled (Zig, Nim, Crystal, Dart)
+    for id in [48, 52, 60, 62, 73, 110, 111, 112, 113, 114, 115, 120, 121,
+               130, 131, 132, 140, 150, 152, 160, 161, 162, 163] {
         let spec = reg.require(id).unwrap_or_else(|_| panic!("id {id} should exist"));
         assert!(
             spec.is_compiled(),
@@ -79,7 +82,7 @@ fn compiled_languages_have_both_compile_and_run_cmd() {
 #[test]
 fn interpreted_languages_have_no_compile_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    for id in [63, 71] {
+    for id in [63, 71, 100, 101, 102, 103, 104, 105, 106] {
         let spec = reg.require(id).unwrap_or_else(|_| panic!("id {id} should exist"));
         assert!(
             !spec.is_compiled(),
@@ -178,12 +181,142 @@ fn java_spec_has_compile_limits() {
         .expect("Java must declare compile_limits for javac");
     assert!(
         compile_limits.max_pids >= 96,
-        "Java compile_limits.max_pids should be ≥96: {}",
+        "Java compile_limits.max_pids should be >=96: {}",
         compile_limits.max_pids
     );
     assert!(
         compile_limits.cpu_time >= 10.0,
-        "Java compile_limits.cpu_time should be ≥10s for javac: {}",
+        "Java compile_limits.cpu_time should be >=10s for javac: {}",
         compile_limits.cpu_time
     );
+}
+
+// ---- v1.5 Batch A ----
+
+#[test]
+fn batch_a_languages_present_and_interpreted() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+
+    let batch_a = [
+        (100, "Bash"),
+        (101, "Lua"),
+        (102, "Perl"),
+        (103, "Ruby"),
+        (104, "R"),
+        (105, "PHP"),
+        (106, "TypeScript"),
+    ];
+
+    for (id, name) in batch_a {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name, "id {id} name mismatch");
+        assert!(
+            !spec.is_compiled(),
+            "{name} (id {id}) should be interpreted (no compile step)"
+        );
+    }
+}
+
+#[test]
+fn total_language_count() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
+    // + 5 Batch F + 5 Batch G = 41
+    assert_eq!(reg.list().len(), 41, "expected 41 languages total");
+}
+
+#[test]
+fn typescript_spec_uses_tsx_runner() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let ts = reg.require(106).expect("TypeScript id 106 must be registered");
+    let run_joined = ts.run_cmd.join(" ");
+    assert!(
+        run_joined.contains("tsx"),
+        "TypeScript run_cmd should use tsx: {run_joined}"
+    );
+    assert_eq!(ts.source_file, "main.ts");
+}
+
+#[test]
+fn batch_b_compiled_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let batch_b = [
+        (110, "Fortran"),
+        (111, "Pascal"),
+        (112, "D"),
+        (113, "Objective-C"),
+        (114, "Assembly"),
+        (115, "Ada"),
+    ];
+    for (id, name) in batch_b {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name);
+        assert!(spec.is_compiled(), "{name} should be compiled");
+    }
+}
+
+#[test]
+fn batch_c_jvm_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let batch_c = [
+        (120, "Kotlin"),
+        (121, "Scala"),
+        (122, "Groovy"),
+        (123, "Clojure"),
+    ];
+    for (id, name) in batch_c {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name);
+        let has_jvm_opts = spec.env.iter().any(|(k, _)| k == "JAVA_TOOL_OPTIONS");
+        assert!(has_jvm_opts, "{name} should set JAVA_TOOL_OPTIONS");
+    }
+}
+
+#[test]
+fn batch_d_functional_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let batch_d = [
+        (130, "Haskell"),
+        (131, "OCaml"),
+        (132, "Erlang"),
+        (133, "Elixir"),
+        (134, "Common Lisp"),
+    ];
+    for (id, name) in batch_d {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name);
+    }
+}
+
+#[test]
+fn batch_efg_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let langs = [
+        (140, "C#"),
+        (141, "F#"),
+        (150, "COBOL"),
+        (151, "Prolog"),
+        (152, "Swift"),
+        (153, "Octave"),
+        (154, "SQL"),
+        (160, "Zig"),
+        (161, "Nim"),
+        (162, "Crystal"),
+        (163, "Dart"),
+        (164, "Julia"),
+    ];
+    for (id, name) in langs {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name);
+    }
 }

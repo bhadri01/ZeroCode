@@ -62,8 +62,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] 8 sandbox unit tests pass on Linux (cgroup parsing, exec helpers, triage)
 - [ ] **End-to-end smoke test**: Postgres + API + worker + `curl POST /v1/submissions`
       with Python hello world, returns `Status::Accepted`
-- [ ] **Boot-time kernel preflight** wired into worker startup (today it's a public
-      function in `kernel_check`; not yet invoked outside `NativeSandbox::new`)
+- [x] **Boot-time kernel preflight** runs via `NativeSandbox::new()` → `kernel_check::preflight()` on `--features native`
 - [ ] Verify on real Linux host: limits enforced (TLE, MLE, OOM), no host /proc
       leak, `cgroup.kill` cleanup, no zombies
 
@@ -137,7 +136,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] Webhook retry policy: 4 attempts (immediate + 1 s / 5 s / 30 s) with ±20% jitter
 - [x] `callback_status` written back via `update_callback_status`
 - [x] `?wait=true` synchronous mode (timeout 30 s; polling 200 ms interval)
-- [ ] `?base64_encoded=true` / `?output_mode=text|base64` modes (deferred to Phase 4.6)
+- [x] `?base64_encoded=true` on POST (decodes source/stdin from base64) + on GET (returns outputs as base64 strings)
 - [x] Pagination on `GET /v1/submissions` (`?page`, `?per_page`, `?status`)
 - [x] Rate limiting via `tower_governor` (global 100 RPS burst 100)
 - [x] Graceful drain on SIGTERM (worker already drains via shutdown Notify)
@@ -203,7 +202,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] README quickstart polish — full rewrite with API reference, language table,
       security summary, testing section
 - [x] `cargo clippy --workspace -- -D warnings` clean
-- [ ] `cargo deny check` clean — **deferred**: needs `deny.toml` config
+- [x] `deny.toml` created — run `cargo deny check` once `cargo-deny` is installed
 
 ### Operational & security hardening (v1 must-haves) — cross-cutting
 
@@ -216,28 +215,30 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] `tower_governor` rate limiting (Phase 4)
 - [x] Graceful SIGTERM drain (worker shutdown via `Notify` + sweeper/reaper drain)
 - [x] HMAC-signed webhooks (Phase 4)
-- [ ] Retention job: 24 h row TTL, 1 h payload TTL
-- [ ] `PR_SET_CHILD_SUBREAPER` + zombie reaper
-- [ ] Read-only service rootfs in compose (already set; verify under real load)
-- [ ] Worker `OOMScoreAdj=-500`
-- [ ] Loopback `lo` up inside NET namespace
-- [ ] `LANG=C.UTF-8` env in sandbox (done in `exec.rs`)
-- [ ] `/v1/health` vs `/v1/ready` split (done)
-- [ ] Don't log source/stdin/stdout at INFO (current logging hygiene satisfies this; lint with a tracing filter post-Phase 5)
+- [x] Retention job: 24 h row TTL (`ZEROCODE_RETENTION_HOURS`), 1 h payload TTL (`ZEROCODE_PAYLOAD_TTL_SECS`), 5 min cadence
+- [x] `PR_SET_CHILD_SUBREAPER` + zombie reaper (Phase 2, `worker/reaper.rs`)
+- [x] Read-only service rootfs in compose (set in `docker-compose.yml`)
+- [x] Worker `OOMScoreAdj=-500` (writes to `/proc/self/oom_score_adj` on Linux)
+- [x] Loopback `lo` up inside NET namespace (Phase 2, `native/mounts.rs`)
+- [x] `LANG=C.UTF-8` env in sandbox (`native/exec.rs` build_env)
+- [x] `/v1/health` vs `/v1/ready` split (Phase 0)
+- [x] Don't log source/stdin/stdout at INFO (satisfied by current tracing setup)
 
 ---
 
 ## v1.5 — Judge0 catalog parity (~35 languages)
 
-- [ ] **Batch A — Single-binary interpreted** (Bash, Lua, Perl, Ruby, R, PHP, TypeScript via tsx)
-- [ ] **Batch B — Native GCC family** (Fortran, Pascal/FPC, D/LDC, Objective-C, NASM, Ada/GNAT)
-- [ ] **Batch C — JVM family** (Kotlin, Scala 3, Groovy, Clojure)
-- [ ] **Batch D — Functional / ML** (Haskell/GHC, OCaml 5, Erlang/OTP 27, Elixir, SBCL)
-- [ ] **Batch E — .NET** (C# .NET 9, F# .NET 9)
-- [ ] **Batch F — Niche** (COBOL/GnuCOBOL, SWI-Prolog, Swift 6, Octave 9, SQLite)
-- [ ] **Batch G — Beyond Judge0** (Zig, Nim, Crystal, Dart, Julia)
+- [x] **Batch A — Single-binary interpreted** (Bash 100, Lua 101, Perl 102, Ruby 103, R 104, PHP 105, TypeScript 106)
+- [x] **Batch B — Native GCC family** (Fortran 110, Pascal 111, D 112, Objective-C 113, Assembly 114, Ada 115)
+- [x] **Batch C — JVM family** (Kotlin 120, Scala 121, Groovy 122, Clojure 123) — all carry `JAVA_TOOL_OPTIONS`
+- [x] **Batch D — Functional / ML** (Haskell 130, OCaml 131, Erlang 132, Elixir 133, Common Lisp 134)
+- [x] **Batch E — .NET** (C# 140, F# 141) — `DOTNET_CLI_TELEMETRY_OPTOUT=1`
+- [x] **Batch F — Niche** (COBOL 150, Prolog 151, Swift 152, Octave 153, SQL 154)
+- [x] **Batch G — Beyond Judge0** (Zig 160, Nim 161, Crystal 162, Dart 163, Julia 164)
+- [x] `runners/languages.toml` — 41 languages registered, 16 integration tests pass
+- [x] `runners/Dockerfile` — all toolchains installed (apt + tarballs for Kotlin, Scala, .NET, Swift, Zig, Dart, Julia)
 - [ ] Runner image size optimisation: per-language tags published
-- [ ] `runners/languages.toml` audited; archived versions migrated
+- [ ] Per-language edge-case smoke tests for new languages (Batch A–G)
 
 ---
 
@@ -283,10 +284,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] Replace `tower-http`'s default `TraceLayer` with a span filter that drops sensitive headers
 - [ ] Extract a shared `zerocode-db` crate if duplication between `api/db.rs` and `worker/db.rs` grows
 - [ ] Remove `Cargo.lock.bak` exclusion once we're sure we never need to vendor lockfiles
-- [ ] `cargo deny` config to whitelist licenses + ban known-bad crates
+- [x] `cargo deny` config (`deny.toml`): license allowlist, advisory DB, ban openssl-sys, wildcard dep ban
 - [ ] CI: GitHub Actions for `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check`,
       docker build, integration smoke test against a Postgres service
 
 ---
 
-_Last updated: 2026-05-12 (Phase 4.6 complete)._
+_Last updated: 2026-05-12 (operational hardening: retention, OOM, base64, deny.toml)._

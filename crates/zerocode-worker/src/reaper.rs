@@ -24,10 +24,21 @@ pub fn install_subreaper() -> anyhow::Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn install_subreaper() -> anyhow::Result<()> {
-    // On non-Linux dev hosts (macOS), there's nothing to install. The sandbox
-    // itself only runs on Linux; this is just a no-op so the worker boots.
     Ok(())
 }
+
+/// Lower the worker's OOM score so the kernel preferentially kills sandbox
+/// children (which have the default score) rather than the worker itself.
+#[cfg(target_os = "linux")]
+pub fn set_oom_score_adj() {
+    match std::fs::write("/proc/self/oom_score_adj", "-500") {
+        Ok(()) => tracing::info!("set oom_score_adj=-500"),
+        Err(e) => tracing::warn!(error = %e, "could not set oom_score_adj (needs CAP_SYS_RESOURCE or root)"),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn set_oom_score_adj() {}
 
 #[cfg(target_os = "linux")]
 pub async fn run(shutdown: Arc<Notify>) {

@@ -36,8 +36,28 @@ pub async fn create(
     State(state): State<AppState>,
     Query(params): Query<CreateParams>,
     headers: HeaderMap,
-    Json(req): Json<SubmissionRequest>,
+    Json(mut req): Json<SubmissionRequest>,
 ) -> ApiResult<Response> {
+    // Decode base64-encoded payloads (Judge0 compatibility).
+    if req.base64_encoded {
+        let raw = req
+            .source_code
+            .as_utf8()
+            .map_err(|_| ApiError::Validation("base64_encoded source_code must be a UTF-8 string".into()))?;
+        req.source_code = Payload::from_base64(raw)
+            .map_err(|e| ApiError::Validation(format!("source_code base64 decode: {e}")))?;
+
+        if let Some(stdin) = &req.stdin {
+            let raw = stdin
+                .as_utf8()
+                .map_err(|_| ApiError::Validation("base64_encoded stdin must be a UTF-8 string".into()))?;
+            req.stdin = Some(
+                Payload::from_base64(raw)
+                    .map_err(|e| ApiError::Validation(format!("stdin base64 decode: {e}")))?,
+            );
+        }
+    }
+
     // Validate inputs.
     if req.source_code.is_empty() {
         return Err(ApiError::Validation("source_code must be non-empty".into()));
@@ -243,17 +263,31 @@ pub async fn list(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GetParams {
+    /// When true, stdout/stderr/compile_output are returned as base64 strings
+    /// instead of the default auto-detect (UTF-8 string or `{"_b64": "..."}`).
+    #[serde(default)]
+    pub base64_encoded: Option<bool>,
+}
+
 pub async fn get(
     State(state): State<AppState>,
     Path(token): Path<String>,
-) -> ApiResult<Json<SubmissionView>> {
+    Query(params): Query<GetParams>,
+) -> ApiResult<Response> {
     let token: Token = token
         .parse()
         .map_err(|_| ApiError::Validation("token format invalid".into()))?;
 
     let sub = db::fetch_submission(state.pool(), token).await?;
-    sub.map(|s| Json(SubmissionView::from(s)))
-        .ok_or(ApiError::NotFound)
+    let sub = sub.ok_or(ApiError::NotFound)?;
+
+    if params.base64_encoded.unwrap_or(false) {
+        Ok(Json(Base64SubmissionView::from(sub)).into_response())
+    } else {
+        Ok(Json(SubmissionView::from(sub)).into_response())
+    }
 }
 
 /// Wire shape — keeps the DB row form (`Submission` from zerocode-core)
@@ -296,6 +330,56 @@ impl From<Submission> for SubmissionView {
             stdout: s.stdout,
             stderr: s.stderr,
             compile_output: s.compile_output,
+            exit_code: s.exit_code,
+            signal: s.signal,
+            time: s.cpu_time,
+            wall_time: s.wall_time,
+            memory: s.memory_kb,
+            created_at: s.created_at.to_rfc3339(),
+            finished_at: s.finished_at.map(|d| d.to_rfc3339()),
+        }
+    }
+}
+
+/// Variant of `SubmissionView` where all byte fields are base64 strings.
+/// Returned when `?base64_encoded=true` on GET.
+#[derive(Serialize)]
+pub struct Base64SubmissionView {
+    pub token: String,
+    pub language_id: u32,
+    pub status: Status,
+    pub limits: ResourceLimits,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compile_output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal: Option<Signal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<u32>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+}
+
+impl From<Submission> for Base64SubmissionView {
+    fn from(s: Submission) -> Self {
+        Self {
+            token: s.token.to_string(),
+            language_id: s.language_id,
+            status: s.status,
+            limits: s.limits,
+            stdout: s.stdout.as_ref().map(Payload::to_base64),
+            stderr: s.stderr.as_ref().map(Payload::to_base64),
+            compile_output: s.compile_output.as_ref().map(Payload::to_base64),
             exit_code: s.exit_code,
             signal: s.signal,
             time: s.cpu_time,
@@ -437,6 +521,7 @@ mod tests {
             wall_time_limit: None,
             memory_limit_mb: None,
             callback_url: None,
+            base64_encoded: false,
         }
     }
 

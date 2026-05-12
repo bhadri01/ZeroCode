@@ -279,8 +279,9 @@ The separation is a deliberate security boundary.
 
 - **Dockerfile:** `runners/Dockerfile`
 - **Base:** `debian:trixie-slim`
-- **Contents:** all 7 language toolchains (Python 3.13, Node.js 22, gcc-14,
-  g++-14, Go latest, Rust stable, OpenJDK 21). Pre-creates `/box` and `/tmp`.
+- **Contents:** all 41 language toolchains across Core 7 + Batches A-G.
+  Includes apt-installed packages plus tarball installs for Go, Rust, Kotlin,
+  Scala, .NET 9, Swift 6, Zig, Dart, and Julia. Pre-creates `/box` and `/tmp`.
 - **Not run as a container.** The worker bind-mounts an extracted copy of this
   image's filesystem as the read-only rootfs that every sandboxed submission
   is `pivot_root`'d into.
@@ -292,10 +293,12 @@ namespace is isolated). The service image has no shell to exec into. The
 worker image has no language toolchains.
 
 
-## 7. Supported languages (v1)
+## 7. Supported languages (41)
 
-Loaded from `runners/languages.toml` at boot. ID space: 1-99 reserved for v1
-core languages; 100+ for future expansion.
+Loaded from `runners/languages.toml` at boot. ID space: 1-99 for core v1
+languages; 100+ for v1.5 expansion.
+
+### Core 7 (v1)
 
 | ID | Language | Version | Source file | Compile command | Run command | Notable env vars |
 |----|----------|---------|-------------|-----------------|-------------|------------------|
@@ -307,12 +310,29 @@ core languages; 100+ for future expansion.
 | 71 | Python | 3.13 | `main.py` | (none) | `python3.13 main.py` | `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1` |
 | 73 | Rust | 1.x-latest | `main.rs` | `rustc -O -C panic=abort main.rs -o prog` | `./prog` | -- |
 
+### v1.5 expansion (34 languages)
+
+| Batch | IDs | Languages | Type |
+|-------|-----|-----------|------|
+| A — Interpreted | 100–106 | Bash, Lua, Perl, Ruby, R, PHP, TypeScript (tsx) | Interpreted |
+| B — GCC family | 110–115 | Fortran, Pascal, D, Objective-C, Assembly, Ada | Compiled |
+| C — JVM | 120–123 | Kotlin, Scala 3, Groovy, Clojure | Compiled (JVM) |
+| D — Functional | 130–134 | Haskell, OCaml, Erlang, Elixir, Common Lisp | Mixed |
+| E — .NET | 140–141 | C#, F# | Compiled (.NET 9) |
+| F — Niche | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) | Mixed |
+| G — Modern | 160–164 | Zig, Nim, Crystal, Dart, Julia | Mixed |
+
+JVM-family languages (Batch C) share Java's `JAVA_TOOL_OPTIONS` profile with
+`${jvm_heap_mb}` substitution and elevated `default_limits` / `compile_limits`.
+.NET languages set `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+
 **Limit substitution:** env values may contain `${memory_mb}`, `${cpu_time}`,
 `${wall_time}`, `${max_pids}`, and `${jvm_heap_mb}` placeholders. These are
 expanded per-submission by `exec::substitute_limits` in the sandbox child
 before `execvpe`. `${jvm_heap_mb}` is computed as `max(memory_mb - 256, 32)`
 to account for JVM non-heap overhead.
 
-**Language-specific defaults:** Java declares `default_limits` with 512 MB
-memory and 96 pids (JVM thread floor), plus `compile_limits` with a 15 s CPU /
-30 s wall budget to accommodate javac. Other languages use the global defaults.
+**Language-specific defaults:** Java and JVM-family languages declare
+`default_limits` with elevated memory and pids (JVM thread floor), plus
+`compile_limits` with extended budgets to accommodate `javac`/`kotlinc`/`scalac`.
+Other languages use the global defaults.

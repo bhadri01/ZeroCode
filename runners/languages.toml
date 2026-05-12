@@ -108,12 +108,407 @@ id = 73
 name = "Rust"
 version = "1.x-latest"
 source_file = "main.rs"
-# Single-file build via rustc (no Cargo). `-C panic=abort` matches our
-# workspace profile and means OOM allocator failures terminate cleanly via
-# SIGABRT, which our triage tree maps to RuntimeError(Sigabrt). `--edition`
-# is taken from rustc's current default (currently 2021); upgrading to 2024
-# is a Phase 4+ chore once rustup ships it as stable default.
 compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "main.rs", "-o", "prog"]
 run_cmd = ["./prog"]
 env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch A — Single-binary interpreted
+# ======================================================================
+
+[[language]]
+id = 100
+name = "Bash"
+version = "5.x"
+source_file = "main.sh"
+compile_cmd = []
+run_cmd = ["/bin/bash", "main.sh"]
+env = []
+is_archived = false
+
+[[language]]
+id = 101
+name = "Lua"
+version = "5.4"
+source_file = "main.lua"
+compile_cmd = []
+run_cmd = ["/usr/bin/lua5.4", "main.lua"]
+env = []
+is_archived = false
+
+[[language]]
+id = 102
+name = "Perl"
+version = "5.x"
+source_file = "main.pl"
+compile_cmd = []
+run_cmd = ["/usr/bin/perl", "main.pl"]
+env = []
+is_archived = false
+
+[[language]]
+id = 103
+name = "Ruby"
+version = "3.x"
+source_file = "main.rb"
+compile_cmd = []
+run_cmd = ["/usr/bin/ruby", "main.rb"]
+env = [
+    ["RUBY_GC_HEAP_INIT_SLOTS", "10000"],
+]
+is_archived = false
+
+[[language]]
+id = 104
+name = "R"
+version = "4.x"
+source_file = "main.r"
+compile_cmd = []
+run_cmd = ["/usr/bin/Rscript", "--vanilla", "main.r"]
+env = []
+is_archived = false
+
+[[language]]
+id = 105
+name = "PHP"
+version = "8.x"
+source_file = "main.php"
+compile_cmd = []
+run_cmd = ["/usr/bin/php", "main.php"]
+env = []
+is_archived = false
+
+[[language]]
+id = 106
+name = "TypeScript"
+version = "tsx"
+source_file = "main.ts"
+compile_cmd = []
+run_cmd = ["/usr/local/bin/tsx", "main.ts"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb}"],
+]
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch B — Native-compiled, GCC family
+# ======================================================================
+
+[[language]]
+id = 110
+name = "Fortran"
+version = "gfortran-14"
+source_file = "main.f90"
+compile_cmd = ["/usr/bin/gfortran-14", "-O2", "main.f90", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 111
+name = "Pascal"
+version = "fpc"
+source_file = "main.pas"
+compile_cmd = ["/usr/bin/fpc", "-O2", "-oprog", "main.pas"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 112
+name = "D"
+version = "ldc"
+source_file = "main.d"
+compile_cmd = ["/usr/bin/ldc2", "-O2", "-of=prog", "main.d"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 113
+name = "Objective-C"
+version = "clang"
+source_file = "main.m"
+compile_cmd = ["/usr/bin/clang", "-O2", "-lobjc", "main.m", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 114
+name = "Assembly"
+version = "nasm"
+source_file = "main.asm"
+compile_cmd = ["/bin/sh", "-c", "nasm -f elf64 main.asm -o prog.o && ld prog.o -o prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 115
+name = "Ada"
+version = "gnat"
+source_file = "main.adb"
+compile_cmd = ["/usr/bin/gnatmake", "-O2", "-o", "prog", "main.adb"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch C — JVM family
+# ======================================================================
+
+[[language]]
+id = 120
+name = "Kotlin"
+version = "2.x"
+source_file = "main.kt"
+compile_cmd = ["/usr/bin/kotlinc", "main.kt", "-include-runtime", "-d", "prog.jar"]
+run_cmd = ["/usr/bin/java", "-jar", "prog.jar"]
+env = [
+    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 121
+name = "Scala"
+version = "3.x"
+source_file = "main.scala"
+compile_cmd = ["/usr/bin/scalac", "main.scala"]
+run_cmd = ["/usr/bin/scala", "main"]
+env = [
+    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 122
+name = "Groovy"
+version = "4.x"
+source_file = "main.groovy"
+compile_cmd = []
+run_cmd = ["/usr/bin/groovy", "main.groovy"]
+env = [
+    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 123
+name = "Clojure"
+version = "1.x"
+source_file = "main.clj"
+compile_cmd = []
+run_cmd = ["/usr/bin/clojure", "-M", "main.clj"]
+env = [
+    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch D — Functional / ML family
+# ======================================================================
+
+[[language]]
+id = 130
+name = "Haskell"
+version = "ghc"
+source_file = "main.hs"
+compile_cmd = ["/usr/bin/ghc", "-O2", "-o", "prog", "main.hs"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 131
+name = "OCaml"
+version = "5.x"
+source_file = "main.ml"
+compile_cmd = ["/usr/bin/ocamlfind", "ocamlopt", "-package", "str", "-linkpkg", "-o", "prog", "main.ml"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 132
+name = "Erlang"
+version = "otp-27"
+source_file = "main.erl"
+compile_cmd = ["/usr/bin/erlc", "main.erl"]
+run_cmd = ["/usr/bin/erl", "-noshell", "-s", "main", "main", "-s", "init", "stop"]
+env = []
+is_archived = false
+
+[[language]]
+id = 133
+name = "Elixir"
+version = "1.x"
+source_file = "main.exs"
+compile_cmd = []
+run_cmd = ["/usr/bin/elixir", "main.exs"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 134
+name = "Common Lisp"
+version = "sbcl"
+source_file = "main.lisp"
+compile_cmd = []
+run_cmd = ["/usr/bin/sbcl", "--script", "main.lisp"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch E — .NET family
+# ======================================================================
+
+[[language]]
+id = 140
+name = "C#"
+version = ".NET 9"
+source_file = "main.cs"
+compile_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/cs && cp main.cs /tmp/cs/Program.cs && cd /tmp/cs && dotnet build -c Release -o /box/bin --nologo -v q"]
+run_cmd = ["/bin/sh", "-c", "cd /box/bin && dotnet cs.dll"]
+env = [
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_NOLOGO", "1"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 141
+name = "F#"
+version = ".NET 9"
+source_file = "main.fsx"
+compile_cmd = []
+run_cmd = ["/usr/bin/dotnet", "fsi", "main.fsx"]
+env = [
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_NOLOGO", "1"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch F — Niche / specialty
+# ======================================================================
+
+[[language]]
+id = 150
+name = "COBOL"
+version = "gnucobol"
+source_file = "main.cob"
+compile_cmd = ["/usr/bin/cobc", "-x", "-O2", "-o", "prog", "main.cob"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 151
+name = "Prolog"
+version = "swipl"
+source_file = "main.pl"
+compile_cmd = []
+run_cmd = ["/usr/bin/swipl", "-q", "-t", "halt", "-f", "main.pl"]
+env = []
+is_archived = false
+
+[[language]]
+id = 152
+name = "Swift"
+version = "6.x"
+source_file = "main.swift"
+compile_cmd = ["/usr/bin/swiftc", "-O", "-o", "prog", "main.swift"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 153
+name = "Octave"
+version = "9.x"
+source_file = "main.m"
+compile_cmd = []
+run_cmd = ["/usr/bin/octave", "--no-gui", "--no-window-system", "main.m"]
+env = []
+is_archived = false
+
+[[language]]
+id = 154
+name = "SQL"
+version = "sqlite3"
+source_file = "main.sql"
+compile_cmd = []
+run_cmd = ["/usr/bin/sqlite3", "-cmd", ".read main.sql"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch G — Modern languages (beyond Judge0)
+# ======================================================================
+
+[[language]]
+id = 160
+name = "Zig"
+version = "0.13+"
+source_file = "main.zig"
+compile_cmd = ["/usr/local/bin/zig", "build-exe", "-OReleaseSafe", "main.zig", "--name", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 161
+name = "Nim"
+version = "2.x"
+source_file = "main.nim"
+compile_cmd = ["/usr/bin/nim", "c", "-d:release", "--out:prog", "main.nim"]
+run_cmd = ["./prog"]
+env = [
+    ["NIM_CACHE_DIR", "/tmp/.nim-cache"],
+]
+is_archived = false
+
+[[language]]
+id = 162
+name = "Crystal"
+version = "1.x"
+source_file = "main.cr"
+compile_cmd = ["/usr/bin/crystal", "build", "--release", "-o", "prog", "main.cr"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 163
+name = "Dart"
+version = "3.x"
+source_file = "main.dart"
+compile_cmd = ["/usr/lib/dart/bin/dart", "compile", "exe", "main.dart", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 164
+name = "Julia"
+version = "1.x"
+source_file = "main.jl"
+compile_cmd = []
+run_cmd = ["/usr/local/bin/julia", "main.jl"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
