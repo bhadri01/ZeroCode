@@ -12,8 +12,15 @@ use zerocode_sandbox::{Sandbox, SandboxError, SandboxJob, SandboxResult};
 
 #[cfg(feature = "native")]
 pub fn pick() -> anyhow::Result<Arc<dyn Sandbox>> {
-    use zerocode_sandbox::native::NativeSandbox;
-    Ok(Arc::new(NativeSandbox::new()?))
+    use zerocode_sandbox::{NativeSandbox, NativeSandboxConfig};
+    let config = NativeSandboxConfig::from_env();
+    tracing::info!(
+        cgroup_parent = %config.cgroup_parent.display(),
+        runner_rootfs = %config.runner_rootfs.display(),
+        scratch_dir = %config.scratch_dir.display(),
+        "starting NativeSandbox"
+    );
+    Ok(Arc::new(NativeSandbox::new(config)?))
 }
 
 #[cfg(all(not(feature = "native"), feature = "unsafe-naive"))]
@@ -35,6 +42,7 @@ pub fn pick() -> anyhow::Result<Arc<dyn Sandbox>> {
     Ok(Arc::new(StubSandbox))
 }
 
+#[allow(dead_code)]
 struct StubSandbox;
 
 #[async_trait]

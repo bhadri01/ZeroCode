@@ -13,8 +13,13 @@ default = []
 # isolation. NEVER enable in production. Gated so binaries cannot accidentally
 # ship without the real sandbox.
 unsafe-naive = []
-# Switch on once libcontainer integration lands (Phase 1.5).
-native = ["dep:libcontainer", "dep:libcgroups", "dep:oci-spec", "dep:caps", "dep:landlock", "dep:libseccomp", "dep:cgroups-rs"]
+# Phase 1.5+: real NativeSandbox. Pure-Rust direct primitives (cgroup v2 +
+# namespaces + cap-drop). The actual implementation is also gated on
+# `target_os = "linux"`; on other platforms this feature compiles but the
+# sandbox returns `KernelFeatureMissing` at runtime.
+native = []
+# Phase 2 hardening — adds seccomp + landlock + libcontainer integration.
+native-hardened = ["native"]
 edge-cases = []
 
 [dependencies]
@@ -29,13 +34,17 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 
-# Linux primitives. Optional via `native` feature so non-Linux dev hosts can still
-# build the trait + naive impl.
-nix = { workspace = true, optional = true }
-caps = { workspace = true, optional = true }
+# Linux primitives. macOS dev hosts skip these entirely; the `native` module
+# is `#[cfg(target_os = "linux")]`-gated internally so the workspace still
+# builds + tests cross-platform.
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true }
+caps = { workspace = true }
+
+# Phase 2 hardening — pulled in by `native-hardened` only.
 landlock = { workspace = true, optional = true }
 libseccomp = { workspace = true, optional = true }
-cgroups-rs = { workspace = true, optional = true }
 libcontainer = { workspace = true, optional = true }
 libcgroups = { workspace = true, optional = true }
 oci-spec = { workspace = true, optional = true }
+cgroups-rs = { workspace = true, optional = true }

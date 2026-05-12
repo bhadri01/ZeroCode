@@ -21,6 +21,9 @@ pub mod naive;
 #[cfg(feature = "native")]
 pub mod native;
 
+#[cfg(feature = "native")]
+pub use native::{NativeSandbox, NativeSandboxConfig};
+
 /// What the worker hands to a sandbox to run.
 #[derive(Debug, Clone)]
 pub struct SandboxJob {
