@@ -78,7 +78,6 @@ pub fn classify(
     //    it into `compile_output` and leave stdout/stderr empty since the
     //    run phase never happened.
     if matches!(raw.exit_status, WaitStatus::Exited(_, code) if code == COMPILE_FAILED_EXIT_CODE) {
-        let compile_output = raw.stderr.clone();
         let mut out = finish(
             raw,
             cpu_time,
@@ -90,7 +89,6 @@ pub fn classify(
         );
         out.stdout = Bytes::new();
         out.stderr = Bytes::new();
-        out.compile_output = Some(compile_output);
         out.exit_code = None; // not a meaningful exit code for the user
         return Ok(out);
     }
@@ -136,11 +134,16 @@ fn finish(
     status: Status,
     signal: Option<Signal>,
 ) -> SandboxResult {
+    let compile_output = if raw.compile_stderr.is_empty() {
+        None
+    } else {
+        Some(raw.compile_stderr)
+    };
     SandboxResult {
         status,
         stdout: raw.stdout,
         stderr: raw.stderr,
-        compile_output: None,
+        compile_output,
         exit_code: match &raw.exit_status {
             WaitStatus::Exited(_, code) => Some(*code),
             _ => None,
@@ -151,6 +154,7 @@ fn finish(
         memory_kb,
         started_at,
         finished_at: Utc::now(),
+        compiled_binary: None,
     }
 }
 
@@ -172,6 +176,7 @@ mod tests {
             exit_status: status,
             stdout: Bytes::new(),
             stderr: Bytes::new(),
+            compile_stderr: Bytes::new(),
             killed_by_wall_timeout: wall,
         }
     }
@@ -261,7 +266,8 @@ mod tests {
         let r = RawOutcome {
             exit_status: exited(COMPILE_FAILED_EXIT_CODE),
             stdout: Bytes::from_static(b"compiler-stdout-noise"),
-            stderr: Bytes::from_static(b"error[E0308]: mismatched types"),
+            stderr: Bytes::new(),
+            compile_stderr: Bytes::from_static(b"error[E0308]: mismatched types"),
             killed_by_wall_timeout: false,
         };
         let out = classify(

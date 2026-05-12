@@ -384,3 +384,70 @@ with open(path) as f:
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("test"));
 }
+
+// ── Capabilities verification: all caps dropped ────────────────────────
+//
+// Uses Python to read /proc/self/status and verify that all five capability
+// sets (CapInh, CapPrm, CapEff, CapBnd, CapAmb) are zeroed. This is the
+// programmatic equivalent of `capsh --print` without requiring capsh in the
+// runner image.
+
+#[tokio::test]
+async fn all_capabilities_dropped() {
+    let source = r#"
+import re
+
+with open("/proc/self/status") as f:
+    status = f.read()
+
+cap_fields = ["CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"]
+for field in cap_fields:
+    match = re.search(rf"^{field}:\s+([0-9a-fA-F]+)$", status, re.MULTILINE)
+    if match:
+        val = int(match.group(1), 16)
+        if val != 0:
+            print(f"FAIL: {field} = 0x{match.group(1)} (expected 0)")
+        else:
+            print(f"OK: {field} = 0")
+    else:
+        print(f"MISSING: {field}")
+"#;
+    let result = run(job(PYTHON, source)).await;
+    assert!(matches!(result.status, Status::Accepted));
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        !stdout.contains("FAIL"),
+        "some capabilities were not dropped: {stdout}"
+    );
+    assert!(
+        !stdout.contains("MISSING"),
+        "capability fields missing from /proc/self/status: {stdout}"
+    );
+    for field in ["CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"] {
+        assert!(
+            stdout.contains(&format!("OK: {field} = 0")),
+            "{field} not verified in stdout: {stdout}"
+        );
+    }
+}
+
+// ── NO_NEW_PRIVS is set ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn no_new_privs_is_set() {
+    let source = r#"
+import ctypes, ctypes.util
+
+libc = ctypes.CDLL(ctypes.util.find_library("c"))
+PR_GET_NO_NEW_PRIVS = 39
+result = libc.prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)
+print(f"no_new_privs={result}")
+"#;
+    let result = run(job(PYTHON, source)).await;
+    assert!(matches!(result.status, Status::Accepted));
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        stdout.contains("no_new_privs=1"),
+        "PR_SET_NO_NEW_PRIVS should be 1, got: {stdout}"
+    );
+}

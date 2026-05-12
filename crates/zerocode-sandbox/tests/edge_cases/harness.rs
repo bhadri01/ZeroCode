@@ -73,6 +73,7 @@ pub fn job_with_limits(
         source_code: Bytes::from(source.to_owned()),
         stdin: Bytes::from(stdin.to_owned()),
         limits,
+        cached_binary: None,
     }
 }
 

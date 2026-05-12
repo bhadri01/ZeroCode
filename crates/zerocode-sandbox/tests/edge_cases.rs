@@ -24,6 +24,7 @@ mod edge_cases {
     mod harness;
     mod java;
     mod node;
+    mod ops;
     mod python;
     mod rust_lang;
 }

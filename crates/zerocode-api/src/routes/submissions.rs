@@ -665,3 +665,129 @@ mod tests {
         assert_eq!(parsed.source_code.as_bytes(), b"cHJpbnQoMSk");
     }
 }
+
+#[cfg(test)]
+mod ops_tests {
+    use super::*;
+    use crate::db::{self, QueueState};
+
+    // ── Queue depth backpressure threshold ──────────────────────────────
+
+    #[test]
+    fn queue_depth_backpressure_threshold() {
+        assert!(
+            matches!(db::classify_queue_depth(10_001), QueueState::Backpressure),
+            "depth 10_001 should trigger Backpressure",
+        );
+        assert!(
+            matches!(db::classify_queue_depth(10_000), QueueState::Healthy),
+            "depth 10_000 should still be Healthy",
+        );
+    }
+
+    // ── SubmissionView serializes all fields ────────────────────────────
+
+    #[test]
+    fn submission_view_serializes_all_fields() {
+        use chrono::Utc;
+        use zerocode_core::{Payload, ResourceLimits, Signal, Status, Submission, Token};
+
+        let now = Utc::now();
+        let sub = Submission {
+            token: Token::new(),
+            language_id: 71,
+            status: Status::Accepted,
+            limits: ResourceLimits::default(),
+            stdout: Some(Payload::from("hello")),
+            stderr: Some(Payload::from("warn")),
+            compile_output: Some(Payload::from("compiled")),
+            exit_code: Some(0),
+            signal: Some(Signal::Sigsegv),
+            cpu_time: Some(0.123),
+            wall_time: Some(0.456),
+            memory_kb: Some(8192),
+            created_at: now,
+            finished_at: Some(now),
+        };
+
+        let view = SubmissionView::from(sub);
+        let json = serde_json::to_value(&view).expect("serialize SubmissionView");
+        let obj = json.as_object().expect("should be a JSON object");
+
+        let expected_keys = [
+            "token",
+            "language_id",
+            "status",
+            "limits",
+            "stdout",
+            "stderr",
+            "compile_output",
+            "exit_code",
+            "signal",
+            "time",
+            "wall_time",
+            "memory",
+            "created_at",
+            "finished_at",
+        ];
+        for key in &expected_keys {
+            assert!(
+                obj.contains_key(*key),
+                "SubmissionView JSON should contain key '{key}', got keys: {:?}",
+                obj.keys().collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    // ── CachedSubmissionView has cached=true ────────────────────────────
+
+    #[test]
+    fn cached_submission_view_has_cached_flag() {
+        let outcome = zerocode_cache::CachedOutcome {
+            status_json: serde_json::json!({ "kind": "accepted" }),
+            stdout: b"out\n".to_vec(),
+            stderr: vec![],
+            compile_output: None,
+            exit_code: Some(0),
+            cpu_time: 0.01,
+            wall_time: 0.02,
+            memory_kb: 4096,
+        };
+
+        let view = CachedSubmissionView::from(outcome);
+        let json = serde_json::to_value(&view).expect("serialize CachedSubmissionView");
+        let obj = json.as_object().expect("should be a JSON object");
+
+        assert_eq!(
+            obj.get("cached"),
+            Some(&serde_json::Value::Bool(true)),
+            "CachedSubmissionView must have cached=true",
+        );
+    }
+
+    // ── CreateParams wait defaults to None ──────────────────────────────
+
+    #[test]
+    fn create_params_wait_defaults_false() {
+        // An empty JSON object should deserialize with wait=None thanks to
+        // #[serde(default)] on the field.
+        let params: CreateParams = serde_json::from_str("{}").expect("deserialize empty object");
+        assert!(
+            params.wait.is_none(),
+            "wait should default to None when not provided",
+        );
+    }
+
+    // ── CreateParams wait=true parses correctly ─────────────────────────
+
+    #[test]
+    fn create_params_wait_parses_true() {
+        let params: CreateParams =
+            serde_json::from_str(r#"{"wait": true}"#).expect("deserialize wait=true");
+        assert_eq!(
+            params.wait,
+            Some(true),
+            "wait should be Some(true) when explicitly set to true",
+        );
+    }
+}

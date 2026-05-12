@@ -16,6 +16,7 @@ use bytes::Bytes;
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 use tokio_stream::StreamExt;
+use zerocode_cache::{CacheKey, CompileCache};
 use zerocode_core::{LanguageRegistry, Status};
 use zerocode_sandbox::{Sandbox, SandboxJob, SandboxResult};
 use zerocode_stream::{Event, listen_for_jobs, publish_event};
@@ -28,6 +29,7 @@ pub struct Runner {
     worker_id: String,
     languages: Arc<LanguageRegistry>,
     sandbox: Arc<dyn Sandbox>,
+    compile_cache: Arc<CompileCache>,
     parallelism: Arc<Semaphore>,
     shutdown: Arc<tokio::sync::Notify>,
     http_client: reqwest::Client,
@@ -49,11 +51,13 @@ impl Runner {
             .build()
             .expect("build reqwest client");
 
+        let compile_cache = Arc::new(CompileCache::new(pool.clone()));
         Self {
             pool,
             worker_id,
             languages: Arc::new(languages),
             sandbox,
+            compile_cache,
             parallelism: Arc::new(Semaphore::new(max_parallel.max(1))),
             shutdown: Arc::new(tokio::sync::Notify::new()),
             http_client,
@@ -133,11 +137,22 @@ impl Runner {
             let pool = self.pool.clone();
             let sandbox = self.sandbox.clone();
             let langs = self.languages.clone();
+            let compile_cache = self.compile_cache.clone();
             let http = self.http_client.clone();
             let secret = self.webhook_secret.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = process(pool.clone(), sandbox, langs, &http, &secret, claim).await {
+                if let Err(e) = process(
+                    pool.clone(),
+                    sandbox,
+                    langs,
+                    &compile_cache,
+                    &http,
+                    &secret,
+                    claim,
+                )
+                .await
+                {
                     tracing::error!(error = %e, %token, "submission failed at worker layer");
                     if let Err(write_err) =
                         db::write_sandbox_failure(&pool, token, &e.to_string()).await
@@ -155,6 +170,7 @@ async fn process(
     pool: PgPool,
     sandbox: Arc<dyn Sandbox>,
     languages: Arc<LanguageRegistry>,
+    compile_cache: &CompileCache,
     http: &reqwest::Client,
     webhook_secret: &str,
     claim: ClaimedJob,
@@ -170,12 +186,34 @@ async fn process(
         .map_err(|e| anyhow::anyhow!("unknown language {}: {e}", claim.language_id))?
         .clone();
 
+    // Check the compile-artifact cache for compiled languages.
+    let cached_binary = if spec.compile_cmd.is_some() {
+        let key = CacheKey::compile(claim.language_id, claim.source_code.as_slice(), b"");
+        match compile_cache.get(&key).await {
+            Ok(Some(artifact)) => {
+                tracing::info!(%token, "compile cache hit");
+                Some(Bytes::from(artifact.binary))
+            }
+            Ok(None) => {
+                tracing::debug!(%token, "compile cache miss");
+                None
+            }
+            Err(e) => {
+                tracing::warn!(%token, error = %e, "compile cache lookup failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let job = SandboxJob {
         token,
-        language: spec,
-        source_code: Bytes::from(claim.source_code),
+        language: spec.clone(),
+        source_code: Bytes::from(claim.source_code.clone()),
         stdin: Bytes::from(claim.stdin),
         limits: claim.limits,
+        cached_binary,
     };
 
     let result = match sandbox.execute(job).await {
@@ -184,6 +222,22 @@ async fn process(
             return Err(anyhow::anyhow!("sandbox: {e}"));
         }
     };
+
+    // Store compiled binary in the cache if this was a cache miss and compile
+    // succeeded (any non-CompileError status means compilation passed).
+    if spec.compile_cmd.is_some() && !matches!(result.status, Status::CompileError) {
+        if let Some(binary) = &result.compiled_binary {
+            let key = CacheKey::compile(claim.language_id, claim.source_code.as_slice(), b"");
+            if let Err(e) = compile_cache
+                .insert(key, claim.language_id, binary.to_vec())
+                .await
+            {
+                tracing::warn!(%token, error = %e, "compile cache insert failed");
+            } else {
+                tracing::debug!(%token, bytes = binary.len(), "compile artifact cached");
+            }
+        }
+    }
 
     db::write_result(&pool, token, &result).await?;
     let _ = publish_event(

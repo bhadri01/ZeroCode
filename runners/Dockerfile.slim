@@ -1,0 +1,214 @@
+# syntax=docker/dockerfile:1.7
+#
+# Multi-target "slim" runner Dockerfile.
+#
+# Provides per-language image targets so deployments that only need a subset
+# of the Core 7 languages don't pay for the full ~3 GB image.
+#
+# Each stage installs exactly one language toolchain on top of a shared base,
+# keeping images between 80-400 MB instead of 3+ GB.  The `full` target
+# reassembles every toolchain via COPY --from= for layer efficiency.
+#
+# Usage:
+#   # Single-language image (~100-400 MB each)
+#   docker build -f runners/Dockerfile.slim --target python  -t zerocode-runner:python  .
+#   docker build -f runners/Dockerfile.slim --target node    -t zerocode-runner:node    .
+#   docker build -f runners/Dockerfile.slim --target go      -t zerocode-runner:go      .
+#   docker build -f runners/Dockerfile.slim --target rust    -t zerocode-runner:rust    .
+#   docker build -f runners/Dockerfile.slim --target c-cpp   -t zerocode-runner:c-cpp   .
+#   docker build -f runners/Dockerfile.slim --target java    -t zerocode-runner:java    .
+#
+#   # All Core 7 languages (~1.2 GB — still much smaller than runners/Dockerfile
+#   # which also bundles all v1.5 batch languages at ~3 GB)
+#   docker build -f runners/Dockerfile.slim --target full    -t zerocode-runner:latest  .
+#
+# Size estimates (amd64):
+#   base    ~80 MB   (Debian trixie-slim + locale/certs)
+#   python  ~130 MB  (base + python3.13)
+#   node    ~180 MB  (base + nodejs + npm)
+#   go      ~300 MB  (base + Go tarball)
+#   rust    ~350 MB  (base + rustup minimal profile)
+#   c-cpp   ~250 MB  (base + gcc-14/g++-14 + libc6-dev)
+#   java    ~400 MB  (base + openjdk-21-jdk-headless)
+#   full    ~1.2 GB  (all of the above, deduplicated base)
+#
+# NOTE: v1.5 batch languages (Lua, Ruby, R, Haskell, .NET, Swift, etc.) are
+# NOT included here.  Use the main runners/Dockerfile for the complete set.
+# This file covers only the Core 7 languages for slim per-language deploys.
+
+###############################################################################
+# Stage: base
+# Shared foundation for every language target.  Keeps locale, timezone, certs,
+# and the /box + /tmp sandbox directories that the worker expects.
+###############################################################################
+FROM debian:trixie-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        xz-utils \
+        locales \
+        tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -i '/^# C.UTF-8/s/^# //' /etc/locale.gen 2>/dev/null || true \
+    && update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Sandbox directories the worker bind-mounts into.
+RUN mkdir -p /box /tmp \
+    && chmod 1777 /tmp \
+    && chmod 0700 /box
+
+# The runner image is a rootfs; it doesn't run as a container itself.
+CMD ["/bin/true"]
+
+###############################################################################
+# Stage: python
+# Python 3.13 from Debian trixie.  ~50 MB on top of base.
+# Provides: /usr/bin/python3.13
+###############################################################################
+FROM base AS python
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.13 \
+        python3.13-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+###############################################################################
+# Stage: node
+# Node.js 22 LTS from Debian trixie.  ~100 MB on top of base.
+# Provides: /usr/bin/node, /usr/bin/npm
+###############################################################################
+FROM base AS node
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        nodejs \
+        npm \
+    && rm -rf /var/lib/apt/lists/* \
+    # Debian sometimes ships /usr/bin/nodejs instead of /usr/bin/node.
+    && if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then \
+           ln -sf /usr/bin/nodejs /usr/bin/node; \
+       fi
+
+###############################################################################
+# Stage: go
+# Go from official go.dev tarball.  ~220 MB on top of base.
+# Provides: /usr/local/go/bin/go
+###############################################################################
+FROM base AS go
+
+ARG GO_VERSION=1.23.4
+
+RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/amd64/; s/arm64/arm64/') \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+
+ENV PATH=/usr/local/go/bin:$PATH
+
+###############################################################################
+# Stage: rust
+# Rust latest stable via rustup, minimal profile.  ~270 MB on top of base.
+# Provides: /usr/local/cargo/bin/rustc
+# RUSTUP_HOME and CARGO_HOME under /usr/local so every submission finds them
+# after pivot_root.
+###############################################################################
+FROM base AS rust
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh \
+    && chmod +x /tmp/rustup-init.sh \
+    && /tmp/rustup-init.sh -y --default-toolchain stable --no-modify-path --profile minimal \
+    && rm /tmp/rustup-init.sh \
+    && /usr/local/cargo/bin/rustc --version \
+    && chmod -R a+rX "$RUSTUP_HOME" "$CARGO_HOME"
+
+###############################################################################
+# Stage: c-cpp
+# GCC 14 / G++ 14 from Debian trixie.  ~170 MB on top of base.
+# Provides: /usr/bin/gcc-14, /usr/bin/g++-14
+###############################################################################
+FROM base AS c-cpp
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc-14 \
+        g++-14 \
+        libc6-dev \
+        libstdc++-14-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+###############################################################################
+# Stage: java
+# OpenJDK 21 headless from Debian trixie.  ~320 MB on top of base.
+# Provides: /usr/bin/javac, /usr/bin/java
+###############################################################################
+FROM base AS java
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+###############################################################################
+# Stage: full
+# All Core 7 languages in one image.  Uses COPY --from= to pull installed
+# files from each language stage rather than re-running apt/curl, which keeps
+# the build fast when individual stages are cached.
+#
+# Layer strategy:
+#   - We start from base (which has locale, certs, /box, /tmp).
+#   - Each COPY --from merges that language's files into the rootfs.
+#   - apt-installed packages need both their binaries AND their library deps,
+#     so we do a fresh apt install for the apt-based languages to get correct
+#     dependency resolution.  Go and Rust are self-contained tarballs, so
+#     COPY --from works cleanly for those.
+#
+# Total size is ~1.2 GB — significantly smaller than the ~3 GB full Dockerfile
+# because we skip all v1.5 batch languages.
+###############################################################################
+FROM base AS full
+
+# -- apt-based languages (Python, Node, C/C++, Java) -------------------------
+# Installing via apt in one shot is more reliable than copying individual
+# files, because apt handles shared library dependencies correctly.  The
+# per-language stages above are still useful for their slim single-lang images.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        # Python
+        python3.13 python3.13-dev \
+        # Node.js
+        nodejs npm \
+        # C / C++
+        gcc-14 g++-14 libc6-dev libstdc++-14-dev \
+        # Java
+        openjdk-21-jdk-headless \
+    && rm -rf /var/lib/apt/lists/* \
+    # Node symlink fallback
+    && if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then \
+           ln -sf /usr/bin/nodejs /usr/bin/node; \
+       fi
+
+# -- Go (self-contained tarball, safe to COPY --from) -------------------------
+COPY --from=go /usr/local/go /usr/local/go
+
+# -- Rust (self-contained under /usr/local/{rustup,cargo}, safe to COPY) ------
+COPY --from=rust /usr/local/rustup /usr/local/rustup
+COPY --from=rust /usr/local/cargo  /usr/local/cargo
+
+# -- PATH for Go + Rust binaries ---------------------------------------------
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+
+# -- Verify all toolchains are reachable --------------------------------------
+RUN python3.13 --version \
+    && node --version \
+    && gcc-14 --version | head -1 \
+    && g++-14 --version | head -1 \
+    && javac -version \
+    && /usr/local/go/bin/go version \
+    && /usr/local/cargo/bin/rustc --version

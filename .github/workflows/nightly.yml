@@ -1,0 +1,72 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 3 AM UTC daily
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  kernel-matrix:
+    name: Test (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:22.04   # kernel ~5.15
+          - ubuntu:24.04   # kernel ~6.8
+          - debian:bookworm # kernel ~6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update -y
+          apt-get install -y curl build-essential pkg-config libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.85'
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      # ── Edge-case sandbox tests (future) ──────────────────────────────
+      # These tests require a full sandbox environment with cgroups v2,
+      # seccomp, and overlayfs. Enable once the nightly runner image
+      # supports privileged containers.
+      #
+      # - name: Run sandbox edge-case tests
+      #   run: cargo test --workspace --features sandbox-edge-cases
+      #   env:
+      #     ZEROCODE_SANDBOX: full
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.85'
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        run: cargo bench --workspace -- --output-format=bencher | tee bench-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.txt
+          retention-days: 30

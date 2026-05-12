@@ -47,6 +47,7 @@ pub struct RawOutcome {
     pub exit_status: WaitStatus,
     pub stdout: Bytes,
     pub stderr: Bytes,
+    pub compile_stderr: Bytes,
     pub killed_by_wall_timeout: bool,
 }
 
@@ -64,6 +65,7 @@ pub fn run(
     scratch: &Scratch,
     cgroup: &Cgroup,
     limits: &ResourceLimits,
+    has_cached_binary: bool,
 ) -> Result<RawOutcome, SandboxError> {
     let wall_time = std::time::Duration::from_secs_f64(limits.wall_time);
     let max_stdout = limits.max_stdout as usize;
@@ -76,6 +78,8 @@ pub fn run(
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe stdout: {e}")))?;
     let (stderr_rd, stderr_wr) =
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe stderr: {e}")))?;
+    let (compile_rd, compile_wr) =
+        pipe().map_err(|e| SandboxError::Spawn(format!("pipe compile: {e}")))?;
     let (ready_rd, ready_wr) =
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe ready: {e}")))?;
     let (start_rd, start_wr) =
@@ -94,6 +98,7 @@ pub fn run(
         ForkResult::Parent { child } => {
             drop(stdout_wr);
             drop(stderr_wr);
+            drop(compile_wr);
             drop(start_rd);
             drop(ready_wr);
 
@@ -121,9 +126,10 @@ pub fn run(
             let _ = write(&start_wr, b"1");
             drop(start_wr);
 
-            // Read stdout/stderr concurrently with a size cap.
+            // Read stdout/stderr/compile_stderr concurrently with a size cap.
             let stdout = std::thread::spawn(move || read_capped(stdout_rd, max_stdout));
             let stderr = std::thread::spawn(move || read_capped(stderr_rd, max_stderr));
+            let compile_stderr = std::thread::spawn(move || read_capped(compile_rd, max_stderr));
 
             // Wall-clock budget; on overrun we ask the cgroup to atomically
             // SIGKILL every process in the sandbox.
@@ -135,17 +141,22 @@ pub fn run(
             let stderr = stderr
                 .join()
                 .map_err(|_| SandboxError::Internal("stderr reader panicked".into()))?;
+            let compile_stderr = compile_stderr
+                .join()
+                .map_err(|_| SandboxError::Internal("compile stderr reader panicked".into()))?;
 
             Ok(RawOutcome {
                 exit_status: status,
                 stdout,
                 stderr,
+                compile_stderr,
                 killed_by_wall_timeout,
             })
         }
         ForkResult::Child => {
             drop(stdout_rd);
             drop(stderr_rd);
+            drop(compile_rd);
             drop(ready_rd);
             drop(start_wr);
 
@@ -162,9 +173,11 @@ pub fn run(
                 &source_file,
                 &stdout_wr,
                 &stderr_wr,
+                &compile_wr,
                 compile_argv.as_deref(),
                 &run_argv,
                 &env_strings,
+                has_cached_binary,
             ) {
                 eprintln!("zerocode child: {e}");
                 std::process::exit(127);
@@ -189,9 +202,11 @@ fn run_child(
     source_file: &str,
     stdout_wr: &OwnedFd,
     stderr_wr: &OwnedFd,
+    compile_wr: &OwnedFd,
     compile_argv: Option<&[CString]>,
     run_argv: &[CString],
     env_strings: &[CString],
+    has_cached_binary: bool,
 ) -> Result<(), SandboxError> {
     // 1. Enter the namespaces. We appear as "nobody" inside the new user
     //    namespace until the parent writes our uid_map.
@@ -255,8 +270,12 @@ fn run_child(
     //     so the worker's triage tree knows to populate `compile_output` from
     //     stderr instead of treating it as a run-phase exit code.
     if let Some(compile_argv) = compile_argv {
-        if !compile_argv.is_empty() {
-            run_compile_phase(compile_argv, env_strings)?;
+        if !compile_argv.is_empty() && !has_cached_binary {
+            run_compile_phase(compile_argv, env_strings, compile_wr)?;
+            // Write the compiled binary to the exchange file so the parent can
+            // read it from scratch_dir/artifact after we exit. Best-effort —
+            // the cache is an optimisation, not a correctness requirement.
+            let _ = std::fs::copy("/box/prog", "/box/.artifact");
         }
     }
 
@@ -281,11 +300,18 @@ fn run_child(
 fn run_compile_phase(
     compile_argv: &[CString],
     env_strings: &[CString],
+    compile_wr: &OwnedFd,
 ) -> Result<(), SandboxError> {
     // SAFETY: we're already inside the outer child; fork is permitted but
     // the sub-child must restrict itself to async-signal-safe ops + execvpe.
     match unsafe { fork() }.map_err(|e| SandboxError::Spawn(format!("compile fork: {e}")))? {
         ForkResult::Child => {
+            // Redirect the sub-child's stderr to the compile pipe so
+            // compiler diagnostics are captured separately from run-phase
+            // stderr. The parent reads compile_rd in a dedicated thread.
+            dup2_stderr(compile_wr)
+                .map_err(|e| SandboxError::Spawn(format!("dup2 compile stderr: {e}")))
+                .unwrap_or_else(|_| std::process::exit(127));
             let prog = match compile_argv.first() {
                 Some(p) => p.clone(),
                 None => {

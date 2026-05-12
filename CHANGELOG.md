@@ -8,6 +8,58 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Compile cache, sandbox hardening & CI expansion
+
+#### Added
+- **Separate compile stderr pipe**: 4th pipe pair (`compile_rd`, `compile_wr`)
+  in `exec.rs` captures compiler diagnostics independently from run-phase
+  stderr. Compile sub-child redirects stderr → compile pipe via `dup2`;
+  parent reads via dedicated thread. `triage::finish()` auto-populates
+  `compile_output` from `raw.compile_stderr` when non-empty — successful
+  compiles now surface warnings into `compile_output`.
+- **Capabilities verification tests**: `all_capabilities_dropped` reads
+  `/proc/self/status` CapInh/CapPrm/CapEff/CapBnd/CapAmb and asserts all
+  zero; `no_new_privs_is_set` calls `prctl(PR_GET_NO_NEW_PRIVS)` and asserts 1.
+- **Compile-artifact cache worker integration**:
+  - `CompileCache` wired into `Runner` struct in `zerocode-worker`.
+  - Cache key computed from `(language_id, source_code)` before
+    `sandbox.execute()`.
+  - On hit: binary injected via `SandboxJob.cached_binary` → scratch dir →
+    `/box/prog`; compile phase skipped entirely.
+  - On miss + successful compile: binary extracted via bind-mounted exchange
+    file at `/box/.artifact` → `SandboxResult.compiled_binary` →
+    `CompileCache::insert()`.
+- **Ops edge-case tests** (`tests/edge_cases/ops.rs`): 7 sandbox-level
+  integration tests (concurrent load, large source, empty stdin EOF, env
+  substitution, unique cgroup paths, wall-time precision, zombie reaping)
+  + 5 API ops tests (backpressure, view serialization, cached flag, params).
+- **Load test script** (`scripts/load-test.sh`): `oha`-based 3-phase load
+  test (warm-up 10s, sustained 60s at 100 RPS, cache-hit burst).
+- **Nightly CI** (`.github/workflows/nightly.yml`): kernel version matrix
+  (ubuntu:22.04 / 24.04 / debian:bookworm), benchmark job, Docker build.
+- **Integration CI job** in `.github/workflows/ci.yml`: Postgres service
+  container + workspace test run.
+- **Per-language Docker tags**: `runners/Dockerfile.slim` multi-stage with
+  8 targets (base, python, node, go, rust, c-cpp, java, full);
+  `scripts/build-runner-tags.sh` builds all tags and prints size table.
+- **sqlx offline mode prep**: `.sqlx/` directory, `SQLX_OFFLINE=true` in
+  `.env.example`. Ready for `cargo sqlx prepare` when CI provisions a DB.
+
+#### Changed
+- `SandboxJob` gains `cached_binary: Option<Bytes>` field.
+- `SandboxResult` gains `compiled_binary: Option<Bytes>` (`#[serde(skip)]`).
+- `exec::run()` and `run_child()` accept `has_cached_binary` flag.
+- `pivot_into_runner()` copies cached binary from scratch to `/box/prog`
+  (chmod +x) and sets up bind-mounted `.artifact` exchange file.
+- `triage::classify()` compile-failed path now reads `raw.compile_stderr`
+  instead of `raw.stderr` for compiler diagnostics.
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (default features) | 78 | 83 | +5 (API ops tests) |
+| Linux (`--features edge-cases`) | +54 | +63 | +9 (ops + capsh + no_new_privs) |
+
 ### DB wiring, benchmarks & cleanup
 
 #### Added

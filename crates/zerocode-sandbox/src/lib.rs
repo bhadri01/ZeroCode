@@ -32,6 +32,9 @@ pub struct SandboxJob {
     pub source_code: Bytes,
     pub stdin: Bytes,
     pub limits: ResourceLimits,
+    /// Pre-compiled binary from the compile cache. When present, the sandbox
+    /// writes it to `/box/prog` and skips the compile phase entirely.
+    pub cached_binary: Option<Bytes>,
 }
 
 /// What every sandbox returns. The worker's triage decision tree (see
@@ -50,6 +53,11 @@ pub struct SandboxResult {
     pub memory_kb: u32,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
+    /// Binary produced by the compile phase. The worker stores this in the
+    /// compile-artifact cache so subsequent runs of the same source can skip
+    /// recompilation.
+    #[serde(skip)]
+    pub compiled_binary: Option<Bytes>,
 }
 
 /// Universal interface for any isolation backend. Concrete impls in this crate

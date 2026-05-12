@@ -40,7 +40,34 @@ impl Scratch {
             SandboxError::MountSetup(format!("write stdin {}: {e}", stdin_path.display()))
         })?;
 
+        // If the worker supplied a cached compile artifact, write it so
+        // `pivot_into_runner` can copy it into /box/prog and skip compilation.
+        if let Some(binary) = &job.cached_binary {
+            let prog = path.join("cached_prog");
+            fs::write(&prog, binary)
+                .map_err(|e| SandboxError::MountSetup(format!("write cached_prog: {e}")))?;
+        }
+
+        // Empty exchange file for compiled-binary extraction. A bind-mount in
+        // `pivot_into_runner` links this to /box/.artifact inside the sandbox;
+        // after a successful compile the child writes the binary here so the
+        // parent can read it post-exit.
+        fs::write(path.join("artifact"), b"")
+            .map_err(|e| SandboxError::MountSetup(format!("create artifact exchange: {e}")))?;
+
         Ok(Self { path })
+    }
+
+    /// Read the compiled binary that the child wrote via the bind-mounted
+    /// exchange file. Returns `None` if the file is empty (interpreted language
+    /// or compile failed).
+    pub fn read_artifact(&self) -> Option<Vec<u8>> {
+        let data = fs::read(self.path.join("artifact")).ok()?;
+        if data.is_empty() { None } else { Some(data) }
+    }
+
+    pub fn has_cached_binary(&self) -> bool {
+        self.path.join("cached_prog").exists()
     }
 
     pub fn destroy(self) {

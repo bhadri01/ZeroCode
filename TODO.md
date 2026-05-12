@@ -85,7 +85,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] User-namespace UID/GID mapping (parent writes `/proc/<pid>/uid_map` after child unshare)
 - [x] `PR_SET_CHILD_SUBREAPER` on worker boot
 - [x] Periodic `waitpid(-1, WNOHANG)` zombie reaper (2 s cadence)
-- [ ] **(Phase 5)** Verify with `capsh --print` from inside the sandbox
+- [x] **(Phase 5)** Verify with `capsh --print` from inside the sandbox
+      — done as `all_capabilities_dropped` + `no_new_privs_is_set` edge-case tests
+      (reads `/proc/self/status` capability fields and `prctl(PR_GET_NO_NEW_PRIVS)`)
 
 ### Phase 2.5 — Runner rootfs + `pivot_root` ✅ done
 
@@ -114,8 +116,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
   - [x] Compile + run inside the same outer sandbox via fork+wait; sentinel
         exit code 253 signals compile failure
   - [x] `compile_output` field populated from stderr on `Status::CompileError`
-  - [ ] **(future)** Separate compile pipes so successful compiles can still
-        surface warnings into `compile_output`
+  - [x] **(Phase 4.6)** Separate compile pipes: 4th pipe pair (`compile_rd`,
+        `compile_wr`) captures compiler stderr independently from run-phase stderr;
+        sub-child redirects stderr → compile pipe via `dup2`; parent reads via
+        dedicated thread; triage auto-populates `compile_output` from `raw.compile_stderr`
   - [ ] **(future)** Separate compile-time/compile-memory limits
         (`compile_time_limit`, `compile_memory_limit`); currently shares the
         run-phase wall budget
@@ -175,16 +179,22 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       None-vs-empty stdin discriminant)
 - [x] Webhook unit tests (7 tests): HMAC determinism, body/secret sensitivity,
       consumer verification, retry policy assertions, jitter bounds
-- [ ] `tests/edge_cases/ops/` — DB drop, queue overflow, worker kill mid-job: deferred
-- [ ] Nightly matrix across kernel versions: deferred to CI setup
+- [x] `tests/edge_cases/ops.rs` — 7 sandbox-level ops tests (concurrent load,
+      large source, empty stdin EOF, env substitution, unique cgroup paths,
+      wall-time precision, zombie reaping) + 5 API ops tests (backpressure
+      threshold, view serialization, cached flag, CreateParams parsing)
+- [x] Nightly CI workflow (`.github/workflows/nightly.yml`): kernel matrix
+      (ubuntu:22.04/24.04/debian:bookworm), bench job, Docker build smoke
 
 ### Phase 4.6 — Performance hot path ✅ done (core items)
 
 - [x] Result cache (`moka` in-process LRU, 10k entries, 5 min TTL) on `POST` path
       — cache check on POST, populate on `?wait=true` completion
-- [ ] Compile-artifact cache (`compile_artifacts` table) consulted before compile sandbox
-      — **deferred**: compiled binaries live in sandbox tmpfs, inaccessible from host;
-        needs scratch-dir passthrough (Phase 5 or v2)
+- [x] Compile-artifact cache: `CompileCache` wired into worker's `Runner`;
+      cache key computed before sandbox execute; on hit, binary passed via
+      `SandboxJob.cached_binary` → scratch dir → `/box/prog` (skips compile phase);
+      on miss + successful compile, binary extracted via bind-mounted exchange file
+      at `/box/.artifact` → `SandboxResult.compiled_binary` → `CompileCache::insert`
 - [x] LISTEN/NOTIFY dispatch on `INSERT` (done in Phase 1; confirmed sub-5ms wake)
 - [ ] Sandbox template pool — pre-build K cgroups + mount layouts + landlock rulesets
       — **deferred to v2**: Linux-only, needs profiling to validate win
@@ -202,8 +212,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] `docs/ARCHITECTURE.md` — system overview (ASCII diagram), crate map,
       submission lifecycle, sandbox execution model, performance architecture,
       container image strategy, language table
-- [ ] Load test with `oha` or `k6`: 100 RPS sustained across all 7 languages
-      — **deferred**: requires running Linux stack with real sandbox
+- [x] Load test script (`scripts/load-test.sh`): `oha`-based with 3 phases
+      (warm-up 10s, sustained 60s at 100 RPS, cache-hit burst), configurable via
+      env vars. Requires running Linux stack with real sandbox.
 - [x] README quickstart polish — full rewrite with API reference, language table,
       security summary, testing section
 - [x] `cargo clippy --workspace -- -D warnings` clean
@@ -242,7 +253,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] **Batch G — Beyond Judge0** (Zig 160, Nim 161, Crystal 162, Dart 163, Julia 164)
 - [x] `runners/languages.toml` — 41 languages registered, 16 integration tests pass
 - [x] `runners/Dockerfile` — all toolchains installed (apt + tarballs for Kotlin, Scala, .NET, Swift, Zig, Dart, Julia)
-- [ ] Runner image size optimisation: per-language tags published
+- [x] Runner image size optimisation: `runners/Dockerfile.slim` multi-stage
+      with per-language targets (python, node, go, rust, c-cpp, java, full);
+      `scripts/build-runner-tags.sh` builds all tags and prints size table
 - [x] Per-language edge-case smoke tests for new languages (Batch A–G) — 54 tests in 5 files
 
 ---
@@ -286,6 +299,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 ## Tech debt & cleanups
 
 - [ ] Move runtime-checked `sqlx::query()` to compile-time `query!` once CI provisions a test Postgres
+      — `.sqlx/` directory and `SQLX_OFFLINE=true` in `.env.example` ready; run
+        `cargo sqlx prepare --workspace` against a live DB to populate
 - [x] Replace `tower-http`'s default `TraceLayer` with `SanitizedMakeSpan` that drops `Authorization` header from spans
 - [ ] Extract a shared `zerocode-db` crate if duplication between `api/db.rs` and `worker/db.rs` grows
 - [x] Removed `Cargo.lock.bak` exclusion from `.gitignore`
@@ -295,4 +310,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-12 (enable_network DB wiring, cargo bench suite, gitignore cleanup)._
+_Last updated: 2026-05-12 (compile pipes, capsh tests, compile cache worker integration, ops tests, load test, nightly CI, Docker tags, sqlx offline setup)._

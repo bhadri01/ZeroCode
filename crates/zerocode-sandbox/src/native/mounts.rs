@@ -135,6 +135,34 @@ pub fn pivot_into_runner(
     std::fs::copy(scratch_dir.join("stdin"), box_path.join("stdin"))
         .map_err(|e| SandboxError::MountSetup(format!("copy stdin: {e}")))?;
 
+    // 4a. If a cached compile artifact exists, copy it in and mark executable.
+    let cached = scratch_dir.join("cached_prog");
+    if cached.exists() {
+        std::fs::copy(&cached, box_path.join("prog"))
+            .map_err(|e| SandboxError::MountSetup(format!("copy cached binary: {e}")))?;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            box_path.join("prog"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .map_err(|e| SandboxError::MountSetup(format!("chmod cached binary: {e}")))?;
+    }
+
+    // 4b. Bind-mount the artifact exchange file so writes inside the sandbox
+    // to /box/.artifact pass through to scratch_dir/artifact on the host.
+    let artifact_host = scratch_dir.join("artifact");
+    let artifact_box = box_path.join(".artifact");
+    std::fs::write(&artifact_box, b"")
+        .map_err(|e| SandboxError::MountSetup(format!("touch .artifact: {e}")))?;
+    mount::<Path, Path, str, str>(
+        Some(artifact_host.as_path()),
+        &artifact_box,
+        None,
+        MsFlags::MS_BIND,
+        None,
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("bind artifact exchange: {e}")))?;
+
     // 5. put_old lives inside the box tmpfs so the post-pivot rmdir cleanup
     // never touches the read-only runner image. Each submission has its own
     // tmpfs; no race possible.
