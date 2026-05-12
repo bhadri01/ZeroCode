@@ -26,10 +26,10 @@ pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result
     sqlx::query(
         "INSERT INTO submissions (\
             token, language_id, source_code, stdin, \
-            cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, \
+            cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
             status, callback_url, idempotency_key, idempotency_hash, \
             created_at\
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10, $11, NOW())",
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, NOW())",
     )
     .bind(&token_str)
     .bind(new.language_id as i32)
@@ -39,6 +39,7 @@ pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result
     .bind(new.limits.wall_time as f32)
     .bind(new.limits.memory_mb as i32)
     .bind(new.limits.max_pids as i32)
+    .bind(new.limits.enable_network)
     .bind(new.callback_url)
     .bind(new.idempotency_key)
     .bind(new.idempotency_hash)
@@ -80,7 +81,7 @@ pub struct IdempotencyHit {
 pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Submission>, ApiError> {
     let row = sqlx::query(
         "SELECT token, language_id, status, status_detail, \
-                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, \
+                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
                 exit_code, signal, cpu_time, wall_time, memory_kb, \
                 created_at, finished_at \
@@ -108,7 +109,7 @@ pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Subm
         max_pids: row.get::<i32, _>("max_pids") as u32,
         max_stdout: 64 * 1024,
         max_stderr: 64 * 1024,
-        enable_network: false,
+        enable_network: row.get("enable_network"),
     };
 
     let stdout: Option<Vec<u8>> = row.get("stdout");
@@ -196,7 +197,7 @@ pub async fn list_submissions(
 
     let rows = sqlx::query(
         "SELECT token, language_id, status, status_detail, \
-                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, \
+                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
                 exit_code, signal, cpu_time, wall_time, memory_kb, \
                 created_at, finished_at \
@@ -229,7 +230,7 @@ pub async fn list_submissions(
             max_pids: row.get::<i32, _>("max_pids") as u32,
             max_stdout: 64 * 1024,
             max_stderr: 64 * 1024,
-            enable_network: false,
+            enable_network: row.get("enable_network"),
         };
 
         let stdout: Option<Vec<u8>> = row.get("stdout");

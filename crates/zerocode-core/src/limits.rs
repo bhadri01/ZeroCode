@@ -62,6 +62,14 @@ impl ResourceLimits {
                 max: ceiling.wall_time,
             });
         }
+        if self.enable_network && !ceiling.enable_network {
+            return Err(CoreError::LimitOutOfRange {
+                field: "enable_network",
+                value: 1.0,
+                min: 0.0,
+                max: 0.0,
+            });
+        }
         Ok(())
     }
 }
@@ -118,5 +126,33 @@ mod tests {
             ..ResourceLimits::default()
         };
         assert!(lim.validate(&ceiling).is_err());
+    }
+
+    #[test]
+    fn enable_network_rejected_when_ceiling_false() {
+        let lim = ResourceLimits {
+            enable_network: true,
+            ..ResourceLimits::default()
+        };
+        let ceiling = ResourceLimits::default(); // enable_network: false
+        assert!(lim.validate(&ceiling).is_err());
+    }
+
+    #[test]
+    fn enable_network_allowed_when_ceiling_true() {
+        let lim = ResourceLimits {
+            enable_network: true,
+            ..ResourceLimits::default()
+        };
+        let ceiling = ResourceLimits {
+            enable_network: true,
+            cpu_time: 30.0,
+            wall_time: 60.0,
+            memory_mb: 1024,
+            max_pids: 256,
+            max_stdout: 1024 * 1024,
+            max_stderr: 1024 * 1024,
+        };
+        assert!(lim.validate(&ceiling).is_ok());
     }
 }

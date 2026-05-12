@@ -52,7 +52,7 @@ pub async fn claim_next(
          WHERE s.token = next.token \
          RETURNING s.token, s.language_id, s.source_code, s.stdin, \
                    s.cpu_time_limit, s.wall_time_limit, s.memory_limit_mb, s.max_pids, \
-                   s.callback_url",
+                   s.enable_network, s.callback_url",
     )
     .bind(worker_id)
     .fetch_optional(pool)
@@ -79,7 +79,7 @@ pub async fn claim_next(
             max_pids: row.get::<i32, _>("max_pids") as u32,
             max_stdout: 64 * 1024,
             max_stderr: 64 * 1024,
-            enable_network: false,
+            enable_network: row.get("enable_network"),
         },
         callback_url: row.get("callback_url"),
     }))

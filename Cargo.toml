@@ -75,6 +75,9 @@ async-trait = "0.1"
 futures = "0.3"
 tokio-stream = "0.1"
 
+# --- benchmarks ---
+criterion = { version = "0.5", features = ["html_reports"] }
+
 # --- v2 (kept here for visibility; not used in v1) ---
 # wasmtime = "44.0"
 # wasmtime-wasi = "44.0"

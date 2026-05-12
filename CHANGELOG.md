@@ -8,6 +8,36 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### DB wiring, benchmarks & cleanup
+
+#### Added
+- **`enable_network` column** wired end-to-end:
+  - Migration `20260512000002_enable_network.sql` adds `BOOLEAN NOT NULL DEFAULT FALSE`.
+  - API `insert_submission` writes the field; `fetch_submission` and
+    `list_submissions` read it back.
+  - Worker `claim_next` reads it into `ResourceLimits`.
+  - `ResourceLimits::validate` rejects `enable_network: true` when the ceiling
+    says `false`.
+  - Two new unit tests: `enable_network_rejected_when_ceiling_false`,
+    `enable_network_allowed_when_ceiling_true`.
+- **`cargo bench` suite** with Criterion 0.5:
+  - `zerocode-core/benches/core_ops.rs` (5 benches): ULID token generation,
+    token parse roundtrip, Payload from 64 KB bytes, base64 decode 4 KB,
+    ResourceLimits validate.
+  - `zerocode-cache/benches/cache_key.rs` (4 benches): result key at 14 B /
+    4 KB / 128 KB source sizes, compile key at 4 KB.
+  - Run with `cargo bench -p zerocode-core` / `cargo bench -p zerocode-cache`.
+
+#### Changed
+- **`.gitignore`**: removed stale `Cargo.lock.bak` entry.
+- **`TODO.md`**: fixed stale Phase 2 cross-references (pivot_root, /box tmpfs
+  were done in Phase 2.5 but still showed `[ ]`).
+
+#### Test count
+| Env | After CI/tests | After DB wiring | Delta |
+|---|---|---|---|
+| macOS (default features) | 76 | 78 | +2 (enable_network validation) |
+
 ### CI, tests & polish (post-hardening)
 
 #### Added

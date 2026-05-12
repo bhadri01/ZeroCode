@@ -21,3 +21,10 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 bytes = { workspace = true }
 hex = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "cache_key"
+harness = false

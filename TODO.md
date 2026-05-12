@@ -75,13 +75,13 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       `finit_module`, `delete_module`)
 - [x] Landlock ruleset (ABI v1): `/usr` `/lib` `/lib64` `/bin` `/sbin` `/etc` RO;
       scratch dir + `/tmp` RW
-- [ ] **(Phase 2.5)** `pivot_root` into the read-only runner rootfs
+- [x] **(Phase 2.5)** `pivot_root` into the read-only runner rootfs *(done in Phase 2.5)*
 - [x] Per-submission `/tmp` tmpfs (size 64 MB, nosuid+nodev)
-- [ ] **(Phase 2.5)** Per-submission `/box` tmpfs sized to `memory_mb`
+- [x] **(Phase 2.5)** Per-submission `/box` tmpfs sized to `memory_mb` *(done in Phase 2.5)*
 - [x] Loopback `lo` brought up inside NET namespace (SIOCSIFFLAGS ioctl)
-- [ ] **(Phase 3)** `enable_network` flag in `LanguageSpec` (already wired in
-      `ResourceLimits`; just needs the network ns to keep `lo` up but allow
-      egress when set)
+- [x] **(Phase 3)** `enable_network` flag wired through DB (migration, insert,
+      fetch, claim) + validation ceiling check. Sandbox enforcement deferred to
+      when a language spec actually sets it.
 - [x] User-namespace UID/GID mapping (parent writes `/proc/<pid>/uid_map` after child unshare)
 - [x] `PR_SET_CHILD_SUBREAPER` on worker boot
 - [x] Periodic `waitpid(-1, WNOHANG)` zombie reaper (2 s cadence)
@@ -191,7 +191,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] HTTP/2 enabled end-to-end — `axum::serve` auto-negotiates h2c via hyper's auto builder
 - [x] **Streaming endpoint**: `GET /v1/submissions/{token}/stream` — SSE from per-token Postgres NOTIFY
 - [x] `?wait=true` long-poll optimization — LISTEN/NOTIFY with polling fallback
-- [ ] `cargo bench` suite — `cargo bench` gate enforced in CI — **deferred to Phase 5**
+- [x] `cargo bench` suite — `core_ops` (token, payload, limits) + `cache_key` (result key, compile key at multiple sizes)
 
 ### Phase 5 — Threat model + docs + load test ✅ done (core items)
 
@@ -288,11 +288,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] Move runtime-checked `sqlx::query()` to compile-time `query!` once CI provisions a test Postgres
 - [x] Replace `tower-http`'s default `TraceLayer` with `SanitizedMakeSpan` that drops `Authorization` header from spans
 - [ ] Extract a shared `zerocode-db` crate if duplication between `api/db.rs` and `worker/db.rs` grows
-- [ ] Remove `Cargo.lock.bak` exclusion once we're sure we never need to vendor lockfiles
+- [x] Removed `Cargo.lock.bak` exclusion from `.gitignore`
 - [x] `cargo deny` config (`deny.toml`): license allowlist, advisory DB, ban openssl-sys, wildcard dep ban
 - [x] CI: GitHub Actions — 7-job workflow (check, test, clippy, fmt, cargo-deny, docker-runner, docker-service)
 - [x] End-to-end smoke test script (`scripts/smoke-test.sh`): docker-compose lifecycle, 6 test cases
 
 ---
 
-_Last updated: 2026-05-12 (CI, edge-case tests, trace filter, idempotency hash fix, webhook tests)._
+_Last updated: 2026-05-12 (enable_network DB wiring, cargo bench suite, gitignore cleanup)._
