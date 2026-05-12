@@ -85,7 +85,8 @@ pub fn run(
     let runner_rootfs = config.runner_rootfs.clone();
     let source_file = spec.source_file.clone();
     let env_strings = build_env(spec, limits);
-    let argv_strings = build_argv(spec);
+    let run_argv = build_argv(spec);
+    let compile_argv = build_compile_argv(spec);
 
     // SAFETY: fork is unsafe in any Rust runtime. Inside the child block we
     // restrict ourselves to async-signal-safe operations and execve.
@@ -161,7 +162,8 @@ pub fn run(
                 &source_file,
                 &stdout_wr,
                 &stderr_wr,
-                &argv_strings,
+                compile_argv.as_deref(),
+                &run_argv,
                 &env_strings,
             ) {
                 eprintln!("zerocode child: {e}");
@@ -172,6 +174,12 @@ pub fn run(
     }
 }
 
+/// Sentinel exit code the outer child uses to tell its grandparent (the
+/// worker) "the compile sub-child failed; treat my stderr as compile_output".
+/// Picked at the top of the 8-bit range to minimise the chance of colliding
+/// with a real program exit. Anything <253 is a real run-phase exit code.
+pub const COMPILE_FAILED_EXIT_CODE: i32 = 253;
+
 fn run_child(
     flags: &CloneFlags,
     ready_wr: &OwnedFd,
@@ -181,7 +189,8 @@ fn run_child(
     source_file: &str,
     stdout_wr: &OwnedFd,
     stderr_wr: &OwnedFd,
-    argv_strings: &[CString],
+    compile_argv: Option<&[CString]>,
+    run_argv: &[CString],
     env_strings: &[CString],
 ) -> Result<(), SandboxError> {
     // 1. Enter the namespaces. We appear as "nobody" inside the new user
@@ -237,20 +246,77 @@ fn run_child(
     landlock_policy::apply(Path::new("/box"))?;
 
     // 11. Seccomp. Must come AFTER NO_NEW_PRIVS or the kernel rejects the
-    //     filter for unprivileged tasks.
+    //     filter for unprivileged tasks. The filter is inherited by any
+    //     fork() below, so the compile sub-child gets it too.
     seccomp::apply_default()?;
 
-    // 12. Hand off to the language run_cmd. argv stays heap-owned via the
-    //     CString vec; execvpe takes references.
-    let prog = argv_strings
+    // 12. If this language has a compile step, run it as a sub-child first.
+    //     On compile failure the outer child exits with COMPILE_FAILED_EXIT_CODE
+    //     so the worker's triage tree knows to populate `compile_output` from
+    //     stderr instead of treating it as a run-phase exit code.
+    if let Some(compile_argv) = compile_argv {
+        if !compile_argv.is_empty() {
+            run_compile_phase(compile_argv, env_strings)?;
+        }
+    }
+
+    // 13. Run phase. argv stays heap-owned via the CString vec; execvpe takes
+    //     references. This is the last thing the outer child does — execvpe
+    //     replaces the process image so we never return here.
+    let prog = run_argv
         .first()
         .ok_or_else(|| SandboxError::Spawn("empty run_cmd".into()))?
         .clone();
-    let argv: Vec<&CString> = argv_strings.iter().collect();
+    let argv: Vec<&CString> = run_argv.iter().collect();
     let envp: Vec<&CString> = env_strings.iter().collect();
     execvpe(&prog, &argv, &envp)
         .map_err(|e| SandboxError::Spawn(format!("execvpe {prog:?}: {e}")))?;
     Ok(())
+}
+
+/// Fork a sub-child that execs the compile command and wait for it. If the
+/// sub-child exits non-zero (or is signalled), the outer child exits with
+/// `COMPILE_FAILED_EXIT_CODE`; otherwise we return normally so the caller
+/// can proceed to execvpe the run command.
+fn run_compile_phase(
+    compile_argv: &[CString],
+    env_strings: &[CString],
+) -> Result<(), SandboxError> {
+    // SAFETY: we're already inside the outer child; fork is permitted but
+    // the sub-child must restrict itself to async-signal-safe ops + execvpe.
+    match unsafe { fork() }.map_err(|e| SandboxError::Spawn(format!("compile fork: {e}")))? {
+        ForkResult::Child => {
+            let prog = match compile_argv.first() {
+                Some(p) => p.clone(),
+                None => {
+                    eprintln!("zerocode compile sub-child: empty compile_cmd");
+                    std::process::exit(127);
+                }
+            };
+            let argv: Vec<&CString> = compile_argv.iter().collect();
+            let envp: Vec<&CString> = env_strings.iter().collect();
+            match execvpe(&prog, &argv, &envp) {
+                Ok(_) => unreachable!(),
+                Err(e) => {
+                    eprintln!("zerocode compile execvpe {prog:?}: {e}");
+                    std::process::exit(127);
+                }
+            }
+        }
+        ForkResult::Parent { child } => {
+            let status = nix::sys::wait::waitpid(child, None)
+                .map_err(|e| SandboxError::Wait(format!("compile wait: {e}")))?;
+            match status {
+                WaitStatus::Exited(_, 0) => Ok(()),
+                _ => {
+                    // Compile failed. Exit with the sentinel so the outer
+                    // worker maps this to Status::CompileError. The stderr
+                    // buffer already contains the compiler's diagnostics.
+                    std::process::exit(COMPILE_FAILED_EXIT_CODE);
+                }
+            }
+        }
+    }
 }
 
 fn drop_all_capabilities() -> Result<(), SandboxError> {
@@ -268,6 +334,18 @@ fn build_argv(spec: &LanguageSpec) -> Vec<CString> {
         .iter()
         .filter_map(|s| CString::new(s.as_bytes()).ok())
         .collect()
+}
+
+fn build_compile_argv(spec: &LanguageSpec) -> Option<Vec<CString>> {
+    let cmd = spec.compile_cmd.as_ref()?;
+    if cmd.is_empty() {
+        return None;
+    }
+    Some(
+        cmd.iter()
+            .filter_map(|s| CString::new(s.as_bytes()).ok())
+            .collect(),
+    )
 }
 
 fn build_env(spec: &LanguageSpec, limits: &ResourceLimits) -> Vec<CString> {

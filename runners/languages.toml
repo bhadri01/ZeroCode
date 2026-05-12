@@ -8,6 +8,52 @@
 #   ${cpu_time}    CPU budget in seconds
 #   ${wall_time}   wall-clock budget in seconds
 #   ${max_pids}    max processes/threads in the cgroup
+#
+# Compiled languages run two phases inside the same sandbox: compile sub-child
+# first, then if it exits zero the outer process execvpes the run_cmd. A
+# non-zero compile sub-child causes the outer process to exit with the
+# sentinel `253`, which the worker maps to Status::CompileError with the
+# compiler's stderr routed into `compile_output`.
+
+[[language]]
+id = 48
+name = "C"
+version = "gcc-14"
+source_file = "main.c"
+compile_cmd = ["/usr/bin/gcc-14", "-O2", "-std=c17", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "main.c", "-o", "prog", "-lm"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 52
+name = "C++"
+version = "g++-14"
+source_file = "main.cpp"
+compile_cmd = ["/usr/bin/g++-14", "-O2", "-std=c++23", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "main.cpp", "-o", "prog", "-lm"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 60
+name = "Go"
+version = "1.x-latest"
+source_file = "main.go"
+compile_cmd = ["/usr/local/go/bin/go", "build", "-o", "prog", "main.go"]
+run_cmd = ["./prog"]
+env = [
+    # GOPATH/GOCACHE writes go to /tmp (writable tmpfs); /box stays clean
+    # for the artifact and the source.
+    ["GOCACHE", "/tmp/.go-cache"],
+    ["GOTMPDIR", "/tmp"],
+    ["GOMAXPROCS", "1"],
+    # Soft memory ceiling — Go's GC will work harder as we approach it. Set
+    # slightly below cgroup memory.max so the runtime gets a chance to free
+    # before the kernel OOM-kills us.
+    ["GOMEMLIMIT", "${memory_mb}MiB"],
+]
+is_archived = false
 
 [[language]]
 id = 63
@@ -18,9 +64,6 @@ compile_cmd = []
 run_cmd = ["/usr/bin/node", "main.js"]
 env = [
     ["NODE_NO_WARNINGS", "1"],
-    # NODE_OPTIONS lets us size V8's old-generation heap against the cgroup
-    # cap and surface unhandled promise rejections as non-zero exits instead
-    # of warnings. Phase 4 will add --experimental-fetch as needed.
     ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
 ]
 is_archived = false
@@ -36,4 +79,19 @@ env = [
     ["PYTHONUNBUFFERED", "1"],
     ["PYTHONDONTWRITEBYTECODE", "1"],
 ]
+is_archived = false
+
+[[language]]
+id = 73
+name = "Rust"
+version = "1.x-latest"
+source_file = "main.rs"
+# Single-file build via rustc (no Cargo). `-C panic=abort` matches our
+# workspace profile and means OOM allocator failures terminate cleanly via
+# SIGABRT, which our triage tree maps to RuntimeError(Sigabrt). `--edition`
+# is taken from rustc's current default (currently 2021); upgrading to 2024
+# is a Phase 4+ chore once rustup ships it as stable default.
+compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "main.rs", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
 is_archived = false

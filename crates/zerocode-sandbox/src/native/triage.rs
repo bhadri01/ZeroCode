@@ -1,6 +1,7 @@
 //! Decision tree from `docs/EDGE_CASES.md` §"Detection / triage flow":
 //! given a finished sandbox, choose the highest-confidence `Status`.
 
+use bytes::Bytes;
 use chrono::Utc;
 use nix::sys::wait::WaitStatus;
 use zerocode_core::status::TimeLimitKind;
@@ -9,7 +10,7 @@ use zerocode_core::{Signal, Status};
 use crate::{SandboxError, SandboxResult};
 
 use super::cgroup::Cgroup;
-use super::exec::RawOutcome;
+use super::exec::{COMPILE_FAILED_EXIT_CODE, RawOutcome};
 
 pub fn classify(
     raw: RawOutcome,
@@ -71,7 +72,30 @@ pub fn classify(
         ));
     }
 
-    // 4-6. Signal exit / non-zero exit / Accepted.
+    // 4. Compile-failed sentinel beats everything else exit-related. The
+    //    outer child raised it after waiting on a non-zero compile sub-child.
+    //    stderr at this point IS the compiler's diagnostic output; we route
+    //    it into `compile_output` and leave stdout/stderr empty since the
+    //    run phase never happened.
+    if matches!(raw.exit_status, WaitStatus::Exited(_, code) if code == COMPILE_FAILED_EXIT_CODE) {
+        let compile_output = raw.stderr.clone();
+        let mut out = finish(
+            raw,
+            cpu_time,
+            wall_elapsed,
+            memory_kb,
+            started_at,
+            Status::CompileError,
+            None,
+        );
+        out.stdout = Bytes::new();
+        out.stderr = Bytes::new();
+        out.compile_output = Some(compile_output);
+        out.exit_code = None; // not a meaningful exit code for the user
+        return Ok(out);
+    }
+
+    // 5-7. Signal exit / non-zero exit / Accepted.
     let (status, signal, exit_code) = match &raw.exit_status {
         WaitStatus::Exited(_, code) => {
             if *code == 0 {
@@ -227,5 +251,36 @@ mod tests {
         .unwrap();
         assert!(matches!(out.status, Status::RuntimeError(Signal::Sigsegv)));
         assert_eq!(out.signal, Some(Signal::Sigsegv));
+    }
+
+    #[test]
+    fn sentinel_253_routes_stderr_to_compile_output() {
+        // Simulate what the outer child does on compile failure: it captures
+        // the compiler's stderr (via the shared stderr pipe) and exits with
+        // COMPILE_FAILED_EXIT_CODE.
+        let r = RawOutcome {
+            exit_status: exited(COMPILE_FAILED_EXIT_CODE),
+            stdout: Bytes::from_static(b"compiler-stdout-noise"),
+            stderr: Bytes::from_static(b"error[E0308]: mismatched types"),
+            killed_by_wall_timeout: false,
+        };
+        let out = classify(
+            r,
+            &dummy_cg(),
+            std::time::Duration::from_secs(15),
+            std::time::Duration::from_millis(80),
+            Utc::now(),
+        )
+        .unwrap();
+        assert!(matches!(out.status, Status::CompileError));
+        // stderr is routed to compile_output, not kept as stderr.
+        assert_eq!(
+            out.compile_output.as_deref().unwrap(),
+            b"error[E0308]: mismatched types"
+        );
+        assert!(out.stderr.is_empty());
+        assert!(out.stdout.is_empty());
+        // exit_code is meaningless when it's the sentinel — we hide it.
+        assert!(out.exit_code.is_none());
     }
 }

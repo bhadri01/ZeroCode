@@ -8,6 +8,60 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Phase 3b — Compile-then-run + Rust, Go, C, C++
+
+#### Added
+- **Two-phase sandbox execution**. When a `LanguageSpec` carries a non-empty
+  `compile_cmd`, the outer sandboxed child forks a sub-child that execs the
+  compile command, waits, and:
+  - on success → execvpes the run command in the same sandbox (everything's
+    already pivoted, capped, dropped, landlocked, seccomp'd),
+  - on failure → exits with sentinel code `253` and lets the triage tree
+    populate `compile_output` from stderr.
+- **`pub const COMPILE_FAILED_EXIT_CODE: i32 = 253`** in
+  `native::exec`. Picked at the top of the 8-bit range to minimise the risk
+  of colliding with a real program exit; documented as a caveat.
+- **Triage path for compile failure**: `WaitStatus::Exited(253)` short-circuits
+  the rest of the decision tree → `Status::CompileError`, `compile_output =
+  raw.stderr`, `stdout/stderr/exit_code` all cleared. New
+  `sentinel_253_routes_stderr_to_compile_output` test asserts the routing.
+- **Four new languages** in [runners/languages.toml](runners/languages.toml):
+  - **C** (id 48, `gcc-14 -O2 -std=c17 -fstack-protector-strong -D_FORTIFY_SOURCE=2 main.c -o prog -lm`)
+  - **C++** (id 52, `g++-14 -O2 -std=c++23 -fstack-protector-strong -D_FORTIFY_SOURCE=2 main.cpp -o prog -lm`)
+  - **Go** (id 60, `go build -o prog main.go`; env: `GOCACHE=/tmp/.go-cache`,
+    `GOTMPDIR=/tmp`, `GOMAXPROCS=1`, `GOMEMLIMIT=${memory_mb}MiB`)
+  - **Rust** (id 73, `rustc -O -C panic=abort main.rs -o prog` — panic=abort
+    so allocator OOMs surface as SIGABRT instead of a long unwind that
+    races the wall budget)
+- **Runner image** ([runners/Dockerfile](runners/Dockerfile)) now installs:
+  - Debian trixie: `gcc-14`, `g++-14`, `libc6-dev`, `libstdc++-14-dev`
+  - **Go**: official `go.dev` tarball, pinned via `GO_VERSION` build arg
+    (default 1.23.4, arch-aware: `amd64`/`arm64`)
+  - **Rust**: rustup stable toolchain into `/usr/local/cargo` + `/usr/local/rustup`
+    so the rustc binary is reachable from every sandboxed submission via
+    `/usr/local/cargo/bin/rustc`.
+- **Registry integration tests** expanded — now asserts:
+  - All Core 6 ids present (48, 52, 60, 63, 71, 73)
+  - Compiled langs (Rust/Go/C/C++) have both `compile_cmd` and `run_cmd`
+  - Interpreted langs (Python/Node.js) have no `compile_cmd`
+  - Go spec carries `GOMEMLIMIT=${memory_mb}…`
+  - Rust spec carries `panic=abort`
+
+#### Changed
+- **`exec::run_child` signature** now takes `compile_argv: Option<&[CString]>`
+  alongside `run_argv: &[CString]`. The control flow inside the child is:
+  setup (unshare → sync → mounts → pivot → dup2 → caps → NNP → landlock →
+  seccomp) → optional compile sub-fork → execvpe run.
+- **Seccomp filter** stays unchanged but now also covers the compile
+  sub-child by kernel inheritance — verified gcc-14, g++-14, rustc, and
+  `go build` don't trip any of our deny rules.
+
+#### Test count
+| Env | After Phase 3a | After Phase 3b | Delta |
+|---|---|---|---|
+| macOS | 40 | 44 | +4 (registry integration: compiled-langs + interpreted + Go memlimit + Rust panic=abort) |
+| Linux | 51 | 56 | +5 (above + sentinel_253_routes_stderr_to_compile_output) |
+
 ### Phase 3a — Node.js 22 + env templating
 
 #### Added

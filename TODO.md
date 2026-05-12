@@ -107,13 +107,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
         `NODE_OPTIONS=--max-old-space-size=${memory_mb} --unhandled-rejections=strict`
   - [x] `${memory_mb}` / `${cpu_time}` / `${wall_time}` / `${max_pids}`
         substitution in `build_env`
-- [ ] **Phase 3b — compile-then-run, single binary**
-  - [ ] Rust (latest stable; single-file `main.rs` via rustc)
-  - [ ] Go (latest stable; `go run` for v1, two-phase `go build` later)
-  - [ ] C (gcc latest)
-  - [ ] C++ (gcc/clang latest, `-O2 -std=c++23`)
-  - [ ] Two-phase compile/run with separate sandboxes
-  - [ ] `compile_output` field surfaced; `CompileError` status on non-zero
+- [x] **Phase 3b — compile-then-run, single binary**
+  - [x] Rust (rustup stable; single-file `main.rs` via rustc, `-C panic=abort`)
+  - [x] Go (official go.dev tarball, `go build main.go`, `GOMEMLIMIT=${memory_mb}MiB`)
+  - [x] C (Debian trixie gcc-14, `-O2 -std=c17 -fstack-protector-strong -D_FORTIFY_SOURCE=2`)
+  - [x] C++ (Debian trixie g++-14, `-O2 -std=c++23 -fstack-protector-strong -D_FORTIFY_SOURCE=2`)
+  - [x] Compile + run inside the same outer sandbox via fork+wait; sentinel
+        exit code 253 signals compile failure
+  - [x] `compile_output` field populated from stderr on `Status::CompileError`
+  - [ ] **(future)** Separate compile pipes so successful compiles can still
+        surface warnings into `compile_output`
+  - [ ] **(future)** Separate compile-time/compile-memory limits
+        (`compile_time_limit`, `compile_memory_limit`); currently shares the
+        run-phase wall budget
 - [ ] **Phase 3c — Java 21 LTS**
   - [ ] `javac` + `java Main` two-phase
   - [ ] `JAVA_TOOL_OPTIONS=-Xmx<mem-256>m -Xss512k -XX:MaxMetaspaceSize=128m
