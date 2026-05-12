@@ -8,6 +8,54 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Phase 2 — Sandbox hardening (seccomp + landlock + userns mapping)
+
+#### Added
+- **User-namespace UID/GID mapping** (`native/userns.rs`): parent writes
+  `/proc/<child>/uid_map`, `gid_map`, and `setgroups=deny` after the child
+  enters `CLONE_NEWUSER`. In-container UID 0 maps to the unprivileged worker
+  UID. **Structurally blocks** the Judge0 CVE-2024-28189 chown-bypass class —
+  there's no mapping for arbitrary host UIDs.
+- **Mount-namespace hardening** (`native/mounts.rs`): `mount("/", MS_PRIVATE | MS_REC)`
+  so subsequent tmpfs mounts don't propagate to the host; tmpfs on `/tmp`
+  (size 64 MB, `nosuid`, `nodev`); loopback `lo` brought up inside the
+  NET namespace via `SIOCSIFFLAGS` ioctl.
+- **Landlock filesystem policy** (`native/landlock_policy.rs`, ABI v1):
+  read-only on `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`; read-write
+  on the per-submission scratch dir + `/tmp` tmpfs. Symlink targets are
+  enforced at the I/O layer (closes Judge0 CVE-2024-28185 class).
+- **Seccomp BPF filter** (`native/seccomp.rs`): allow-by-default with deny
+  rules for `io_uring_*`, `bpf`, `userfaultfd`, `ptrace`, `unshare`, `keyctl`,
+  `mount`, `umount2`, `pivot_root`, `setns`, `reboot`, `kexec_load`,
+  `kexec_file_load`, `add_key`, `request_key`, `swapon`, `swapoff`,
+  `init_module`, `finit_module`, `delete_module`. Each denied call returns
+  `EPERM` to the user program rather than killing it, so language runtimes
+  don't crash on benign probes.
+- **Two-pipe parent/child handshake** in `native/exec.rs`:
+  `ready_pipe` (child → parent: "I've unshared") and `start_pipe`
+  (parent → child: "uid_map written, cgroup attached, proceed"). Replaces the
+  single-pipe sync from Phase 1.5 because the parent now needs to do work
+  *after* the child unshares but *before* the child can do anything else.
+- **Worker-level `PR_SET_CHILD_SUBREAPER`** (`worker/reaper.rs`): orphaned
+  grandchildren reparent to the worker. Periodic `waitpid(-1, WNOHANG)`
+  drains zombies every 2 s. Both Linux-gated; non-Linux dev hosts no-op.
+
+#### Changed
+- **Sandbox child hardening order** finalised:
+  unshare → ready signal → wait for parent → make ns private → tmpfs /tmp →
+  lo up → chdir → dup2 fds → drop caps → `PR_SET_NO_NEW_PRIVS` → **landlock** →
+  **seccomp** → execvpe. seccomp must come *after* `NO_NEW_PRIVS` or the kernel
+  refuses to load the filter for unprivileged tasks.
+- **`nix` workspace features** added: `socket`, `net`, `ioctl` (for the
+  loopback ioctl).
+- **`libseccomp` and `landlock`** promoted from optional `native-hardened`
+  deps to required `[target.'cfg(target_os = "linux")'.dependencies]` —
+  Phase 2 makes them essential, not optional.
+
+#### Fixed
+- Removed an unnecessary `unsafe` block in `mounts::bring_loopback_up` (field
+  access on a `libc::ifreq` is safe; only the `ioctl()` call needs `unsafe`).
+
 ### Phase 1.5 — Linux NativeSandbox (commit `bb73654`)
 
 #### Added

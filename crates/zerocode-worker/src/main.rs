@@ -11,6 +11,7 @@ use ulid::Ulid;
 use zerocode_core::LanguageRegistry;
 
 mod db;
+mod reaper;
 mod runner;
 mod sandbox_select;
 mod sweeper;
@@ -51,6 +52,12 @@ async fn main() -> Result<()> {
 
     tracing::info!(%worker_id, "zerocode-worker starting");
 
+    // Install ourselves as the subreaper before spawning any children so
+    // orphaned grandchildren reparent here instead of to PID 1.
+    if let Err(e) = reaper::install_subreaper() {
+        tracing::warn!(error = %e, "could not install subreaper; orphans may leak");
+    }
+
     let pool = PgPoolOptions::new()
         .max_connections(4)
         .acquire_timeout(Duration::from_secs(2))
@@ -76,20 +83,26 @@ async fn main() -> Result<()> {
     );
     let runner_shutdown = runner.shutdown_handle();
     let sweeper_shutdown = Arc::new(Notify::new());
+    let reaper_shutdown = Arc::new(Notify::new());
 
     let runner_handle = tokio::spawn(runner.run());
     let sweeper_handle = tokio::spawn(sweeper::run(pool.clone(), sweeper_shutdown.clone()));
+    let reaper_handle = tokio::spawn(reaper::run(reaper_shutdown.clone()));
 
     shutdown_signal().await;
     tracing::info!(%worker_id, "shutdown signal received, draining");
     runner_shutdown.notify_waiters();
     sweeper_shutdown.notify_waiters();
+    reaper_shutdown.notify_waiters();
 
     if let Err(e) = runner_handle.await {
         tracing::error!(error = %e, "runner task join failed");
     }
     if let Err(e) = sweeper_handle.await {
         tracing::error!(error = %e, "sweeper task join failed");
+    }
+    if let Err(e) = reaper_handle.await {
+        tracing::error!(error = %e, "reaper task join failed");
     }
 
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");

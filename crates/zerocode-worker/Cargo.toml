@@ -39,3 +39,6 @@ futures = { workspace = true }
 tokio-stream = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true }

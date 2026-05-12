@@ -35,7 +35,7 @@ apalis = "1.0.0-rc.9"
 apalis-sql = { version = "1.0.0-rc.9", features = ["postgres"] }
 
 # --- sandbox ---
-nix = { version = "0.31", features = ["sched", "process", "signal", "mount", "user", "fs"] }
+nix = { version = "0.31", features = ["sched", "process", "signal", "mount", "user", "fs", "socket", "net", "ioctl"] }
 caps = "0.5"
 landlock = "0.4"
 libseccomp = "0.4"

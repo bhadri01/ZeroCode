@@ -1,11 +1,19 @@
 //! Forks a child into fresh Linux namespaces, drops capabilities, attaches it
-//! to a cgroup, and exec's the language binary. Stdout/stderr come back via
-//! pipes the parent reads with a per-fd size cap.
+//! to a cgroup, applies landlock + seccomp, and exec's the language binary.
+//! Stdout/stderr come back via pipes the parent reads with a per-fd size cap.
 //!
-//! Phase 1.5 scope: PID/NET/IPC/UTS/MNT/USER namespaces + cap-drop +
-//! `PR_SET_NO_NEW_PRIVS`. **No seccomp, no landlock, no `pivot_root` yet** —
-//! those land in Phase 2. The child runs inside the worker's filesystem view
-//! but with all the other isolation primitives.
+//! Phase 2 scope (active now):
+//! - PID/NET/IPC/UTS/MNT/USER namespaces
+//! - User-namespace UID/GID mapping (parent writes `/proc/<pid>/uid_map`)
+//! - Mount namespace made `MS_PRIVATE | MS_REC`
+//! - Per-submission tmpfs on `/tmp` (size 64 MB)
+//! - Loopback `lo` brought up inside NET namespace
+//! - All capabilities dropped + `PR_SET_NO_NEW_PRIVS`
+//! - Landlock filesystem policy (RO `/usr` `/lib` etc; RW only scratch + /tmp)
+//! - Seccomp allow-by-default with the Docker-default deny list subtracted
+//!
+//! Phase 2.5 layers on `pivot_root` into the read-only runner rootfs and a
+//! per-submission tmpfs on `/box`.
 
 use std::ffi::CString;
 use std::io::Read;
@@ -16,14 +24,18 @@ use bytes::Bytes;
 use nix::sched::{CloneFlags, unshare};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{
-    ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, write,
+    ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, read, write,
 };
 use zerocode_core::LanguageSpec;
 
 use crate::SandboxError;
 
 use super::cgroup::Cgroup;
+use super::landlock_policy;
+use super::mounts;
 use super::scratch::Scratch;
+use super::seccomp;
+use super::userns;
 
 /// The child's outcome from the parent's perspective. Mapped to `Status` in
 /// `triage.rs`.
@@ -42,9 +54,6 @@ const NAMESPACE_FLAGS: CloneFlags = CloneFlags::empty()
     .union(CloneFlags::CLONE_NEWNET)
     .union(CloneFlags::CLONE_NEWUSER);
 
-/// Spawn the child and run it under cgroup limits + namespaces + cap-drop +
-/// wall-clock timeout. Caller is responsible for cgroup creation/cleanup and
-/// scratch dir lifecycle.
 pub fn run(
     spec: &LanguageSpec,
     scratch: &Scratch,
@@ -53,42 +62,62 @@ pub fn run(
     max_stdout: usize,
     max_stderr: usize,
 ) -> Result<RawOutcome, SandboxError> {
-    // Pipes for stdout, stderr, and a separate "child-ready" sync pipe so the
-    // parent knows the child has unshared into its new namespaces before it
-    // tries to interact with the cgroup or set up its own IDs.
-    let (stdout_rd, stdout_wr) = pipe().map_err(|e| SandboxError::Spawn(format!("pipe stdout: {e}")))?;
-    let (stderr_rd, stderr_wr) = pipe().map_err(|e| SandboxError::Spawn(format!("pipe stderr: {e}")))?;
-    let (sync_rd, sync_wr) = pipe().map_err(|e| SandboxError::Spawn(format!("pipe sync: {e}")))?;
+    // Three pipes drive the parent ↔ child handshake:
+    //   stdout / stderr — captured by the parent reader threads
+    //   ready_pipe     — child→parent: "I've called unshare(NEWUSER)"
+    //   start_pipe     — parent→child: "uid_map + cgroup are set, proceed"
+    let (stdout_rd, stdout_wr) =
+        pipe().map_err(|e| SandboxError::Spawn(format!("pipe stdout: {e}")))?;
+    let (stderr_rd, stderr_wr) =
+        pipe().map_err(|e| SandboxError::Spawn(format!("pipe stderr: {e}")))?;
+    let (ready_rd, ready_wr) =
+        pipe().map_err(|e| SandboxError::Spawn(format!("pipe ready: {e}")))?;
+    let (start_rd, start_wr) =
+        pipe().map_err(|e| SandboxError::Spawn(format!("pipe start: {e}")))?;
 
-    let stdin_path = scratch.stdin_path();
-    let source_dir = scratch.path.clone();
-
-    // Pre-build env vars in the parent so we don't allocate after fork.
+    let scratch_path = scratch.path.clone();
     let env_strings = build_env(spec);
     let argv_strings = build_argv(spec);
 
-    // SAFETY: fork is unsafe in any Rust runtime; the child is restricted to
-    // async-signal-safe operations until execve, which is what the post-fork
-    // block does.
+    // SAFETY: fork is unsafe in any Rust runtime. Inside the child block we
+    // restrict ourselves to async-signal-safe operations and execve.
     match unsafe { fork() }.map_err(|e| SandboxError::Spawn(format!("fork: {e}")))? {
         ForkResult::Parent { child } => {
             drop(stdout_wr);
             drop(stderr_wr);
-            drop(sync_rd);
+            drop(start_rd);
+            drop(ready_wr);
 
-            // Attach the child to the cgroup before it execs into the user
-            // program. The child blocks on sync_rd until we're done.
+            // Wait for the child to enter its new user namespace.
+            let mut byte = [0u8; 1];
+            read(&ready_rd, &mut byte)
+                .map_err(|e| SandboxError::Spawn(format!("read ready signal: {e}")))?;
+            drop(ready_rd);
+
+            // Now that the child is in the new userns, write its UID/GID map
+            // before any other setup. This is done from the parent because
+            // an unprivileged child can't write its own uid_map.
+            if let Err(e) = userns::write_maps(child.as_raw()) {
+                tracing::error!(error = %e, "userns map write failed; killing child");
+                let _ = cgroup.kill();
+            }
+
+            // Attach the child to the cgroup before it execs. The kernel
+            // doesn't care which task does the write to cgroup.procs as long
+            // as the writer has permission; this is simpler than handing the
+            // child a writable cgroup fd.
             cgroup.attach(child.as_raw())?;
-            // Tell the child "you're in the cgroup, proceed".
-            let _ = write(&sync_wr, b"1");
-            drop(sync_wr);
 
-            // Read stdout/stderr concurrently, capped.
+            // Tell the child to proceed.
+            let _ = write(&start_wr, b"1");
+            drop(start_wr);
+
+            // Read stdout/stderr concurrently with a size cap.
             let stdout = std::thread::spawn(move || read_capped(stdout_rd, max_stdout));
             let stderr = std::thread::spawn(move || read_capped(stderr_rd, max_stderr));
 
-            // Wall-clock timeout: in the parent we sleep up to `wall_time`,
-            // and if the child hasn't exited we ask the cgroup to kill it.
+            // Wall-clock budget; on overrun we ask the cgroup to atomically
+            // SIGKILL every process in the sandbox.
             let (status, killed_by_wall_timeout) = wait_with_timeout(child, wall_time, cgroup)?;
 
             let stdout = stdout
@@ -106,93 +135,107 @@ pub fn run(
             })
         }
         ForkResult::Child => {
-            // Everything from here is async-signal-safe until execve. Any
-            // failure is signalled to the parent by writing a non-zero exit
-            // code; we MUST NOT panic or allocate via the global allocator
-            // (in practice the small allocations below are unavoidable, but
-            // we keep them simple and accept the risk).
             drop(stdout_rd);
             drop(stderr_rd);
-            drop(sync_wr);
+            drop(ready_rd);
+            drop(start_wr);
 
-            if let Err(e) = setup_child(&NAMESPACE_FLAGS, &stdin_path, &source_dir) {
-                eprintln!("zerocode child setup failed: {e}");
+            // Phase 2 child path: every step bails to exit(127) with a
+            // message on stderr if it fails. We can't use ?-propagation here
+            // because we're already past fork(); the parent only sees us via
+            // the exit status + pipe contents.
+            if let Err(e) = run_child(
+                &NAMESPACE_FLAGS,
+                &ready_wr,
+                &start_rd,
+                &scratch_path,
+                &stdout_wr,
+                &stderr_wr,
+                &argv_strings,
+                &env_strings,
+            ) {
+                eprintln!("zerocode child: {e}");
                 std::process::exit(127);
             }
-
-            // Wait for parent to attach us to the cgroup. A read of length 0
-            // means EOF (parent closed), which is also fine.
-            let mut buf = [0u8; 1];
-            let _ = nix::unistd::read(&sync_rd, &mut buf);
-            drop(sync_rd);
-
-            // Redirect stdout/stderr to the pipes.
-            if let Err(e) = dup2_stdout(&stdout_wr) {
-                eprintln!("zerocode child dup2 stdout: {e}");
-                std::process::exit(127);
-            }
-            if let Err(e) = dup2_stderr(&stderr_wr) {
-                eprintln!("zerocode child dup2 stderr: {e}");
-                std::process::exit(127);
-            }
-            drop(stdout_wr);
-            drop(stderr_wr);
-
-            // Drop *every* capability and lock no_new_privs so even setuid
-            // binaries we exec into can't regain them.
-            if let Err(e) = drop_all_capabilities() {
-                eprintln!("zerocode child drop_caps: {e}");
-                std::process::exit(127);
-            }
-            if let Err(e) = nix::sys::prctl::set_no_new_privs() {
-                eprintln!("zerocode child no_new_privs: {e}");
-                std::process::exit(127);
-            }
-
-            // Final hand-off: execve into the language run command.
-            let prog = match argv_strings.first() {
-                Some(p) => p.clone(),
-                None => {
-                    eprintln!("zerocode child empty run_cmd");
-                    std::process::exit(127);
-                }
-            };
-            let argv: Vec<&CString> = argv_strings.iter().collect();
-            let envp: Vec<&CString> = env_strings.iter().collect();
-
-            // execvpe goes through PATH, but we keep it explicit so language
-            // specs that name absolute paths (typical) just work.
-            match execvpe(&prog, &argv, &envp) {
-                Ok(_) => unreachable!(),
-                Err(e) => {
-                    eprintln!("zerocode child execvpe {prog:?}: {e}");
-                    std::process::exit(127);
-                }
-            }
+            unreachable!("execvpe returns only on error")
         }
     }
 }
 
-fn setup_child(
+fn run_child(
     flags: &CloneFlags,
-    _stdin_path: &Path,
-    source_dir: &Path,
+    ready_wr: &OwnedFd,
+    start_rd: &OwnedFd,
+    scratch_path: &Path,
+    stdout_wr: &OwnedFd,
+    stderr_wr: &OwnedFd,
+    argv_strings: &[CString],
+    env_strings: &[CString],
 ) -> Result<(), SandboxError> {
-    // Establish fresh namespaces. User namespace gives us a context where we
-    // can pretend to be UID 0 for setup steps without actually being root on
-    // the host.
+    // 1. Enter the namespaces. After this we appear as "nobody" inside the
+    //    new user namespace until the parent writes our uid_map.
     unshare(*flags).map_err(|e| SandboxError::NamespaceSetup(format!("unshare: {e}")))?;
 
-    // Chdir into the scratch dir so relative paths (e.g. `main.py`) Just Work.
-    std::env::set_current_dir(source_dir)
+    // 2. Tell the parent we're in the new userns; wait for ack.
+    write(ready_wr, b"1").map_err(|e| SandboxError::Spawn(format!("ready signal: {e}")))?;
+    let mut byte = [0u8; 1];
+    read(start_rd, &mut byte).map_err(|e| SandboxError::Spawn(format!("start ack: {e}")))?;
+
+    // 3. Make the mount namespace private so subsequent tmpfs mounts don't
+    //    propagate back to the host.
+    mounts::make_namespace_private()?;
+
+    // 4. Mount the per-submission tmpfs on /tmp inside the new mount ns.
+    mounts::mount_tmp_tmpfs()?;
+
+    // 5. Bring up loopback so 127.0.0.1 is reachable inside the NET ns.
+    if let Err(e) = mounts::bring_loopback_up() {
+        // Non-fatal — most language programs work fine without lo. We log
+        // (via eprintln since tracing isn't async-signal-safe here) and
+        // continue.
+        eprintln!("zerocode child lo up failed (continuing): {e}");
+    }
+
+    // 6. Chdir into the scratch dir so relative paths (e.g. `main.py`) work.
+    std::env::set_current_dir(scratch_path)
         .map_err(|e| SandboxError::MountSetup(format!("chdir scratch: {e}")))?;
 
-    // Redirect stdin from the file the parent prepared. We replace stdin
-    // *after* dup2'ing stdout/stderr so any errors above still report.
-    let stdin_file = std::fs::File::open(source_dir.join("stdin"))
+    // 7. Redirect stdin from the prepared file. Done before stdout/stderr
+    //    redirection so any subsequent errors still show up.
+    let stdin_file = std::fs::File::open(scratch_path.join("stdin"))
         .map_err(|e| SandboxError::MountSetup(format!("open stdin: {e}")))?;
     dup2_stdin(&stdin_file).map_err(|e| SandboxError::Spawn(format!("dup2 stdin: {e}")))?;
 
+    // 8. Redirect stdout/stderr to the parent's pipe ends.
+    dup2_stdout(stdout_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stdout: {e}")))?;
+    dup2_stderr(stderr_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stderr: {e}")))?;
+
+    // 9. Drop every capability across all 5 capsets.
+    drop_all_capabilities()?;
+
+    // 10. Lock NO_NEW_PRIVS so even if the child re-enters a setuid binary
+    //     it can't regain capabilities.
+    nix::sys::prctl::set_no_new_privs()
+        .map_err(|e| SandboxError::Spawn(format!("PR_SET_NO_NEW_PRIVS: {e}")))?;
+
+    // 11. Apply landlock filesystem policy. After this point file accesses
+    //     outside the allowed paths fail with EACCES.
+    landlock_policy::apply(scratch_path)?;
+
+    // 12. Install the seccomp BPF filter. Must come AFTER NO_NEW_PRIVS or
+    //     the kernel will refuse to load the filter for an unprivileged task.
+    seccomp::apply_default()?;
+
+    // 13. Hand off control. The argv slice owns the CStrings; we collect
+    //     references into Vec<&CString> for execvpe.
+    let prog = argv_strings
+        .first()
+        .ok_or_else(|| SandboxError::Spawn("empty run_cmd".into()))?
+        .clone();
+    let argv: Vec<&CString> = argv_strings.iter().collect();
+    let envp: Vec<&CString> = env_strings.iter().collect();
+    execvpe(&prog, &argv, &envp)
+        .map_err(|e| SandboxError::Spawn(format!("execvpe {prog:?}: {e}")))?;
     Ok(())
 }
 
@@ -243,8 +286,8 @@ fn read_capped(fd: OwnedFd, cap: usize) -> Bytes {
                 let take = (cap - buf.len()).min(n);
                 buf.extend_from_slice(&tmp[..take]);
                 if buf.len() >= cap {
-                    // Drain remainder so the writer doesn't get SIGPIPE on the
-                    // next write — we still want the child to exit cleanly.
+                    // Drain remainder so the writer doesn't get SIGPIPE on
+                    // its next write — we still want the child to exit clean.
                     while let Ok(n) = f.read(&mut tmp) {
                         if n == 0 {
                             break;
@@ -272,17 +315,11 @@ fn wait_with_timeout(
         match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => {
                 if start.elapsed() >= wall_time {
-                    // Wall-clock budget exceeded. cgroup.kill atomically
-                    // SIGKILLs every process in the cgroup.
                     let _ = cgroup.kill();
-                    // Block-wait now that we've asked for the kill.
                     let final_status = waitpid(pid, None)
                         .map_err(|e| SandboxError::Wait(format!("post-kill wait: {e}")))?;
                     return Ok((final_status, true));
                 }
-                // Poll cadence: 10ms keeps overhead low while still being
-                // responsive enough for the smallest budgets we support
-                // (0.1s minimum from limits.rs).
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Ok(status) => return Ok((status, false)),

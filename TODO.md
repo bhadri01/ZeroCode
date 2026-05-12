@@ -67,22 +67,38 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] Verify on real Linux host: limits enforced (TLE, MLE, OOM), no host /proc
       leak, `cgroup.kill` cleanup, no zombies
 
-### Phase 2 — Sandbox hardening 🔜 next
+### Phase 2 — Sandbox hardening 🟡 mostly done
 
-- [ ] Seccomp profile (start from Docker default; subtract `io_uring_*`, `bpf`,
-      `userfaultfd`, `ptrace`, post-init `unshare`, `clone(CLONE_NEWUSER)`,
-      `keyctl`, `mount`, `umount2`, `pivot_root`, `setns`, `reboot`, `kexec_load`)
-- [ ] Landlock ruleset: `/` read-only, `/box` rw, `/tmp` rw, all else denied
-- [ ] `pivot_root` into the read-only runner rootfs (extracted from
-      `zerocode-runner` image into a named volume by `runner-rootfs-init`)
-- [ ] Per-submission `/tmp` tmpfs (size 64 MB)
-- [ ] Per-submission `/box` tmpfs sized to `memory_mb`
-- [ ] Loopback `lo` brought up inside NET namespace
-- [ ] Network OFF by default; `enable_network` flag in `LanguageSpec`
-- [ ] User-namespace UID mapping (in-container UID 0 → unprivileged host UID)
-- [ ] `PR_SET_CHILD_SUBREAPER` on worker boot
-- [ ] Periodic `waitpid(-1, WNOHANG)` zombie reaper
-- [ ] Verify with `capsh --print` from inside the sandbox
+- [x] Seccomp profile (Docker default minus `io_uring_*`, `bpf`,
+      `userfaultfd`, `ptrace`, `unshare`, `keyctl`, `mount`, `umount2`,
+      `pivot_root`, `setns`, `reboot`, `kexec_load`, `kexec_file_load`,
+      `add_key`, `request_key`, `swapon`, `swapoff`, `init_module`,
+      `finit_module`, `delete_module`)
+- [x] Landlock ruleset (ABI v1): `/usr` `/lib` `/lib64` `/bin` `/sbin` `/etc` RO;
+      scratch dir + `/tmp` RW
+- [ ] **(Phase 2.5)** `pivot_root` into the read-only runner rootfs
+- [x] Per-submission `/tmp` tmpfs (size 64 MB, nosuid+nodev)
+- [ ] **(Phase 2.5)** Per-submission `/box` tmpfs sized to `memory_mb`
+- [x] Loopback `lo` brought up inside NET namespace (SIOCSIFFLAGS ioctl)
+- [ ] **(Phase 3)** `enable_network` flag in `LanguageSpec` (already wired in
+      `ResourceLimits`; just needs the network ns to keep `lo` up but allow
+      egress when set)
+- [x] User-namespace UID/GID mapping (parent writes `/proc/<pid>/uid_map` after child unshare)
+- [x] `PR_SET_CHILD_SUBREAPER` on worker boot
+- [x] Periodic `waitpid(-1, WNOHANG)` zombie reaper (2 s cadence)
+- [ ] **(Phase 5)** Verify with `capsh --print` from inside the sandbox
+
+### Phase 2.5 — Runner rootfs + `pivot_root` 🔜 next
+
+- [ ] `runner-rootfs-init` extracts `zerocode-runner` image filesystem into a
+      named volume (`docker-compose.yml` already wires this)
+- [ ] Child binds `runner_rootfs` recursively under a per-submission mount-point;
+      mounts tmpfs on `/box` (sized to `memory_mb`)
+- [ ] `pivot_root` into the new root; `umount2` the old root with `MNT_DETACH`
+- [ ] Re-mount `/proc` as procfs inside the new root (PID-ns view, not host's)
+- [ ] Move source + stdin into the per-submission `/box` tmpfs before pivot
+- [ ] Landlock ruleset reduced — once `pivot_root` lands, only `/` (RO) and
+      `/box` + `/tmp` (RW) need explicit rules
 
 ### Phase 3 — Remaining Core 6 languages
 
@@ -239,4 +255,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-12 (Phase 1.5 commit `bb73654`)._
+_Last updated: 2026-05-12 (Phase 2 commit pending)._

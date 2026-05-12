@@ -40,10 +40,12 @@ async-trait = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true }
 caps = { workspace = true }
+libseccomp = { workspace = true }
+landlock = { workspace = true }
+libc = "0.2"
 
-# Phase 2 hardening — pulled in by `native-hardened` only.
-landlock = { workspace = true, optional = true }
-libseccomp = { workspace = true, optional = true }
+# Future v2 hardening — pulled in by `native-hardened` only when libcontainer
+# replaces the current direct-primitive implementation.
 libcontainer = { workspace = true, optional = true }
 libcgroups = { workspace = true, optional = true }
 oci-spec = { workspace = true, optional = true }

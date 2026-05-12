@@ -108,8 +108,16 @@ mod cgroup;
 #[cfg(target_os = "linux")]
 mod exec;
 #[cfg(target_os = "linux")]
+mod landlock_policy;
+#[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod mounts;
 #[cfg(target_os = "linux")]
 mod scratch;
 #[cfg(target_os = "linux")]
+mod seccomp;
+#[cfg(target_os = "linux")]
 mod triage;
+#[cfg(target_os = "linux")]
+mod userns;

@@ -2058,6 +2058,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -4750,6 +4751,7 @@ dependencies = [
  "cgroups-rs",
  "chrono",
  "landlock",
+ "libc",
  "libcgroups",
  "libcontainer",
  "libseccomp",
@@ -4789,6 +4791,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
+ "nix 0.31.3",
  "serde",
  "serde_json",
  "sqlx",
