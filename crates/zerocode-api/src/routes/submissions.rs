@@ -84,8 +84,10 @@ pub async fn create(
         &limits,
     );
     if let Some(cached) = state.result_cache().get(&cache_key).await {
+        metrics::counter!("zerocode_result_cache_hits_total").increment(1);
         return Ok(Json(CachedSubmissionView::from(cached)).into_response());
     }
+    metrics::counter!("zerocode_result_cache_misses_total").increment(1);
 
     // Callback URL safety: reject loopback / private ranges to head off SSRF.
     if let Some(url) = &req.callback_url {
@@ -136,6 +138,7 @@ pub async fn create(
         .notify(token)
         .await
         .map_err(|e| ApiError::Internal(format!("pg_notify failed: {e}")))?;
+    metrics::counter!("zerocode_submissions_created_total", "language_id" => req.language_id.to_string()).increment(1);
 
     // ?wait=true: hold the connection until the submission finishes or 30s
     // elapses. Uses LISTEN/NOTIFY so we wake as soon as the worker publishes

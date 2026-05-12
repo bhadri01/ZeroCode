@@ -10,7 +10,7 @@
 //! always FIFO over the queue.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use sqlx::PgPool;
@@ -142,7 +142,9 @@ impl Runner {
             let secret = self.webhook_secret.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = process(
+                metrics::gauge!("zerocode_active_sandboxes").increment(1.0);
+                let start = Instant::now();
+                let result = process(
                     pool.clone(),
                     sandbox,
                     langs,
@@ -151,8 +153,12 @@ impl Runner {
                     &secret,
                     claim,
                 )
-                .await
-                {
+                .await;
+                let elapsed = start.elapsed().as_secs_f64();
+                metrics::gauge!("zerocode_active_sandboxes").decrement(1.0);
+                metrics::histogram!("zerocode_sandbox_duration_seconds").record(elapsed);
+
+                if let Err(e) = result {
                     tracing::error!(error = %e, %token, "submission failed at worker layer");
                     if let Err(write_err) =
                         db::write_sandbox_failure(&pool, token, &e.to_string()).await
@@ -192,14 +198,17 @@ async fn process(
         match compile_cache.get(&key).await {
             Ok(Some(artifact)) => {
                 tracing::info!(%token, "compile cache hit");
+                metrics::counter!("zerocode_compile_cache_hits_total").increment(1);
                 Some(Bytes::from(artifact.binary))
             }
             Ok(None) => {
                 tracing::debug!(%token, "compile cache miss");
+                metrics::counter!("zerocode_compile_cache_misses_total").increment(1);
                 None
             }
             Err(e) => {
                 tracing::warn!(%token, error = %e, "compile cache lookup failed");
+                metrics::counter!("zerocode_compile_cache_misses_total").increment(1);
                 None
             }
         }
@@ -255,6 +264,11 @@ async fn process(
     if let Some(url) = callback_url {
         let status = webhook::deliver(http, webhook_secret, &url, token, &result).await;
         webhook::update_callback_status(&pool, token, status).await;
+        metrics::counter!(
+            "zerocode_webhook_deliveries_total",
+            "status" => status.as_str(),
+        )
+        .increment(1);
         tracing::info!(%token, callback = status.as_str(), "webhook delivered");
     }
 
@@ -262,6 +276,13 @@ async fn process(
 }
 
 fn record_outcome(token: &zerocode_core::Token, result: &SandboxResult) {
+    let status_label = format!("{:?}", result.status);
+    metrics::counter!(
+        "zerocode_submissions_processed_total",
+        "status" => status_label,
+    )
+    .increment(1);
+
     match &result.status {
         Status::Accepted => tracing::info!(
             %token,

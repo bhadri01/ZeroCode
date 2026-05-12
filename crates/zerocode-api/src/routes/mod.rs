@@ -13,6 +13,7 @@ use crate::state::AppState;
 mod health;
 mod languages;
 mod meta;
+mod metrics;
 mod streaming;
 mod submissions;
 
@@ -38,7 +39,8 @@ pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .route("/v1/health", get(health::liveness))
         .route("/v1/ready", get(health::readiness))
-        .route("/v1/about", get(meta::about));
+        .route("/v1/about", get(meta::about))
+        .route("/metrics", get(metrics::prometheus));
 
     let governor_conf = GovernorConfigBuilder::default()
         .per_second(100)
@@ -67,5 +69,6 @@ pub fn router(state: AppState) -> Router {
         .merge(authed)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(trace_layer)
+        .layer(crate::metrics_layer::HttpMetricsLayer)
         .with_state(state)
 }

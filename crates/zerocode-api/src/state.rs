@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use metrics_exporter_prometheus::PrometheusHandle;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use zerocode_cache::ResultCache;
@@ -22,10 +23,15 @@ pub struct Inner {
     pub languages: LanguageRegistry,
     pub jobs: JobNotifier,
     pub result_cache: ResultCache,
+    pub prom_handle: PrometheusHandle,
 }
 
 impl AppState {
-    pub async fn connect(config: ApiConfig, languages: LanguageRegistry) -> Result<Self> {
+    pub async fn connect(
+        config: ApiConfig,
+        languages: LanguageRegistry,
+        prom_handle: PrometheusHandle,
+    ) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(16)
             .acquire_timeout(Duration::from_secs(2))
@@ -42,6 +48,7 @@ impl AppState {
             languages,
             jobs,
             result_cache,
+            prom_handle,
         })))
     }
 
@@ -63,5 +70,9 @@ impl AppState {
 
     pub fn result_cache(&self) -> &ResultCache {
         &self.0.result_cache
+    }
+
+    pub fn prom_handle(&self) -> &PrometheusHandle {
+        &self.0.prom_handle
     }
 }

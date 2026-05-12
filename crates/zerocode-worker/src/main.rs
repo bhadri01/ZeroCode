@@ -11,6 +11,7 @@ use ulid::Ulid;
 use zerocode_core::LanguageRegistry;
 
 mod db;
+mod metrics;
 mod reaper;
 mod retention;
 mod runner;
@@ -46,6 +47,10 @@ struct Args {
     /// delivered without a signature (dev only).
     #[arg(long, env = "ZEROCODE_WEBHOOK_SECRET")]
     webhook_secret: Option<String>,
+
+    /// Bind address for the /metrics Prometheus endpoint.
+    #[arg(long, env = "ZEROCODE_WORKER_METRICS_BIND", default_value = "0.0.0.0:9090")]
+    metrics_bind: String,
 }
 
 #[tokio::main]
@@ -58,6 +63,9 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| format!("worker-{}", Ulid::new()));
 
     tracing::info!(%worker_id, "zerocode-worker starting");
+
+    let prom_handle = metrics::init();
+    metrics::gauge!("zerocode_worker_parallelism").set(0.0);
 
     // Install ourselves as the subreaper before spawning any children so
     // orphaned grandchildren reparent here instead of to PID 1.
@@ -99,10 +107,13 @@ async fn main() -> Result<()> {
     // children rather than the worker process under host memory pressure.
     reaper::set_oom_score_adj();
 
+    metrics::gauge!("zerocode_worker_parallelism").set(parallelism as f64);
+
     let runner_shutdown = runner.shutdown_handle();
     let sweeper_shutdown = Arc::new(Notify::new());
     let reaper_shutdown = Arc::new(Notify::new());
     let retention_shutdown = Arc::new(Notify::new());
+    let metrics_shutdown = Arc::new(Notify::new());
 
     let retention_config = retention::RetentionConfig::from_env();
 
@@ -114,6 +125,11 @@ async fn main() -> Result<()> {
         retention_config,
         retention_shutdown.clone(),
     ));
+    let metrics_handle = tokio::spawn(metrics::serve(
+        args.metrics_bind.clone(),
+        prom_handle,
+        metrics_shutdown.clone(),
+    ));
 
     shutdown_signal().await;
     tracing::info!(%worker_id, "shutdown signal received, draining");
@@ -121,6 +137,7 @@ async fn main() -> Result<()> {
     sweeper_shutdown.notify_waiters();
     reaper_shutdown.notify_waiters();
     retention_shutdown.notify_waiters();
+    metrics_shutdown.notify_waiters();
 
     if let Err(e) = runner_handle.await {
         tracing::error!(error = %e, "runner task join failed");
@@ -133,6 +150,9 @@ async fn main() -> Result<()> {
     }
     if let Err(e) = retention_handle.await {
         tracing::error!(error = %e, "retention task join failed");
+    }
+    if let Err(e) = metrics_handle.await {
+        tracing::error!(error = %e, "metrics task join failed");
     }
 
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");

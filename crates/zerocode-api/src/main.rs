@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use metrics_exporter_prometheus::PrometheusHandle;
 use tracing_subscriber::EnvFilter;
 use zerocode_core::LanguageRegistry;
 
@@ -9,6 +10,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod metrics_layer;
 mod routes;
 mod state;
 
@@ -39,6 +41,7 @@ struct Args {
 async fn main() -> Result<()> {
     init_logging();
     let args = Args::parse();
+    let prom_handle = init_metrics();
 
     let cfg = ApiConfig {
         bind: args.bind.clone(),
@@ -58,7 +61,7 @@ async fn main() -> Result<()> {
     let languages = load_languages(&args.languages_file)?;
     tracing::info!(count = languages.len(), "loaded language registry");
 
-    let state = AppState::connect(cfg, languages)
+    let state = AppState::connect(cfg, languages, prom_handle)
         .await
         .context("building app state")?;
 
@@ -96,6 +99,38 @@ fn init_logging() {
         )
         .json()
         .init();
+}
+
+fn init_metrics() -> PrometheusHandle {
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    let handle = builder.install_recorder().expect("install metrics recorder");
+
+    let collector = metrics_process::Collector::default();
+    collector.describe();
+    collector.collect();
+
+    metrics::describe_counter!(
+        "zerocode_http_requests_total",
+        "Total HTTP requests handled"
+    );
+    metrics::describe_histogram!(
+        "zerocode_http_request_duration_seconds",
+        "HTTP request latency in seconds"
+    );
+    metrics::describe_counter!(
+        "zerocode_submissions_created_total",
+        "Total submissions created"
+    );
+    metrics::describe_counter!(
+        "zerocode_result_cache_hits_total",
+        "Result cache hits"
+    );
+    metrics::describe_counter!(
+        "zerocode_result_cache_misses_total",
+        "Result cache misses"
+    );
+
+    handle
 }
 
 async fn shutdown_signal() {
