@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1.7
+#
+# The worker needs glibc + libseccomp. Built against debian-trixie-slim to
+# match the runner image's libc. Kept distinct from the API image so the
+# blast radius of a worker bug stays small.
+
+FROM rust:1-bookworm AS builder
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config libseccomp-dev clang && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml rust-toolchain.toml ./
+COPY crates ./crates
+COPY migrations ./migrations
+
+# Phase 0 builds without the `native` feature; Phase 1.5 flips it on.
+RUN cargo build --release -p zerocode-worker
+
+FROM debian:trixie-slim AS worker
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libseccomp2 iproute2 && \
+    rm -rf /var/lib/apt/lists/*
+RUN groupadd --system zerocode && useradd --system --gid zerocode --uid 10001 --home /var/lib/zerocode --no-create-home zerocode
+COPY --from=builder /src/target/release/zerocode-worker /usr/local/bin/zerocode-worker
+USER zerocode
+ENTRYPOINT ["/usr/local/bin/zerocode-worker"]

@@ -1,0 +1,101 @@
+# Local dev stack. Not production — `--privileged` defaults are off, but the
+# host preconditions from docs/DEPLOY.md still apply (cgroups v2, kernel >=
+# 5.14, unprivileged_userns_clone=1, etc.).
+#
+# The `runner-rootfs` named volume is populated by `runner-rootfs-init` from
+# the `zerocode-runner` image's filesystem; both the worker (Phase 1.5+) and
+# the rootfs-init mount it.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: zerocode
+      POSTGRES_PASSWORD: zerocode
+      POSTGRES_DB: zerocode
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zerocode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+    entrypoint: ["/usr/local/bin/zerocode-migrate"]
+    command:
+      - --database-url=postgres://zerocode:zerocode@postgres:5432/zerocode
+      - --migrations-dir=/var/lib/zerocode/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  runner-rootfs-init:
+    # Extract the runner image's filesystem into the shared named volume so the
+    # worker can bind-mount it as the sandbox rootfs. One-shot.
+    image: zerocode-runner:dev
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cp -a / /target/ 2>/dev/null || true
+        echo "runner rootfs ready"
+    volumes:
+      - runner-rootfs:/target
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.service
+    environment:
+      DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
+      ZEROCODE_API_BIND: 0.0.0.0:8080
+      ZEROCODE_API_KEY: dev-only-replace-me
+      RUST_LOG: info,zerocode=debug
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    environment:
+      DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
+      ZEROCODE_WORKER_ID: worker-1
+      ZEROCODE_RUNNER_ROOTFS: /var/lib/zerocode/runner-rootfs
+      RUST_LOG: info,zerocode=debug
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      runner-rootfs-init:
+        condition: service_completed_successfully
+    volumes:
+      - runner-rootfs:/var/lib/zerocode/runner-rootfs:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    cap_drop: ["ALL"]
+    cap_add:
+      # Needed inside the worker's own user namespace for unshare/mount/pivot_root.
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    cgroup: private
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  runner-rootfs:

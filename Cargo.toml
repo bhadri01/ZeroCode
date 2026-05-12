@@ -1,0 +1,92 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zerocode-core",
+    "crates/zerocode-sandbox",
+    "crates/zerocode-cache",
+    "crates/zerocode-stream",
+    "crates/zerocode-migrate",
+    "crates/zerocode-api",
+    "crates/zerocode-worker",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+authors = ["ZeroCode Contributors"]
+repository = "https://github.com/zerocode/zerocode"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# --- async runtime + HTTP ---
+tokio = { version = "1.52", features = ["full"] }
+axum = { version = "0.8", features = ["macros", "http2"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "limit", "request-id", "timeout", "compression-gzip"] }
+tower_governor = "0.8"
+hyper = "1.9"
+http = "1.3"
+http-body-util = "0.1"
+
+# --- data + queue ---
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros", "json"] }
+apalis = "1.0.0-rc.9"
+apalis-sql = { version = "1.0.0-rc.9", features = ["postgres"] }
+
+# --- sandbox ---
+nix = { version = "0.31", features = ["sched", "process", "signal", "mount", "user", "fs"] }
+caps = "0.5"
+landlock = "0.4"
+libseccomp = "0.4"
+cgroups-rs = "0.5"
+libcontainer = "0.6"
+libcgroups = "0.6"
+oci-spec = "0.9"
+
+# --- cache + hashing ---
+moka = { version = "0.12", features = ["future"] }
+blake3 = "1.5"
+
+# --- utility ---
+ulid = { version = "1.2", features = ["serde"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "3.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+url = { version = "2.5", features = ["serde"] }
+subtle = "2.6"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+bytes = { version = "1.10", features = ["serde"] }
+
+# --- config + logs + errors ---
+config = { version = "0.15", features = ["toml"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1.0"
+thiserror = "2.0"
+async-trait = "0.1"
+futures = "0.3"
+tokio-stream = "0.1"
+
+# --- v2 (kept here for visibility; not used in v1) ---
+# wasmtime = "44.0"
+# wasmtime-wasi = "44.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+
+# Builds for sandbox tests need full panic info; override per-crate as needed.

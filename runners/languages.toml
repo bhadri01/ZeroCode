@@ -1,0 +1,17 @@
+# Language specs loaded by the API/worker at boot. New languages are added
+# here and in `runners/Dockerfile`. ID space:
+#   1–99    Core 6 (v1)
+#   100+    v1.5 expansion (see plan)
+
+[[language]]
+id = 71
+name = "Python"
+version = "3.13"
+source_file = "main.py"
+compile_cmd = []
+run_cmd = ["/usr/bin/python3.13", "main.py"]
+env = [
+    ["PYTHONUNBUFFERED", "1"],
+    ["PYTHONDONTWRITEBYTECODE", "1"],
+]
+is_archived = false

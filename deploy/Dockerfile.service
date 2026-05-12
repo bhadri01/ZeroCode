@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.7
+#
+# Distroless image for the API + migrate binaries. The worker uses a glibc
+# image (Dockerfile.worker) because libcontainer needs glibc; this image is
+# fully static (musl) so the attack surface is minimal.
+#
+# Build with:
+#   docker build -f deploy/Dockerfile.service -t zerocode-service:dev .
+
+FROM rust:1-bookworm AS builder
+WORKDIR /src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        musl-tools pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-unknown-linux-musl
+
+COPY Cargo.toml rust-toolchain.toml ./
+COPY crates ./crates
+COPY migrations ./migrations
+
+# Build only the API + migrate binaries — sandbox/worker stay out of this image.
+RUN cargo build \
+        --release \
+        --target x86_64-unknown-linux-musl \
+        -p zerocode-api \
+        -p zerocode-migrate
+
+FROM gcr.io/distroless/static-debian12:nonroot AS service
+COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/zerocode-api /usr/local/bin/zerocode-api
+COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/zerocode-migrate /usr/local/bin/zerocode-migrate
+COPY --from=builder /src/migrations /var/lib/zerocode/migrations
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/zerocode-api"]

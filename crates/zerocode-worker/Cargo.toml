@@ -1,0 +1,39 @@
+[package]
+name = "zerocode-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "zerocode-worker"
+path = "src/main.rs"
+
+[features]
+default = []
+# Phase 1 plumbing only — enables NaiveSandbox so we can exercise the worker
+# loop end-to-end before Phase 1.5's native sandbox lands.
+unsafe-naive = ["zerocode-sandbox/unsafe-naive"]
+native = ["zerocode-sandbox/native"]
+
+[dependencies]
+zerocode-core = { path = "../zerocode-core" }
+zerocode-sandbox = { path = "../zerocode-sandbox" }
+zerocode-cache = { path = "../zerocode-cache" }
+zerocode-stream = { path = "../zerocode-stream" }
+
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+ulid = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }

@@ -1,0 +1,41 @@
+[package]
+name = "zerocode-sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Phase 1 plumbing only — spawns subprocesses with a wall-clock timeout and NO
+# isolation. NEVER enable in production. Gated so binaries cannot accidentally
+# ship without the real sandbox.
+unsafe-naive = []
+# Switch on once libcontainer integration lands (Phase 1.5).
+native = ["dep:libcontainer", "dep:libcgroups", "dep:oci-spec", "dep:caps", "dep:landlock", "dep:libseccomp", "dep:cgroups-rs"]
+edge-cases = []
+
+[dependencies]
+zerocode-core = { path = "../zerocode-core" }
+
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bytes = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+
+# Linux primitives. Optional via `native` feature so non-Linux dev hosts can still
+# build the trait + naive impl.
+nix = { workspace = true, optional = true }
+caps = { workspace = true, optional = true }
+landlock = { workspace = true, optional = true }
+libseccomp = { workspace = true, optional = true }
+cgroups-rs = { workspace = true, optional = true }
+libcontainer = { workspace = true, optional = true }
+libcgroups = { workspace = true, optional = true }
+oci-spec = { workspace = true, optional = true }

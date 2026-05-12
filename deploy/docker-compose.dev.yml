@@ -1,0 +1,14 @@
+# Dev overrides: hot-reload binaries from the host build, drop the read-only
+# rootfs constraint, and skip the worker entirely (run it manually via cargo).
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml up postgres migrate
+
+services:
+  api:
+    profiles: ["never"]
+
+  worker:
+    profiles: ["never"]
+
+  runner-rootfs-init:
+    profiles: ["never"]

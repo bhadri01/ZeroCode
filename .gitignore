@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+.DS_Store
+*.swp
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.log
+/data/
+runner-rootfs/
+.sqlx/
