@@ -1,8 +1,14 @@
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+use zerocode_core::LanguageRegistry;
 
+mod auth;
 mod config;
+mod db;
+mod error;
 mod routes;
 mod state;
 
@@ -20,6 +26,13 @@ struct Args {
 
     #[arg(long, env = "ZEROCODE_API_KEY")]
     api_key: String,
+
+    #[arg(
+        long,
+        env = "ZEROCODE_LANGUAGES_FILE",
+        default_value = "runners/languages.toml"
+    )]
+    languages_file: PathBuf,
 }
 
 #[tokio::main]
@@ -42,7 +55,16 @@ async fn main() -> Result<()> {
         },
     };
 
-    let state = AppState::connect(cfg).await.context("building app state")?;
+    let languages = load_languages(&args.languages_file)?;
+    tracing::info!(count = languages.len(), "loaded language registry");
+
+    let state = AppState::connect(cfg, languages)
+        .await
+        .context("building app state")?;
+
+    db::sync_languages(state.pool(), state.languages())
+        .await
+        .context("seeding language rows")?;
 
     let listener = tokio::net::TcpListener::bind(&args.bind)
         .await
@@ -58,6 +80,12 @@ async fn main() -> Result<()> {
 
     tracing::info!("zerocode-api stopped cleanly");
     Ok(())
+}
+
+fn load_languages(path: &std::path::Path) -> Result<LanguageRegistry> {
+    let toml = std::fs::read_to_string(path)
+        .with_context(|| format!("reading languages file at {path:?}"))?;
+    LanguageRegistry::from_toml(&toml).map_err(|e| anyhow::anyhow!(e))
 }
 
 fn init_logging() {

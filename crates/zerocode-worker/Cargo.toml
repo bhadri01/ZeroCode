@@ -37,3 +37,5 @@ chrono = { workspace = true }
 ulid = { workspace = true }
 futures = { workspace = true }
 tokio-stream = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
