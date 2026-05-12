@@ -8,6 +8,36 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Phase 2.5 — `pivot_root` into runner rootfs
+
+#### Added
+- **`mounts::pivot_into_runner`** — full filesystem swap into the runner image:
+  1. recursive bind of `runner_rootfs` onto `<scratch>/root`,
+  2. tmpfs at `<root>/box` (32 MB) and `<root>/tmp` (64 MB) — both `nosuid`+`nodev`,
+  3. copy source + stdin from the host scratch dir into the box tmpfs,
+  4. mkdir `put_old` *inside* the box tmpfs (so the cleanup rmdir can't leak
+     back into the read-only runner image; each submission has its own tmpfs,
+     so there's no race with parallel sandboxes),
+  5. `pivot_root(new_root, put_old)`,
+  6. `umount2("/box/.zc-old", MNT_DETACH)` + `rmdir`,
+  7. `mount("proc", "/proc", "proc", MS_NOSUID|MS_NODEV|MS_NOEXEC)` —
+     fresh procfs scoped to the new PID namespace,
+  8. `chdir("/box")`.
+- **`NativeSandbox::new` boot validation** now requires `runner_rootfs` to
+  exist and contain `/usr` — fails fast with a clear "did
+  `runner-rootfs-init` run?" hint if the operator forgot to populate the
+  volume.
+
+#### Changed
+- **Child syscall order** updated to: unshare → ready signal → wait for parent
+  → make ns private → **pivot_into_runner** (replaces the Phase 2
+  `mount_tmp_tmpfs` + `chdir scratch` pair) → loopback up → dup2 fds → drop
+  caps → `PR_SET_NO_NEW_PRIVS` → landlock → seccomp → execvpe.
+- **Landlock policy target** is now `/box` (post-pivot path) instead of the
+  host scratch dir.
+- Removed `Scratch::source_path` / `Scratch::stdin_path` helpers — replaced by
+  direct copies inside `pivot_into_runner`.
+
 ### Phase 2 — Sandbox hardening (seccomp + landlock + userns mapping)
 
 #### Added

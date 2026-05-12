@@ -24,6 +24,7 @@ pub fn execute(
     let started_inst = std::time::Instant::now();
 
     let raw = match exec::run(
+        config,
         &job.language,
         &scratch,
         &cgroup,

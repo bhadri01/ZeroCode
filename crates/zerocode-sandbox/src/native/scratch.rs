@@ -49,14 +49,6 @@ impl Scratch {
         Ok(Self { path })
     }
 
-    pub fn source_path(&self, source_file: &str) -> PathBuf {
-        self.path.join(source_file)
-    }
-
-    pub fn stdin_path(&self) -> PathBuf {
-        self.path.join("stdin")
-    }
-
     pub fn destroy(self) {
         if let Err(e) = fs::remove_dir_all(&self.path) {
             tracing::warn!(

@@ -30,12 +30,16 @@ use zerocode_core::LanguageSpec;
 
 use crate::SandboxError;
 
+use super::NativeSandboxConfig;
 use super::cgroup::Cgroup;
 use super::landlock_policy;
 use super::mounts;
 use super::scratch::Scratch;
 use super::seccomp;
 use super::userns;
+
+const BOX_TMPFS_MB: u32 = 32;
+const TMP_TMPFS_MB: u32 = 64;
 
 /// The child's outcome from the parent's perspective. Mapped to `Status` in
 /// `triage.rs`.
@@ -55,6 +59,7 @@ const NAMESPACE_FLAGS: CloneFlags = CloneFlags::empty()
     .union(CloneFlags::CLONE_NEWUSER);
 
 pub fn run(
+    config: &NativeSandboxConfig,
     spec: &LanguageSpec,
     scratch: &Scratch,
     cgroup: &Cgroup,
@@ -76,6 +81,8 @@ pub fn run(
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe start: {e}")))?;
 
     let scratch_path = scratch.path.clone();
+    let runner_rootfs = config.runner_rootfs.clone();
+    let source_file = spec.source_file.clone();
     let env_strings = build_env(spec);
     let argv_strings = build_argv(spec);
 
@@ -148,7 +155,9 @@ pub fn run(
                 &NAMESPACE_FLAGS,
                 &ready_wr,
                 &start_rd,
+                &runner_rootfs,
                 &scratch_path,
+                &source_file,
                 &stdout_wr,
                 &stderr_wr,
                 &argv_strings,
@@ -166,68 +175,72 @@ fn run_child(
     flags: &CloneFlags,
     ready_wr: &OwnedFd,
     start_rd: &OwnedFd,
+    runner_rootfs: &Path,
     scratch_path: &Path,
+    source_file: &str,
     stdout_wr: &OwnedFd,
     stderr_wr: &OwnedFd,
     argv_strings: &[CString],
     env_strings: &[CString],
 ) -> Result<(), SandboxError> {
-    // 1. Enter the namespaces. After this we appear as "nobody" inside the
-    //    new user namespace until the parent writes our uid_map.
+    // 1. Enter the namespaces. We appear as "nobody" inside the new user
+    //    namespace until the parent writes our uid_map.
     unshare(*flags).map_err(|e| SandboxError::NamespaceSetup(format!("unshare: {e}")))?;
 
-    // 2. Tell the parent we're in the new userns; wait for ack.
+    // 2. Tell the parent we're in the new userns; wait for ack (uid_map +
+    //    cgroup attach).
     write(ready_wr, b"1").map_err(|e| SandboxError::Spawn(format!("ready signal: {e}")))?;
     let mut byte = [0u8; 1];
     read(start_rd, &mut byte).map_err(|e| SandboxError::Spawn(format!("start ack: {e}")))?;
 
-    // 3. Make the mount namespace private so subsequent tmpfs mounts don't
-    //    propagate back to the host.
+    // 3. Mount-propagation off so our tmpfs mounts don't leak to the host.
     mounts::make_namespace_private()?;
 
-    // 4. Mount the per-submission tmpfs on /tmp inside the new mount ns.
-    mounts::mount_tmp_tmpfs()?;
+    // 4. The big one: rbind the runner rootfs, mount /box and /tmp tmpfs,
+    //    copy source + stdin, pivot_root, remount /proc, chdir /box. After
+    //    this call the child can no longer see anything from the host.
+    mounts::pivot_into_runner(
+        runner_rootfs,
+        scratch_path,
+        source_file,
+        BOX_TMPFS_MB,
+        TMP_TMPFS_MB,
+    )?;
 
     // 5. Bring up loopback so 127.0.0.1 is reachable inside the NET ns.
     if let Err(e) = mounts::bring_loopback_up() {
-        // Non-fatal — most language programs work fine without lo. We log
-        // (via eprintln since tracing isn't async-signal-safe here) and
-        // continue.
         eprintln!("zerocode child lo up failed (continuing): {e}");
     }
 
-    // 6. Chdir into the scratch dir so relative paths (e.g. `main.py`) work.
-    std::env::set_current_dir(scratch_path)
-        .map_err(|e| SandboxError::MountSetup(format!("chdir scratch: {e}")))?;
-
-    // 7. Redirect stdin from the prepared file. Done before stdout/stderr
-    //    redirection so any subsequent errors still show up.
-    let stdin_file = std::fs::File::open(scratch_path.join("stdin"))
-        .map_err(|e| SandboxError::MountSetup(format!("open stdin: {e}")))?;
+    // 6. Redirect stdin from /box/stdin. Done before stdout/stderr so any
+    //    subsequent errors still surface via the original stderr.
+    let stdin_file = std::fs::File::open("/box/stdin")
+        .map_err(|e| SandboxError::MountSetup(format!("open /box/stdin: {e}")))?;
     dup2_stdin(&stdin_file).map_err(|e| SandboxError::Spawn(format!("dup2 stdin: {e}")))?;
 
-    // 8. Redirect stdout/stderr to the parent's pipe ends.
+    // 7. Redirect stdout/stderr to the parent's pipes.
     dup2_stdout(stdout_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stdout: {e}")))?;
     dup2_stderr(stderr_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stderr: {e}")))?;
 
-    // 9. Drop every capability across all 5 capsets.
+    // 8. Drop every capability across all 5 capsets.
     drop_all_capabilities()?;
 
-    // 10. Lock NO_NEW_PRIVS so even if the child re-enters a setuid binary
-    //     it can't regain capabilities.
+    // 9. Lock NO_NEW_PRIVS so even if the child re-enters a setuid binary
+    //    (none should exist in the runner image, but defence in depth) it
+    //    can't regain capabilities.
     nix::sys::prctl::set_no_new_privs()
         .map_err(|e| SandboxError::Spawn(format!("PR_SET_NO_NEW_PRIVS: {e}")))?;
 
-    // 11. Apply landlock filesystem policy. After this point file accesses
-    //     outside the allowed paths fail with EACCES.
-    landlock_policy::apply(scratch_path)?;
+    // 10. Landlock — paths are inside the new root now. /box is RW; system
+    //     paths like /usr, /lib are RO.
+    landlock_policy::apply(Path::new("/box"))?;
 
-    // 12. Install the seccomp BPF filter. Must come AFTER NO_NEW_PRIVS or
-    //     the kernel will refuse to load the filter for an unprivileged task.
+    // 11. Seccomp. Must come AFTER NO_NEW_PRIVS or the kernel rejects the
+    //     filter for unprivileged tasks.
     seccomp::apply_default()?;
 
-    // 13. Hand off control. The argv slice owns the CStrings; we collect
-    //     references into Vec<&CString> for execvpe.
+    // 12. Hand off to the language run_cmd. argv stays heap-owned via the
+    //     CString vec; execvpe takes references.
     let prog = argv_strings
         .first()
         .ok_or_else(|| SandboxError::Spawn("empty run_cmd".into()))?

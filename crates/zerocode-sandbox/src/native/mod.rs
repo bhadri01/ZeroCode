@@ -57,7 +57,16 @@ impl NativeSandbox {
         crate::kernel_check::preflight()?;
         ensure_dir_exists(&config.cgroup_parent, "cgroup_parent")?;
         ensure_dir_exists(&config.scratch_dir, "scratch_dir")?;
-        // runner_rootfs is checked when Phase 2 introduces pivot_root.
+        ensure_dir_exists(&config.runner_rootfs, "runner_rootfs")?;
+        // The runner rootfs must have at least `/usr` populated. If it's an
+        // empty directory the operator forgot to run `runner-rootfs-init`.
+        let canary = config.runner_rootfs.join("usr");
+        if !canary.exists() {
+            return Err(SandboxError::Internal(format!(
+                "runner_rootfs {} looks empty (no /usr); did `runner-rootfs-init` run?",
+                config.runner_rootfs.display()
+            )));
+        }
         Ok(Self {
             config: Arc::new(config),
         })

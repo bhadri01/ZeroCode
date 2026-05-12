@@ -88,17 +88,16 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] Periodic `waitpid(-1, WNOHANG)` zombie reaper (2 s cadence)
 - [ ] **(Phase 5)** Verify with `capsh --print` from inside the sandbox
 
-### Phase 2.5 — Runner rootfs + `pivot_root` 🔜 next
+### Phase 2.5 — Runner rootfs + `pivot_root` ✅ done
 
-- [ ] `runner-rootfs-init` extracts `zerocode-runner` image filesystem into a
-      named volume (`docker-compose.yml` already wires this)
-- [ ] Child binds `runner_rootfs` recursively under a per-submission mount-point;
-      mounts tmpfs on `/box` (sized to `memory_mb`)
-- [ ] `pivot_root` into the new root; `umount2` the old root with `MNT_DETACH`
-- [ ] Re-mount `/proc` as procfs inside the new root (PID-ns view, not host's)
-- [ ] Move source + stdin into the per-submission `/box` tmpfs before pivot
-- [ ] Landlock ruleset reduced — once `pivot_root` lands, only `/` (RO) and
-      `/box` + `/tmp` (RW) need explicit rules
+- [x] `runner-rootfs-init` extracts `zerocode-runner` image filesystem into a
+      named volume (`docker-compose.yml` wires this; ops responsibility to run it)
+- [x] Child binds `runner_rootfs` recursively under a per-submission mount-point;
+      mounts tmpfs on `/box` (32 MB) and `/tmp` (64 MB)
+- [x] `pivot_root` into the new root; `umount2` the old root with `MNT_DETACH`
+- [x] Re-mount `/proc` as procfs inside the new root (PID-ns view, not host's)
+- [x] Copy source + stdin from host scratch dir into the per-submission `/box` tmpfs before pivot
+- [x] `NativeSandbox::new` validates `runner_rootfs` exists + has `/usr`
 
 ### Phase 3 — Remaining Core 6 languages
 

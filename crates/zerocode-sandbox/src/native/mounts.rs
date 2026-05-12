@@ -1,28 +1,33 @@
-//! Mount setup the child does after entering its mount namespace.
+//! Mount setup the child performs after entering its mount namespace.
 //!
-//! Phase 2 scope:
-//! - Make the mount namespace private so propagations don't affect the host.
-//! - Mount a per-submission tmpfs on `/tmp` (size 64 MB) inside the sandbox's
-//!   view so language runtimes that scribble to /tmp (Python pyc fallback,
-//!   gcc intermediates, JVM tooling) have an isolated scratch area.
-//! - Bring up the loopback interface inside the NET namespace so `127.0.0.1`
-//!   resolves. Without this, languages that bind localhost during init (e.g.
-//!   some test frameworks) fail with `ENETUNREACH`.
+//! Phase 2.5 added `pivot_root` into the runner rootfs. The full sequence:
 //!
-//! Phase 2.5 will add `pivot_root` into the runner rootfs + a per-submission
-//! tmpfs on `/box`. Right now the child still sees the worker's filesystem
-//! view, with landlock restricting what it can read/write.
+//! 1. `mount("/", MS_PRIVATE | MS_REC)` — mount-propagation off.
+//! 2. `mount("rbind", runner_rootfs → scratch_dir/root)` — runner image
+//!    becomes the new root candidate.
+//! 3. `mount("tmpfs", scratch_dir/root/box)` — per-submission writable
+//!    scratch, sized so it counts against cgroup memory without dominating it.
+//! 4. `mount("tmpfs", scratch_dir/root/tmp)` — for compilers + runtime scratch.
+//! 5. Copy source + stdin from the host scratch dir into the box tmpfs.
+//! 6. `pivot_root(scratch_dir/root, scratch_dir/root/box/.zc-old)` — put_old
+//!    lives *inside* the box tmpfs so the rmdir-cleanup that follows can't
+//!    leak back into the read-only runner image.
+//! 7. `umount2("/box/.zc-old", MNT_DETACH)` + `rmdir`.
+//! 8. `mount("proc", "/proc")` — fresh procfs view scoped to the new PID ns.
+//! 9. `chdir("/box")` — language run_cmd resolves relative paths against /box.
+//!
+//! `bring_loopback_up` brings `lo` UP inside the NET namespace via
+//! `SIOCSIFFLAGS`; some language runtimes (Python `urllib`) bind `127.0.0.1`
+//! during init and fail with `ENETUNREACH` if it's left DOWN.
 
 use std::ffi::CString;
+use std::path::Path;
 
 use crate::SandboxError;
 
 #[cfg(target_os = "linux")]
 pub fn make_namespace_private() -> Result<(), SandboxError> {
     use nix::mount::{MsFlags, mount};
-    // Setting `/` to MS_PRIVATE | MS_REC prevents any mounts we add from
-    // leaking out to the host's mount propagation. Same incantation
-    // `docker run --mount-propagation=private` uses internally.
     mount::<str, str, str, str>(
         None,
         "/",
@@ -34,56 +39,24 @@ pub fn make_namespace_private() -> Result<(), SandboxError> {
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-pub fn mount_tmp_tmpfs() -> Result<(), SandboxError> {
-    use nix::mount::{MsFlags, mount};
-
-    // 64 MB cap on /tmp keeps a runaway submission from filling the host's
-    // tmpfs region. We pass it as a mount option string; the tmpfs filesystem
-    // honours `size=64M`.
-    let opts = CString::new("size=64m,mode=1777").expect("static cstring");
-    mount(
-        Some("tmpfs"),
-        "/tmp",
-        Some("tmpfs"),
-        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
-        Some(opts.to_bytes()),
-    )
-    .map_err(|e| SandboxError::MountSetup(format!("mount tmpfs /tmp: {e}")))?;
-    Ok(())
-}
-
-/// Bring up the `lo` interface inside the new NET namespace. The kernel
-/// creates `lo` automatically but leaves it DOWN; many language runtimes
-/// fall over without it (Python `urllib`'s `_check_default_url` is a common
-/// surprise).
-///
-/// We send a netlink RTM_NEWLINK with IFF_UP. The nix crate exposes the
-/// SIOCSIFFLAGS ioctl path which is simpler.
+/// Bring up the `lo` interface inside the new NET namespace. Sends
+/// `SIOCSIFFLAGS` with `IFF_UP | IFF_RUNNING` against an AF_INET socket.
 #[cfg(target_os = "linux")]
 pub fn bring_loopback_up() -> Result<(), SandboxError> {
     use nix::libc;
     use std::mem;
     use std::os::fd::AsRawFd;
 
-    // Open an AF_INET dgram socket so we can ioctl on it.
-    let sock = match nix::sys::socket::socket(
+    let sock = nix::sys::socket::socket(
         nix::sys::socket::AddressFamily::Inet,
         nix::sys::socket::SockType::Datagram,
         nix::sys::socket::SockFlag::empty(),
         None,
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(SandboxError::NamespaceSetup(format!(
-                "socket(AF_INET) for lo up: {e}"
-            )));
-        }
-    };
+    )
+    .map_err(|e| SandboxError::NamespaceSetup(format!("socket(AF_INET) for lo up: {e}")))?;
 
     let mut ifreq: libc::ifreq = unsafe { mem::zeroed() };
     let name = b"lo\0";
-    // SAFETY: writing a NUL-terminated short interface name into the fixed-size buffer.
     for (i, b) in name.iter().enumerate() {
         ifreq.ifr_name[i] = *b as libc::c_char;
     }
@@ -97,5 +70,117 @@ pub fn bring_loopback_up() -> Result<(), SandboxError> {
             "SIOCSIFFLAGS lo: {err}"
         )));
     }
+    Ok(())
+}
+
+/// Make `runner_rootfs` the new root for the calling process. The host scratch
+/// directory survives — `Scratch::destroy` cleans it up after the child exits.
+/// After this returns, the child's cwd is `/box`.
+///
+/// `box_size_mb` and `tmp_size_mb` size the two per-submission tmpfs mounts.
+/// Both count against the cgroup's `memory.max`, so picking them too large
+/// leaves no headroom for runtime allocations.
+#[cfg(target_os = "linux")]
+pub fn pivot_into_runner(
+    runner_rootfs: &Path,
+    scratch_dir: &Path,
+    source_file: &str,
+    box_size_mb: u32,
+    tmp_size_mb: u32,
+) -> Result<(), SandboxError> {
+    use nix::mount::{MntFlags, MsFlags, mount, umount2};
+    use nix::unistd::pivot_root;
+
+    let new_root = scratch_dir.join("root");
+
+    // 1. Materialise new_root and bind the runner image at it. Recursive so
+    // any mounts inside the runner image come along.
+    std::fs::create_dir_all(&new_root).map_err(|e| {
+        SandboxError::MountSetup(format!("mkdir {}: {e}", new_root.display()))
+    })?;
+    mount::<Path, Path, str, str>(
+        Some(runner_rootfs),
+        &new_root,
+        None,
+        MsFlags::MS_BIND | MsFlags::MS_REC,
+        None,
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("rbind runner_rootfs: {e}")))?;
+
+    // 2. Per-submission tmpfs at /box. The runner image already provides the
+    // mount-point (`runners/Dockerfile` creates /box at build time).
+    let box_path = new_root.join("box");
+    let box_opts = CString::new(format!("size={box_size_mb}m,mode=0700"))
+        .expect("box mount option string");
+    mount::<str, Path, str, [u8]>(
+        Some("tmpfs"),
+        &box_path,
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Some(box_opts.to_bytes()),
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("tmpfs /box: {e}")))?;
+
+    // 3. Per-submission tmpfs at /tmp.
+    let tmp_path = new_root.join("tmp");
+    let tmp_opts = CString::new(format!("size={tmp_size_mb}m,mode=1777"))
+        .expect("tmp mount option string");
+    mount::<str, Path, str, [u8]>(
+        Some("tmpfs"),
+        &tmp_path,
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Some(tmp_opts.to_bytes()),
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("tmpfs /tmp: {e}")))?;
+
+    // 4. Source + stdin into the box tmpfs. We deliberately copy rather than
+    // bind-mount: the box tmpfs is per-submission and writable, so the child
+    // can read/modify these without escaping to a shared host path.
+    std::fs::copy(scratch_dir.join(source_file), box_path.join(source_file))
+        .map_err(|e| SandboxError::MountSetup(format!("copy source: {e}")))?;
+    std::fs::copy(scratch_dir.join("stdin"), box_path.join("stdin"))
+        .map_err(|e| SandboxError::MountSetup(format!("copy stdin: {e}")))?;
+
+    // 5. put_old lives inside the box tmpfs so the post-pivot rmdir cleanup
+    // never touches the read-only runner image. Each submission has its own
+    // tmpfs; no race possible.
+    let put_old_host = box_path.join(".zc-old");
+    std::fs::create_dir(&put_old_host).map_err(|e| {
+        SandboxError::MountSetup(format!("mkdir put_old: {e}"))
+    })?;
+
+    // 6. Make new_root the root. put_old captures the old root mount.
+    pivot_root(&new_root, &put_old_host)
+        .map_err(|e| SandboxError::MountSetup(format!("pivot_root: {e}")))?;
+
+    // 7. From here, host paths are inaccessible. Walk to / so subsequent
+    // operations don't resolve against the now-detached cwd.
+    std::env::set_current_dir("/")
+        .map_err(|e| SandboxError::MountSetup(format!("chdir /: {e}")))?;
+
+    // 8. Detach the old root. MNT_DETACH is the lazy umount that succeeds even
+    // if the old root has busy children; the actual teardown happens when
+    // nothing references those mounts anymore.
+    umount2("/box/.zc-old", MntFlags::MNT_DETACH)
+        .map_err(|e| SandboxError::MountSetup(format!("umount /box/.zc-old: {e}")))?;
+    std::fs::remove_dir("/box/.zc-old")
+        .map_err(|e| SandboxError::MountSetup(format!("rmdir /box/.zc-old: {e}")))?;
+
+    // 9. Fresh /proc reflecting the new PID namespace (process 1 = our child).
+    // The runner image's own /proc directory is just an empty mount point.
+    mount::<str, str, str, str>(
+        Some("proc"),
+        "/proc",
+        Some("proc"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+        None,
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("mount /proc: {e}")))?;
+
+    // 10. Run the program from /box where its source + stdin live.
+    std::env::set_current_dir("/box")
+        .map_err(|e| SandboxError::MountSetup(format!("chdir /box: {e}")))?;
+
     Ok(())
 }
