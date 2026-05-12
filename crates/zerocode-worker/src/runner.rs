@@ -21,6 +21,7 @@ use zerocode_sandbox::{Sandbox, SandboxJob, SandboxResult};
 use zerocode_stream::{Event, listen_for_jobs, publish_event};
 
 use crate::db::{self, ClaimedJob};
+use crate::webhook;
 
 pub struct Runner {
     pool: PgPool,
@@ -29,6 +30,8 @@ pub struct Runner {
     sandbox: Arc<dyn Sandbox>,
     parallelism: Arc<Semaphore>,
     shutdown: Arc<tokio::sync::Notify>,
+    http_client: reqwest::Client,
+    webhook_secret: Arc<String>,
 }
 
 impl Runner {
@@ -38,7 +41,14 @@ impl Runner {
         languages: LanguageRegistry,
         sandbox: Arc<dyn Sandbox>,
         max_parallel: usize,
+        webhook_secret: String,
     ) -> Self {
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("zerocode-worker/0.1")
+            .build()
+            .expect("build reqwest client");
+
         Self {
             pool,
             worker_id,
@@ -46,6 +56,8 @@ impl Runner {
             sandbox,
             parallelism: Arc::new(Semaphore::new(max_parallel.max(1))),
             shutdown: Arc::new(tokio::sync::Notify::new()),
+            http_client,
+            webhook_secret: Arc::new(webhook_secret),
         }
     }
 
@@ -121,9 +133,11 @@ impl Runner {
             let pool = self.pool.clone();
             let sandbox = self.sandbox.clone();
             let langs = self.languages.clone();
+            let http = self.http_client.clone();
+            let secret = self.webhook_secret.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = process(pool.clone(), sandbox, langs, claim).await {
+                if let Err(e) = process(pool.clone(), sandbox, langs, &http, &secret, claim).await {
                     tracing::error!(error = %e, %token, "submission failed at worker layer");
                     if let Err(write_err) = db::write_sandbox_failure(&pool, token, &e.to_string()).await {
                         tracing::error!(error = %write_err, %token, "could not write failure row");
@@ -139,9 +153,12 @@ async fn process(
     pool: PgPool,
     sandbox: Arc<dyn Sandbox>,
     languages: Arc<LanguageRegistry>,
+    http: &reqwest::Client,
+    webhook_secret: &str,
     claim: ClaimedJob,
 ) -> anyhow::Result<()> {
     let token = claim.token;
+    let callback_url = claim.callback_url.clone();
     tracing::info!(%token, language_id = claim.language_id, "claimed");
 
     let _ = publish_event(&pool, token, &Event::Processing).await;
@@ -162,9 +179,6 @@ async fn process(
     let result = match sandbox.execute(job).await {
         Ok(r) => r,
         Err(e) => {
-            // Map sandbox errors to a SandboxFailure result so the row gets
-            // a terminal status. (See `process`'s caller, which also writes a
-            // failure row on `Err` from this function.)
             return Err(anyhow::anyhow!("sandbox: {e}"));
         }
     };
@@ -174,12 +188,20 @@ async fn process(
         &pool,
         token,
         &Event::Finished {
-            status: serde_json::to_value(&result.status).unwrap_or_default(),
+            status: serde_json::to_value(result.status).unwrap_or_default(),
         },
     )
     .await;
 
     record_outcome(&token, &result);
+
+    // Fire webhook if callback_url was set on the submission.
+    if let Some(url) = callback_url {
+        let status = webhook::deliver(http, webhook_secret, &url, token, &result).await;
+        webhook::update_callback_status(&pool, token, status).await;
+        tracing::info!(%token, callback = status.as_str(), "webhook delivered");
+    }
+
     Ok(())
 }
 

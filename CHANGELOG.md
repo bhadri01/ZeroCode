@@ -8,6 +8,210 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Phase 5 — Threat model + docs + hardening
+
+#### Added
+- **`docs/THREAT_MODEL.md`** (339 lines) -- STRIDE analysis of the full system.
+  Trust boundary diagram (client -> API -> Postgres -> worker -> sandbox),
+  per-category threat enumeration with mitigations traced to source files,
+  defense-in-depth layer inventory (11 layers), known v1 limitations (9 items),
+  and analysis of Judge0's three 2024 CVEs (CVE-2024-28185, CVE-2024-28189,
+  CVE-2024-29021) with structural mitigation explanations.
+- **`docs/DEPLOY.md`** (494 lines) -- production deployment guide. Host
+  requirement checks with copy-pasteable commands (kernel version, cgroup v2,
+  user namespaces), environment variable reference tables for API and worker,
+  Docker Compose quickstart, runner rootfs setup, TLS termination configs
+  (Caddy, nginx, Traefik), cgroup delegation (systemd and manual), and
+  troubleshooting section for 5 common failure modes.
+- **`docs/ARCHITECTURE.md`** (318 lines) -- implementation-aligned architecture
+  document. System overview ASCII diagram with SSE streaming and LISTEN/NOTIFY
+  channels, crate dependency map, 11-step submission lifecycle, fork/exec
+  sandbox sequence with two-pipe handshake, performance architecture (result
+  cache, compile cache, dispatch), container image strategy, and v1 language
+  table sourced from `runners/languages.toml`.
+
+#### Changed
+- **README.md** rewritten -- API reference table, supported languages table,
+  submit-and-wait + SSE streaming examples, architecture overview, project
+  layout, 8-layer security summary, testing instructions.
+- **`cargo clippy --workspace -- -D warnings`** now passes clean. Fixed:
+  `dead_code` on `ApiConfig::bind` and unused `ApiError` variants (allow
+  attributes), doc lazy continuation in `worker/db.rs`, needless borrows in
+  streaming.rs / submissions.rs / runner.rs, needless `Ok()?` wrapper in
+  `wait_for_completion`, useless `.into_iter()` in webhook.rs.
+
+### Phase 4.6 — Performance hot path
+
+#### Added
+- **Result cache** (`moka` in-process LRU, 10k entries, 5 min TTL) wired into
+  the API's `POST /v1/submissions` path. Cache key is
+  `blake3(language_id || source || stdin || limits)`. On cache hit, the API
+  returns a `CachedSubmissionView` immediately without touching the queue.
+  Cache is populated when `?wait=true` sees a terminal result. Stored in
+  `AppState` as `ResultCache` with accessor `state.result_cache()`.
+- **SSE streaming endpoint** `GET /v1/submissions/{token}/stream` — returns
+  Server-Sent Events using Postgres `LISTEN/NOTIFY` per-token channels
+  (`zerocode.events.<token>`). Events: `processing`, `stdout` (data chunk),
+  `stderr` (data chunk), `finished` (status JSON), `error`. If the submission
+  is already done when the client connects, emits a single `finished` event
+  and closes. Uses `Pin<Box<dyn Stream>>` to unify the two code paths.
+- **`CachedSubmissionView`** response struct for cache hits — lighter than
+  `SubmissionView` (no token/timestamps since the result didn't come from a
+  specific submission row). Includes `cached: true` field.
+
+#### Changed
+- **`?wait=true` upgraded from polling to LISTEN/NOTIFY**. Instead of polling
+  the DB every 200 ms, the API subscribes to
+  `zerocode.events.<token>` via `zerocode_stream::events::subscribe` and
+  wakes as soon as the worker publishes the `Finished` event (~sub-5ms
+  latency). Falls back to 200 ms polling if the LISTEN connection fails.
+- **HTTP/2 cleartext (h2c)** supported out of the box — `axum::serve` uses
+  hyper's auto connection builder which negotiates HTTP/1.1 or HTTP/2 based on
+  the client's connection preface. No code change needed; documented here for
+  visibility.
+
+#### Deferred
+- **Compile-artifact cache** integration: the `compile_artifacts` table and
+  `CompileCache` crate exist but the worker can't yet use them — compiled
+  binaries live in a tmpfs inside the sandbox's mount namespace and aren't
+  accessible from the host after exit. Needs a scratch-dir passthrough
+  mechanism (Phase 5 or v2).
+- **Sandbox template pool** (pre-built cgroups + mount layouts): Linux-only,
+  requires profiling to validate the win. Deferred to v2.
+- **`cargo bench` suite**: deferred to Phase 5.
+
+### Phase 4.5 — Failure-injection + edge-case test suite
+
+#### Added
+- **71 edge-case integration tests** in
+  `crates/zerocode-sandbox/tests/edge_cases/`, exercising adversarial
+  submission patterns against the real `NativeSandbox`. Gated behind
+  `#[cfg(all(target_os = "linux", feature = "edge-cases"))]` — requires a
+  full sandbox environment (cgroup v2, runner rootfs, scratch dir).
+  Run with: `cargo test -p zerocode-sandbox --features edge-cases --test edge_cases`
+
+  Test breakdown by file:
+  - **`common.rs` (21 tests)**: language-agnostic sandbox enforcement —
+    infinite loop → wall TLE, sleep → wall TLE, memory bomb → OOM, fork
+    bomb → pids.max, output bomb → stdout capped, stdin EOF handling, hello
+    world, non-zero exit, exit 0 with stderr, stdin delivery, multiline
+    stdin, large stdout, output-then-crash partial capture, mmap anon bomb,
+    network blocked (NET namespace), /proc isolation (PID namespace), /etc/shadow
+    unreadable, rootfs read-only, /box writable, /tmp writable.
+  - **`python.rs` (8 tests)**: null deref → SIGSEGV via ctypes, sys.exit(0),
+    SystemExit string → NZE(1), unhandled exception → NZE(1), no .pyc
+    outside /box, threading under pids.max, read own source, multiprocessing
+    under pids.max.
+  - **`node.rs` (9 tests)**: hello world, process.exit → NZE, unhandled
+    rejection → NZE (strict mode), event loop hang → wall TLE, CPU loop →
+    TLE, thrown error → NZE, stdin read, memory bomb, JSON output.
+  - **`c_cpp.rs` (11 tests)**: C hello, null deref → SIGSEGV, division by
+    zero → SIGFPE, stack overflow → SIGSEGV, compile error, stdin read,
+    non-zero exit; C++ hello, compile error, uncaught exception → SIGABRT,
+    stack protector → SIGABRT.
+  - **`go_lang.rs` (7 tests)**: hello world, compile error, panic → NZE(2),
+    goroutine leak → wall TLE, stdin read, os.Exit → NZE, index OOB panic.
+  - **`rust_lang.rs` (7 tests)**: hello world, compile error, panic=abort →
+    SIGABRT, non-zero exit, stdin read, index OOB → SIGABRT, integer
+    overflow wraps in release.
+  - **`java.rs` (8 tests)**: hello world, compile error, System.exit → NZE,
+    StackOverflowError → NZE(1), OOM with ExitOnOutOfMemoryError, uncaught
+    exception, stdin read, threading under pids.max=96.
+
+- **Test harness** (`harness.rs`): shared `NativeSandbox` instance via
+  `LazyLock`, helper functions `job()`, `job_tight()`, `job_with_stdin()`,
+  `job_with_limits()`, `run()`, `run_fallible()`. Language ID constants.
+- **`edge-cases` feature** now implies `native` feature in
+  `zerocode-sandbox/Cargo.toml`.
+
+#### Test count
+| Env | After Phase 4 | After Phase 4.5 | Delta |
+|---|---|---|---|
+| macOS (default features) | 49 | 49 | +0 (edge-cases cfg'd out) |
+| Linux (default features) | 62 | 62 | +0 (edge-cases not enabled) |
+| Linux (`--features edge-cases`) | — | 133 | +71 edge-case integration tests |
+
+### Phase 4 — API polish
+
+#### Added
+- **Rate limiting** via `tower_governor` 0.8 on all authenticated routes.
+  `GovernorConfigBuilder::default().per_second(100).burst_size(100)` gives a
+  100 RPS sliding window with 100-request burst capacity. Applied as a layer
+  on the authed `Router`, so health/ready/about stay unmetered.
+- **Pagination** on `GET /v1/submissions`: `?page=1&per_page=20&status=queued`.
+  Max 100 per page, `ORDER BY created_at DESC`. Response shape:
+  `{ items, page, per_page, total }`.
+- **`?wait=true` synchronous mode** on `POST /v1/submissions`: holds the
+  connection and polls the DB every 200 ms for up to 30 s until the
+  submission reaches a terminal status. Returns the full `SubmissionView`
+  inline if it finishes in time; otherwise returns `201 { token, status:
+  "queued" }` as usual so the client can fall back to polling.
+- **Webhook delivery** with HMAC-SHA256 signing (`crates/zerocode-worker/src/webhook.rs`):
+  - Signature header: `X-ZeroCode-Signature: t=<unix_secs>,v1=<hex(HMAC-SHA256(secret, timestamp.body))>`
+  - Retry policy: up to 4 attempts (immediate + 1 s / 5 s / 30 s backoff),
+    each with ±20% jitter. 5 s timeout per attempt. No retry on HTTP 4xx
+    (client error, not transient).
+  - `CallbackStatus` enum: `Delivered` (2xx), `FailedAfterRetries`,
+    `NoCallback`. Written back to the submission row via
+    `update_callback_status`.
+  - Worker constructs a shared `reqwest::Client` with 10 s timeout and
+    `zerocode-worker/0.1` user-agent.
+- **`--webhook-secret` / `ZEROCODE_WEBHOOK_SECRET`** CLI arg + env on the
+  worker binary. If unset, webhooks are delivered without a signature (dev
+  only).
+
+#### Changed
+- **`POST /v1/submissions`** handler now accepts `Query(CreateParams)` and
+  returns `ApiResult<Response>` (was `ApiResult<Json<…>>`) to support both
+  the `201 Created` ack and the inline `200` result when `?wait=true`
+  resolves.
+- **`/v1/submissions` route** now has both `post(create).get(list)` on the
+  same path.
+- **Worker `Runner`** struct carries `http_client` and `webhook_secret`;
+  `process()` fires the webhook after writing results and publishing the
+  stream event.
+
+#### Test count
+| Env | After Phase 3c | After Phase 4 | Delta |
+|---|---|---|---|
+| macOS | 47 | 49 | +2 (webhook: callback_status_strings + jitter_is_bounded) |
+| Linux | 60 | 62 | +2 (same) |
+
+### Phase 3c — Java 21 LTS
+
+#### Added
+- **Java 21 LTS** (id 62) — the seventh core v1 language. Two-phase:
+  `javac Main.java` → `java Main`. The JVM is a special beast:
+  - **`JAVA_TOOL_OPTIONS`** env sets `-Xmx${jvm_heap_mb}m -Xss512k
+    -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m
+    -XX:+ExitOnOutOfMemoryError`. `ExitOnOutOfMemoryError` makes the JVM
+    `exit(1)` on OOM instead of hanging trying to dump heap.
+  - **`${jvm_heap_mb}` template variable** — computed as
+    `max(memory_mb − 256, 32)` in `exec::substitute_limits`. The 256 MB
+    overhead accounts for metaspace (128 MB cap), code cache (64 MB cap),
+    thread stacks, and GC bookkeeping.
+  - **Per-language `default_limits`** override the API defaults:
+    `memory_mb = 512` (256 heap + 256 overhead), `max_pids = 96` (JVM
+    thread floor), `wall_time = 15s` (JIT warmup absorbs budget).
+  - **Per-language `compile_limits`** for javac: `cpu_time = 15s`,
+    `wall_time = 30s`, `max_pids = 128` (javac forks annotation processors).
+- **Runner image** now installs `openjdk-21-jdk-headless` from Debian trixie.
+- **Seccomp**: no changes needed — Java's required syscalls (`clone3`,
+  `membarrier`, `futex_waitv`) are already allowed by the default-allow
+  deny-list policy. Doc comment updated to note this.
+- **Integration tests** expanded:
+  - Core 7 ID check (was Core 6): now includes Java id 62
+  - Java added to compiled-languages assertion
+  - `java_spec_carries_java_tool_options_with_jvm_heap_placeholder`
+  - `java_spec_has_elevated_default_limits` (max_pids ≥ 96, memory ≥ 384)
+  - `java_spec_has_compile_limits` (cpu_time ≥ 10s, max_pids ≥ 96)
+
+#### Test count
+| Env | After Phase 3b | After Phase 3c | Delta |
+|---|---|---|---|
+| macOS | 44 | 47 | +3 (Java TOOL_OPTIONS + default_limits + compile_limits) |
+| Linux | 56 | 60 | +4 (above + jvm_heap_mb substitution test) |
+
 ### Phase 3b — Compile-then-run + Rust, Go, C, C++
 
 #### Added
@@ -41,7 +245,7 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
     so the rustc binary is reachable from every sandboxed submission via
     `/usr/local/cargo/bin/rustc`.
 - **Registry integration tests** expanded — now asserts:
-  - All Core 6 ids present (48, 52, 60, 63, 71, 73)
+  - All Core 7 ids present (48, 52, 60, 62, 63, 71, 73)
   - Compiled langs (Rust/Go/C/C++) have both `compile_cmd` and `run_cmd`
   - Interpreted langs (Python/Node.js) have no `compile_cmd`
   - Go spec carries `GOMEMLIMIT=${memory_mb}…`

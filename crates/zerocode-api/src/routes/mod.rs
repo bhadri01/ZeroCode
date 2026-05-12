@@ -2,6 +2,8 @@ use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post};
 use axum::Router;
+use tower_governor::GovernorLayer;
+use tower_governor::governor::GovernorConfigBuilder;
 use tower_http::trace::TraceLayer;
 
 use crate::auth;
@@ -10,6 +12,7 @@ use crate::state::AppState;
 mod health;
 mod languages;
 mod meta;
+mod streaming;
 mod submissions;
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
@@ -20,10 +23,21 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/ready", get(health::readiness))
         .route("/v1/about", get(meta::about));
 
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_second(100)
+        .burst_size(100)
+        .finish()
+        .unwrap();
+
     let authed = Router::new()
-        .route("/v1/submissions", post(submissions::create))
+        .route(
+            "/v1/submissions",
+            post(submissions::create).get(submissions::list),
+        )
         .route("/v1/submissions/{token}", get(submissions::get))
+        .route("/v1/submissions/{token}/stream", get(streaming::stream))
         .route("/v1/languages", get(languages::list))
+        .layer(GovernorLayer::new(governor_conf))
         .layer(from_fn_with_state(state.clone(), auth::require_bearer));
 
     Router::new()

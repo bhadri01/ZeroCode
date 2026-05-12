@@ -18,8 +18,9 @@
 //!   - `swapon`, `swapoff` — host swap manipulation
 //!   - `module_*` — loadable kernel module insertion
 //!
-//! Per-language augments (Java needs `clone3`, `membarrier`, `futex_waitv`)
-//! land in Phase 3c via additive entries.
+//! Per-language augments: Java needs `clone3`, `membarrier`, and `futex_waitv`.
+//! These are already allowed by the default-allow policy — no per-language
+//! seccomp profiles needed unless we switch to an allowlist approach.
 
 use crate::SandboxError;
 

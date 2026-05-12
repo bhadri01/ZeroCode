@@ -20,7 +20,7 @@ unsafe-naive = []
 native = []
 # Phase 2 hardening — adds seccomp + landlock + libcontainer integration.
 native-hardened = ["native"]
-edge-cases = []
+edge-cases = ["native"]
 
 [dependencies]
 zerocode-core = { path = "../zerocode-core" }

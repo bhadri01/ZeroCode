@@ -18,7 +18,7 @@ fn languages_toml() -> String {
 }
 
 #[test]
-fn registry_file_parses_and_contains_core_6() {
+fn registry_file_parses_and_contains_core_7() {
     let reg = LanguageRegistry::from_toml(&languages_toml())
         .expect("runners/languages.toml is valid");
 
@@ -28,10 +28,11 @@ fn registry_file_parses_and_contains_core_6() {
         .map(|s| (s.id, s.name.as_str()))
         .collect();
 
-    // Core 6 v1 IDs are stable; if these ever change, callers break too.
+    // Core 7 v1 IDs are stable; if these ever change, callers break too.
     assert_eq!(by_id.get(&48).copied(), Some("C"));
     assert_eq!(by_id.get(&52).copied(), Some("C++"));
     assert_eq!(by_id.get(&60).copied(), Some("Go"));
+    assert_eq!(by_id.get(&62).copied(), Some("Java"));
     assert_eq!(by_id.get(&63).copied(), Some("Node.js"));
     assert_eq!(by_id.get(&71).copied(), Some("Python"));
     assert_eq!(by_id.get(&73).copied(), Some("Rust"));
@@ -60,7 +61,7 @@ fn node_spec_carries_node_options_with_memory_placeholder() {
 #[test]
 fn compiled_languages_have_both_compile_and_run_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    for id in [48, 52, 60, 73] {
+    for id in [48, 52, 60, 62, 73] {
         let spec = reg.require(id).unwrap_or_else(|_| panic!("id {id} should exist"));
         assert!(
             spec.is_compiled(),
@@ -120,5 +121,69 @@ fn rust_spec_uses_panic_abort() {
     assert!(
         joined.contains("panic=abort"),
         "Rust compile_cmd should pass -C panic=abort: {joined}"
+    );
+}
+
+#[test]
+fn java_spec_carries_java_tool_options_with_jvm_heap_placeholder() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let java = reg.require(62).expect("Java id 62 must be registered");
+    let tool_opts = java
+        .env
+        .iter()
+        .find(|(k, _)| k == "JAVA_TOOL_OPTIONS")
+        .map(|(_, v)| v.as_str())
+        .expect("Java spec must set JAVA_TOOL_OPTIONS");
+    assert!(
+        tool_opts.contains("${jvm_heap_mb}"),
+        "JAVA_TOOL_OPTIONS should reference ${{jvm_heap_mb}} for heap sizing: {tool_opts}"
+    );
+    assert!(
+        tool_opts.contains("ExitOnOutOfMemoryError"),
+        "JAVA_TOOL_OPTIONS should enable ExitOnOutOfMemoryError: {tool_opts}"
+    );
+    assert!(
+        tool_opts.contains("-Xss512k"),
+        "JAVA_TOOL_OPTIONS should cap thread stack size: {tool_opts}"
+    );
+}
+
+#[test]
+fn java_spec_has_elevated_default_limits() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let java = reg.require(62).expect("Java id 62 must be registered");
+    let defaults = java
+        .default_limits
+        .as_ref()
+        .expect("Java must declare default_limits for JVM overhead");
+    assert!(
+        defaults.max_pids >= 96,
+        "Java default_limits.max_pids should be ≥96 for JVM thread floor: {}",
+        defaults.max_pids
+    );
+    assert!(
+        defaults.memory_mb >= 384,
+        "Java default_limits.memory_mb should be ≥384 for JVM overhead: {}",
+        defaults.memory_mb
+    );
+}
+
+#[test]
+fn java_spec_has_compile_limits() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let java = reg.require(62).expect("Java id 62 must be registered");
+    let compile_limits = java
+        .compile_limits
+        .as_ref()
+        .expect("Java must declare compile_limits for javac");
+    assert!(
+        compile_limits.max_pids >= 96,
+        "Java compile_limits.max_pids should be ≥96: {}",
+        compile_limits.max_pids
+    );
+    assert!(
+        compile_limits.cpu_time >= 10.0,
+        "Java compile_limits.cpu_time should be ≥10s for javac: {}",
+        compile_limits.cpu_time
     );
 }

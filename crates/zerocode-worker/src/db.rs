@@ -1,6 +1,7 @@
 //! Worker-side DB helpers. Two responsibilities:
 //!   1. Claim queued submissions (with SKIP LOCKED so concurrent workers don't race).
 //!   2. Write back the terminal status + outputs + timings.
+//!
 //! A third helper sweeps stuck claims back to `queued` so a crashed worker
 //! doesn't strand submissions in `processing` forever.
 

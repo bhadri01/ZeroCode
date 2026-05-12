@@ -4,10 +4,14 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
+use zerocode_cache::ResultCache;
 use zerocode_core::LanguageRegistry;
 use zerocode_stream::JobNotifier;
 
 use crate::config::ApiConfig;
+
+const RESULT_CACHE_CAPACITY: u64 = 10_000;
+const RESULT_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone)]
 pub struct AppState(Arc<Inner>);
@@ -17,6 +21,7 @@ pub struct Inner {
     pub pool: PgPool,
     pub languages: LanguageRegistry,
     pub jobs: JobNotifier,
+    pub result_cache: ResultCache,
 }
 
 impl AppState {
@@ -29,12 +34,14 @@ impl AppState {
             .context("connecting to Postgres")?;
 
         let jobs = JobNotifier::new(pool.clone());
+        let result_cache = ResultCache::new(RESULT_CACHE_CAPACITY, RESULT_CACHE_TTL);
 
         Ok(Self(Arc::new(Inner {
             config,
             pool,
             languages,
             jobs,
+            result_cache,
         })))
     }
 
@@ -52,5 +59,9 @@ impl AppState {
 
     pub fn jobs(&self) -> &JobNotifier {
         &self.0.jobs
+    }
+
+    pub fn result_cache(&self) -> &ResultCache {
+        &self.0.result_cache
     }
 }

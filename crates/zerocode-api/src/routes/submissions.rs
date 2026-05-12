@@ -1,10 +1,14 @@
+use std::time::Duration;
+
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use blake3::Hasher;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use zerocode_cache::CacheKey;
 use zerocode_core::{
-    LanguageId, Payload, ResourceLimits, Signal, Status, Submission, SubmissionRequest, Token,
+    Payload, ResourceLimits, Signal, Status, Submission, SubmissionRequest, Token,
 };
 
 use crate::db::{self, NewSubmission};
@@ -13,6 +17,8 @@ use crate::state::AppState;
 
 const MAX_SOURCE_BYTES: usize = 64 * 1024;
 const MAX_STDIN_BYTES: usize = 64 * 1024;
+const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Serialize)]
 pub struct SubmissionAck {
@@ -20,11 +26,18 @@ pub struct SubmissionAck {
     pub status: &'static str,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateParams {
+    #[serde(default)]
+    pub wait: Option<bool>,
+}
+
 pub async fn create(
     State(state): State<AppState>,
+    Query(params): Query<CreateParams>,
     headers: HeaderMap,
     Json(req): Json<SubmissionRequest>,
-) -> ApiResult<(StatusCode, Json<SubmissionAck>)> {
+) -> ApiResult<Response> {
     // Validate inputs.
     if req.source_code.is_empty() {
         return Err(ApiError::Validation("source_code must be non-empty".into()));
@@ -42,6 +55,18 @@ pub async fn create(
     let spec = state.languages().require(req.language_id)?;
     let defaults = spec.default_limits.unwrap_or_default();
     let limits = req.resolve_limits(defaults, &state.config().limit_ceiling)?;
+
+    // Result cache — identical (language, source, stdin, limits) returns
+    // instantly without touching the queue.
+    let cache_key = CacheKey::result(
+        req.language_id,
+        req.source_code.as_bytes(),
+        req.stdin.as_ref().map(Payload::as_bytes).unwrap_or(&[]),
+        &limits,
+    );
+    if let Some(cached) = state.result_cache().get(&cache_key).await {
+        return Ok(Json(CachedSubmissionView::from(cached)).into_response());
+    }
 
     // Callback URL safety: reject loopback / private ranges to head off SSRF.
     if let Some(url) = &req.callback_url {
@@ -64,7 +89,8 @@ pub async fn create(
                         token: hit.token,
                         status: "queued",
                     }),
-                ))
+                )
+                    .into_response())
             } else {
                 Err(ApiError::IdempotencyConflict {
                     existing_token: hit.token,
@@ -92,8 +118,17 @@ pub async fn create(
         .await
         .map_err(|e| ApiError::Internal(format!("pg_notify failed: {e}")))?;
 
-    let _ = &spec; // retained for clarity that we resolved a real language
-    let _: LanguageId = req.language_id;
+    // ?wait=true: hold the connection until the submission finishes or 30s
+    // elapses. Uses LISTEN/NOTIFY so we wake as soon as the worker publishes
+    // the finished event instead of polling.
+    if params.wait.unwrap_or(false) {
+        if let Some(sub) = wait_for_completion(state.pool(), token).await? {
+            if sub.is_done() {
+                populate_result_cache(&state, &cache_key, &sub).await;
+            }
+            return Ok(Json(SubmissionView::from(sub)).into_response());
+        }
+    }
 
     Ok((
         StatusCode::CREATED,
@@ -101,7 +136,111 @@ pub async fn create(
             token: token.to_string(),
             status: "queued",
         }),
-    ))
+    )
+        .into_response())
+}
+
+async fn wait_for_completion(
+    pool: &sqlx::PgPool,
+    token: Token,
+) -> ApiResult<Option<Submission>> {
+    use tokio_stream::StreamExt;
+
+    // Try LISTEN/NOTIFY first — wakes us as soon as the worker publishes
+    // the finished event (sub-5ms latency vs 200ms polling).
+    let listener_result = zerocode_stream::events::subscribe(pool, token).await;
+
+    match listener_result {
+        Ok(mut stream) => {
+            let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
+            loop {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                tokio::select! {
+                    event = stream.next() => {
+                        match event {
+                            Some(Ok(zerocode_stream::Event::Finished { .. })) => {
+                                if let Some(sub) = db::fetch_submission(pool, token).await? {
+                                    return Ok(Some(sub));
+                                }
+                            }
+                            Some(Err(_)) => break,
+                            None => break,
+                            _ => {}
+                        }
+                    }
+                    _ = tokio::time::sleep(remaining) => break,
+                }
+            }
+        }
+        Err(_) => {
+            // LISTEN failed — fall back to polling.
+            let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
+            let mut interval = tokio::time::interval(WAIT_POLL_INTERVAL);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                if tokio::time::Instant::now() >= deadline {
+                    break;
+                }
+                if let Some(sub) = db::fetch_submission(pool, token).await? {
+                    if sub.is_done() {
+                        return Ok(Some(sub));
+                    }
+                }
+            }
+        }
+    }
+    // Timeout — return whatever state we have.
+    db::fetch_submission(pool, token).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListParams {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub status: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SubmissionList {
+    pub items: Vec<SubmissionView>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: i64,
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    Query(params): Query<ListParams>,
+) -> ApiResult<Json<SubmissionList>> {
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
+    let offset = ((page - 1) * per_page) as i64;
+    let limit = per_page as i64;
+
+    let result = db::list_submissions(
+        state.pool(),
+        params.status.as_deref(),
+        limit,
+        offset,
+    )
+    .await?;
+
+    let items = result
+        .items
+        .into_iter()
+        .map(SubmissionView::from)
+        .collect();
+
+    Ok(Json(SubmissionList {
+        items,
+        page,
+        per_page,
+        total: result.total,
+    }))
 }
 
 pub async fn get(
@@ -164,6 +303,56 @@ impl From<Submission> for SubmissionView {
             memory: s.memory_kb,
             created_at: s.created_at.to_rfc3339(),
             finished_at: s.finished_at.map(|d| d.to_rfc3339()),
+        }
+    }
+}
+
+async fn populate_result_cache(state: &AppState, key: &CacheKey, sub: &Submission) {
+    let outcome = zerocode_cache::CachedOutcome {
+        status_json: serde_json::to_value(sub.status).unwrap_or_default(),
+        stdout: sub.stdout.as_ref().map(|p| p.as_bytes().to_vec()).unwrap_or_default(),
+        stderr: sub.stderr.as_ref().map(|p| p.as_bytes().to_vec()).unwrap_or_default(),
+        compile_output: sub.compile_output.as_ref().map(|p| p.as_bytes().to_vec()),
+        exit_code: sub.exit_code,
+        cpu_time: sub.cpu_time.unwrap_or(0.0),
+        wall_time: sub.wall_time.unwrap_or(0.0),
+        memory_kb: sub.memory_kb.unwrap_or(0),
+    };
+    state.result_cache().insert(*key, outcome).await;
+}
+
+/// Response shape for cache hits. Lighter than `SubmissionView` — there's no
+/// token or timestamps since the result didn't come from a specific submission
+/// row.
+#[derive(Serialize)]
+pub struct CachedSubmissionView {
+    pub cached: bool,
+    pub status: serde_json::Value,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stdout: Vec<u8>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stderr: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compile_output: Option<Vec<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub time: f64,
+    pub wall_time: f64,
+    pub memory: u32,
+}
+
+impl From<zerocode_cache::CachedOutcome> for CachedSubmissionView {
+    fn from(c: zerocode_cache::CachedOutcome) -> Self {
+        Self {
+            cached: true,
+            status: c.status_json,
+            stdout: c.stdout,
+            stderr: c.stderr,
+            compile_output: c.compile_output,
+            exit_code: c.exit_code,
+            time: c.cpu_time,
+            wall_time: c.wall_time,
+            memory: c.memory_kb,
         }
     }
 }

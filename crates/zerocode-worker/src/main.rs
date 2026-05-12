@@ -15,6 +15,7 @@ mod reaper;
 mod runner;
 mod sandbox_select;
 mod sweeper;
+mod webhook;
 
 use crate::runner::Runner;
 
@@ -39,6 +40,11 @@ struct Args {
     /// Maximum concurrent sandboxed children. Default = num_cpus.
     #[arg(long, env = "ZEROCODE_MAX_PARALLEL")]
     max_parallel: Option<usize>,
+
+    /// Secret for HMAC-SHA256 webhook signatures. If unset, webhooks are
+    /// delivered without a signature (dev only).
+    #[arg(long, env = "ZEROCODE_WEBHOOK_SECRET")]
+    webhook_secret: Option<String>,
 }
 
 #[tokio::main]
@@ -74,12 +80,15 @@ async fn main() -> Result<()> {
         .max_parallel
         .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
 
+    let webhook_secret = args.webhook_secret.clone().unwrap_or_default();
+
     let runner = Runner::new(
         pool.clone(),
         worker_id.clone(),
         languages,
         sandbox,
         parallelism,
+        webhook_secret,
     );
     let runner_shutdown = runner.shutdown_handle();
     let sweeper_shutdown = Arc::new(Notify::new());

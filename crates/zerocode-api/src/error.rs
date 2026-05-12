@@ -6,6 +6,7 @@ use thiserror::Error;
 use zerocode_core::CoreError;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum ApiError {
     #[error("validation: {0}")]
     Validation(String),

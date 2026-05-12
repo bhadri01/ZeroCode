@@ -180,6 +180,89 @@ pub async fn sync_languages(
     Ok(())
 }
 
+pub struct SubmissionPage {
+    pub items: Vec<Submission>,
+    pub total: i64,
+}
+
+pub async fn list_submissions(
+    pool: &PgPool,
+    status_filter: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<SubmissionPage, ApiError> {
+    let count_row = sqlx::query(
+        "SELECT count(*)::bigint AS n FROM submissions \
+         WHERE ($1::text IS NULL OR status = $1)",
+    )
+    .bind(status_filter)
+    .fetch_one(pool)
+    .await?;
+    let total: i64 = count_row.get("n");
+
+    let rows = sqlx::query(
+        "SELECT token, language_id, status, status_detail, \
+                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, \
+                stdout, stderr, compile_output, \
+                exit_code, signal, cpu_time, wall_time, memory_kb, \
+                created_at, finished_at \
+         FROM submissions \
+         WHERE ($1::text IS NULL OR status = $1) \
+         ORDER BY created_at DESC \
+         LIMIT $2 OFFSET $3",
+    )
+    .bind(status_filter)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let token_str: String = row.get("token");
+        let token = token_str.parse::<Token>().map_err(|e| {
+            ApiError::Internal(format!("row had un-parseable token {token_str:?}: {e}"))
+        })?;
+
+        let status_text: String = row.get("status");
+        let status_detail: Option<serde_json::Value> = row.get("status_detail");
+        let status = parse_status(&status_text, status_detail.as_ref())?;
+
+        let limits = ResourceLimits {
+            cpu_time: row.get::<f32, _>("cpu_time_limit") as f64,
+            wall_time: row.get::<f32, _>("wall_time_limit") as f64,
+            memory_mb: row.get::<i32, _>("memory_limit_mb") as u32,
+            max_pids: row.get::<i32, _>("max_pids") as u32,
+            max_stdout: 64 * 1024,
+            max_stderr: 64 * 1024,
+            enable_network: false,
+        };
+
+        let stdout: Option<Vec<u8>> = row.get("stdout");
+        let stderr: Option<Vec<u8>> = row.get("stderr");
+        let compile_output: Option<Vec<u8>> = row.get("compile_output");
+
+        items.push(Submission {
+            token,
+            language_id: row.get::<i32, _>("language_id") as u32,
+            status,
+            limits,
+            stdout: stdout.map(zerocode_core::Payload::new),
+            stderr: stderr.map(zerocode_core::Payload::new),
+            compile_output: compile_output.map(zerocode_core::Payload::new),
+            exit_code: row.get("exit_code"),
+            signal: row.get::<Option<i32>, _>("signal").map(Signal::from_raw),
+            cpu_time: row.get::<Option<f32>, _>("cpu_time").map(|f| f as f64),
+            wall_time: row.get::<Option<f32>, _>("wall_time").map(|f| f as f64),
+            memory_kb: row.get::<Option<i32>, _>("memory_kb").map(|i| i as u32),
+            created_at: row.get("created_at"),
+            finished_at: row.get("finished_at"),
+        });
+    }
+
+    Ok(SubmissionPage { items, total })
+}
+
 /// Used by the queue-depth admission control on `/v1/ready`.
 pub async fn queue_depth(pool: &PgPool) -> Result<i64, ApiError> {
     let row = sqlx::query(

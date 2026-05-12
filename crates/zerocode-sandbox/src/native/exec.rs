@@ -364,13 +364,15 @@ fn build_env(spec: &LanguageSpec, limits: &ResourceLimits) -> Vec<CString> {
     env
 }
 
-/// Substitute `${memory_mb}`, `${cpu_time}`, `${wall_time}`, `${max_pids}` in a
-/// language-spec env value with the per-submission limits. Cheap string
-/// replace, not a full template language — that's enough for the
-/// JVM/Node/Go runtime hooks we care about.
+/// Substitute `${memory_mb}`, `${cpu_time}`, `${wall_time}`, `${max_pids}`,
+/// and `${jvm_heap_mb}` in a language-spec env value with the per-submission
+/// limits. Cheap string replace, not a full template language — that's enough
+/// for the JVM/Node/Go runtime hooks we care about.
 fn substitute_limits(input: &str, limits: &ResourceLimits) -> String {
+    let jvm_heap = limits.memory_mb.saturating_sub(256).max(32);
     input
         .replace("${memory_mb}", &limits.memory_mb.to_string())
+        .replace("${jvm_heap_mb}", &jvm_heap.to_string())
         .replace(
             "${cpu_time}",
             &format!("{:.3}", limits.cpu_time),
@@ -518,6 +520,22 @@ mod tests {
         let out =
             substitute_limits("m=${memory_mb} c=${cpu_time} w=${wall_time} p=${max_pids}", &limits);
         assert_eq!(out, "m=128 c=2.500 w=5.000 p=64");
+    }
+
+    #[test]
+    fn substitute_limits_jvm_heap_mb() {
+        let mut limits = ResourceLimits::default();
+        limits.memory_mb = 512;
+        let out = substitute_limits("-Xmx${jvm_heap_mb}m", &limits);
+        assert_eq!(out, "-Xmx256m"); // 512 - 256 = 256
+
+        limits.memory_mb = 128;
+        let out = substitute_limits("-Xmx${jvm_heap_mb}m", &limits);
+        assert_eq!(out, "-Xmx32m"); // 128 - 256 saturates to 0, floor 32
+
+        limits.memory_mb = 300;
+        let out = substitute_limits("-Xmx${jvm_heap_mb}m", &limits);
+        assert_eq!(out, "-Xmx44m"); // 300 - 256 = 44
     }
 
     #[test]

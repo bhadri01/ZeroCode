@@ -1,6 +1,6 @@
 # Language specs loaded by the API/worker at boot. New languages are added
 # here and in `runners/Dockerfile`. ID space:
-#   1–99    Core 6 (v1)
+#   1–99    Core 7 (v1)
 #   100+    v1.5 expansion (see plan)
 #
 # Substitutions available in env values:
@@ -8,6 +8,8 @@
 #   ${cpu_time}    CPU budget in seconds
 #   ${wall_time}   wall-clock budget in seconds
 #   ${max_pids}    max processes/threads in the cgroup
+#   ${jvm_heap_mb} max(memory_mb − 256, 32) — JVM heap ceiling accounting for
+#                  metaspace, code cache, thread stacks, and GC overhead
 #
 # Compiled languages run two phases inside the same sandbox: compile sub-child
 # first, then if it exits zero the outer process execvpes the run_cmd. A
@@ -53,6 +55,26 @@ env = [
     # before the kernel OOM-kills us.
     ["GOMEMLIMIT", "${memory_mb}MiB"],
 ]
+is_archived = false
+
+[[language]]
+id = 62
+name = "Java"
+version = "21"
+source_file = "Main.java"
+compile_cmd = ["/usr/bin/javac", "Main.java"]
+run_cmd = ["/usr/bin/java", "Main"]
+env = [
+    # -Xmx uses jvm_heap_mb (memory_mb − 256 MB JVM overhead) so the heap
+    # plus metaspace/code-cache/threads stays under the cgroup memory.max.
+    # ExitOnOutOfMemoryError makes the JVM exit(1) on OOM instead of hanging
+    # trying to dump heap.
+    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
+]
+# JVM needs more headroom than native languages: 512 MB memory (256 heap +
+# 256 overhead), 96 pids (JVM thread floor), and longer wall time for JIT.
+default_limits = { cpu_time = 5.0, wall_time = 15.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]

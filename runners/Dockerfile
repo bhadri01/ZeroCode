@@ -8,12 +8,13 @@
 #   docker build -f runners/Dockerfile -t zerocode-runner:dev runners/
 #
 # Languages currently bundled:
-#   - Python 3.13            (Debian trixie nodejs)
+#   - Python 3.13            (Debian trixie python3.13)
 #   - Node.js 22 LTS         (Debian trixie nodejs)
 #   - C   (gcc-14)           (Debian trixie gcc-14)
 #   - C++ (g++-14)           (Debian trixie g++-14)
 #   - Go  (latest stable)    (official go.dev tarball)
 #   - Rust (latest stable)   (rustup-init.sh)
+#   - Java 21 LTS            (Debian trixie openjdk-21-jdk-headless)
 
 FROM debian:trixie-slim
 
@@ -25,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nodejs \
         # C / C++ via Debian's gcc-14 default
         gcc-14 g++-14 libc6-dev libstdc++-14-dev \
+        # Java 21 LTS (headless — no GUI deps)
+        openjdk-21-jdk-headless \
         # required by the Go + Rust installs below
         && rm -rf /var/lib/apt/lists/* \
     && sed -i '/^# C.UTF-8/s/^# //' /etc/locale.gen 2>/dev/null || true \
