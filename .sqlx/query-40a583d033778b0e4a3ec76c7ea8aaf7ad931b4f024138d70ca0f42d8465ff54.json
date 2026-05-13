@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT language_id, artifact_data, created_at FROM compile_artifacts WHERE key = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "language_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "artifact_data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "40a583d033778b0e4a3ec76c7ea8aaf7ad931b4f024138d70ca0f42d8465ff54"
+}

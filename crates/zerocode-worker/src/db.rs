@@ -5,9 +5,7 @@
 //! A third helper sweeps stuck claims back to `queued` so a crashed worker
 //! doesn't strand submissions in `processing` forever.
 
-use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use sqlx::Row;
 use thiserror::Error;
 use zerocode_core::{ResourceLimits, Status, Token};
 use zerocode_sandbox::SandboxResult;
@@ -38,7 +36,7 @@ pub async fn claim_next(
 ) -> Result<Option<ClaimedJob>, WorkerDbError> {
     // Two-statement claim via CTE so we can pull the row body in one round trip
     // and `SKIP LOCKED` prevents two workers from grabbing the same token.
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "WITH next AS (\
             SELECT token FROM submissions \
             WHERE status = 'queued' \
@@ -53,35 +51,33 @@ pub async fn claim_next(
          RETURNING s.token, s.language_id, s.source_code, s.stdin, \
                    s.cpu_time_limit, s.wall_time_limit, s.memory_limit_mb, s.max_pids, \
                    s.enable_network, s.callback_url",
+        worker_id,
     )
-    .bind(worker_id)
     .fetch_optional(pool)
     .await?;
 
     let Some(row) = row else { return Ok(None) };
 
-    let token_str: String = row.get("token");
-    let token: Token = token_str
+    let token: Token = row
+        .token
         .parse()
-        .map_err(|e| WorkerDbError::Malformed(format!("token {token_str:?}: {e}")))?;
-
-    let stdin_opt: Option<Vec<u8>> = row.get("stdin");
+        .map_err(|e| WorkerDbError::Malformed(format!("token {:?}: {e}", row.token)))?;
 
     Ok(Some(ClaimedJob {
         token,
-        language_id: row.get::<i32, _>("language_id") as u32,
-        source_code: row.get("source_code"),
-        stdin: stdin_opt.unwrap_or_default(),
+        language_id: row.language_id as u32,
+        source_code: row.source_code,
+        stdin: row.stdin.unwrap_or_default(),
         limits: ResourceLimits {
-            cpu_time: row.get::<f32, _>("cpu_time_limit") as f64,
-            wall_time: row.get::<f32, _>("wall_time_limit") as f64,
-            memory_mb: row.get::<i32, _>("memory_limit_mb") as u32,
-            max_pids: row.get::<i32, _>("max_pids") as u32,
+            cpu_time: row.cpu_time_limit as f64,
+            wall_time: row.wall_time_limit as f64,
+            memory_mb: row.memory_limit_mb as u32,
+            max_pids: row.max_pids as u32,
             max_stdout: 64 * 1024,
             max_stderr: 64 * 1024,
-            enable_network: row.get("enable_network"),
+            enable_network: row.enable_network,
         },
-        callback_url: row.get("callback_url"),
+        callback_url: row.callback_url,
     }))
 }
 
@@ -92,7 +88,7 @@ pub async fn write_result(
 ) -> Result<(), WorkerDbError> {
     let (status_text, status_detail) = encode_status(&result.status);
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE submissions \
          SET status = $2, status_detail = $3, \
              stdout = $4, stderr = $5, compile_output = $6, \
@@ -100,18 +96,18 @@ pub async fn write_result(
              cpu_time = $9, wall_time = $10, memory_kb = $11, \
              finished_at = NOW() \
          WHERE token = $1",
+        token.to_string(),
+        status_text,
+        status_detail,
+        result.stdout.as_ref(),
+        result.stderr.as_ref(),
+        result.compile_output.as_ref().map(|b| b.as_ref()),
+        result.exit_code,
+        encode_signal(&result.signal),
+        result.cpu_time.as_secs_f32(),
+        result.wall_time.as_secs_f32(),
+        result.memory_kb as i32,
     )
-    .bind(token.to_string())
-    .bind(status_text)
-    .bind(status_detail)
-    .bind(result.stdout.as_ref())
-    .bind(result.stderr.as_ref())
-    .bind(result.compile_output.as_ref().map(|b| b.as_ref()))
-    .bind(result.exit_code)
-    .bind(encode_signal(&result.signal))
-    .bind(result.cpu_time.as_secs_f32())
-    .bind(result.wall_time.as_secs_f32())
-    .bind(result.memory_kb as i32)
     .execute(pool)
     .await?;
     Ok(())
@@ -125,15 +121,15 @@ pub async fn write_sandbox_failure(
     token: Token,
     msg: &str,
 ) -> Result<(), WorkerDbError> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE submissions \
          SET status = 'sandbox_failure', \
              status_detail = $2, \
              finished_at = NOW() \
          WHERE token = $1",
+        token.to_string(),
+        serde_json::json!({ "message": msg }),
     )
-    .bind(token.to_string())
-    .bind(serde_json::json!({ "message": msg }))
     .execute(pool)
     .await?;
     Ok(())
@@ -143,11 +139,11 @@ pub async fn write_sandbox_failure(
 /// `2 * wall_time_limit + 60s`. Returns the number of rows reset so the
 /// caller can log it.
 pub async fn sweep_stale(pool: &PgPool) -> Result<u64, WorkerDbError> {
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE submissions \
          SET status = 'queued', claimed_at = NULL, worker_id = NULL \
          WHERE status = 'processing' \
-         AND claimed_at < NOW() - (INTERVAL '60 seconds' + INTERVAL '1 second' * (2 * wall_time_limit))",
+         AND claimed_at < NOW() - (INTERVAL '60 seconds' + INTERVAL '1 second' * (2 * wall_time_limit))"
     )
     .execute(pool)
     .await?;
@@ -198,10 +194,6 @@ fn encode_signal(sig: &Option<zerocode_core::Signal>) -> Option<i32> {
         Sg::Other(n) => *n,
     })
 }
-
-// Compile-only smoke that the row decoding/encoding stays in sync.
-#[allow(dead_code)]
-fn _unused(_d: DateTime<Utc>) {}
 
 #[cfg(test)]
 mod tests {

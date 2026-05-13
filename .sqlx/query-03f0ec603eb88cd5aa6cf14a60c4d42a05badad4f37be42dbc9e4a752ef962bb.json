@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM submissions WHERE finished_at IS NOT NULL AND finished_at < NOW() - ($1 || ' seconds')::interval",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03f0ec603eb88cd5aa6cf14a60c4d42a05badad4f37be42dbc9e4a752ef962bb"
+}

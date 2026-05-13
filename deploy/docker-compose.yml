@@ -6,6 +6,8 @@
 # the `zerocode-runner` image's filesystem; both the worker (Phase 1.5+) and
 # the rootfs-init mount it.
 
+name: zerocode
+
 services:
   postgres:
     image: postgres:16

@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use sqlx::Row;
 use thiserror::Error;
 
 use crate::key::CacheKey;
@@ -33,23 +32,20 @@ impl CompileCache {
     }
 
     pub async fn get(&self, key: &CacheKey) -> Result<Option<CompileArtifact>, CompileCacheError> {
-        // Runtime-checked query — avoids requiring a live DB at `cargo check` time.
-        // We'll switch to the `query_as!` macro once CI provisions a Postgres
-        // for compile-time validation.
-        let row = sqlx::query(
+        let row = sqlx::query!(
             "SELECT language_id, artifact_data, created_at \
              FROM compile_artifacts \
              WHERE key = $1",
+            key.as_bytes().as_slice(),
         )
-        .bind(key.as_bytes().as_slice())
         .fetch_optional(&self.pool)
         .await?;
 
         Ok(row.map(|r| CompileArtifact {
             key: *key,
-            language_id: r.get::<i32, _>("language_id") as u32,
-            artifact_data: r.get::<Vec<u8>, _>("artifact_data"),
-            created_at: r.get::<DateTime<Utc>, _>("created_at"),
+            language_id: r.language_id as u32,
+            artifact_data: r.artifact_data,
+            created_at: r.created_at,
         }))
     }
 
@@ -59,14 +55,14 @@ impl CompileCache {
         language_id: u32,
         binary: Vec<u8>,
     ) -> Result<(), CompileCacheError> {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO compile_artifacts (key, language_id, artifact_data, created_at) \
              VALUES ($1, $2, $3, NOW()) \
              ON CONFLICT (key) DO NOTHING",
+            key.as_bytes().as_slice(),
+            language_id as i32,
+            binary,
         )
-        .bind(key.as_bytes().as_slice())
-        .bind(language_id as i32)
-        .bind(binary)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -74,10 +70,12 @@ impl CompileCache {
 
     /// Evict rows older than `cutoff`. Called periodically by the retention job.
     pub async fn purge_before(&self, cutoff: DateTime<Utc>) -> Result<u64, CompileCacheError> {
-        let res = sqlx::query("DELETE FROM compile_artifacts WHERE created_at < $1")
-            .bind(cutoff)
-            .execute(&self.pool)
-            .await?;
+        let res = sqlx::query!(
+            "DELETE FROM compile_artifacts WHERE created_at < $1",
+            cutoff,
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(res.rows_affected())
     }
 }

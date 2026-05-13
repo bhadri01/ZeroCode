@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH next AS (SELECT token FROM submissions WHERE status = 'queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1 ) UPDATE submissions s SET status = 'processing', claimed_at = NOW(), worker_id = $1 FROM next WHERE s.token = next.token RETURNING s.token, s.language_id, s.source_code, s.stdin, s.cpu_time_limit, s.wall_time_limit, s.memory_limit_mb, s.max_pids, s.enable_network, s.callback_url",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "language_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_code",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "stdin",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "cpu_time_limit",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 5,
+        "name": "wall_time_limit",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 6,
+        "name": "memory_limit_mb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_pids",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "enable_network",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "callback_url",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0327af74e808a468a69de09b654ac9d4abaceb4a3f505c4b62c12a3c515bafae"
+}

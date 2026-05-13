@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO languages (id, name, version, source_file, compile_cmd, run_cmd, env, is_archived, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, version = EXCLUDED.version, source_file = EXCLUDED.source_file, compile_cmd = EXCLUDED.compile_cmd, run_cmd = EXCLUDED.run_cmd, env = EXCLUDED.env, is_archived = EXCLUDED.is_archived, updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "Jsonb",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ab31c406ea7cab3a734ef48034151ced7c281e67045b801356a324868f1318b"
+}

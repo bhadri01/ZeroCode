@@ -10,4 +10,5 @@
 *.log
 /data/
 runner-rootfs/
-.sqlx/
+# `.sqlx/` is the offline query cache from `cargo sqlx prepare`. It IS
+# committed so CI can build with `SQLX_OFFLINE=true` without a live DB.

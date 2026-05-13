@@ -60,8 +60,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [x] Triage decision tree (OOM → wall TLE → CPU TLE → signal → NZE → Accepted)
 - [x] macOS dev build green; Linux build green via `docker run rust:1-bookworm`
 - [x] 8 sandbox unit tests pass on Linux (cgroup parsing, exec helpers, triage)
-- [ ] **End-to-end smoke test**: Postgres + API + worker + `curl POST /v1/submissions`
+- [x] **End-to-end smoke test**: Postgres + API + worker + `curl POST /v1/submissions`
       with Python hello world, returns `Status::Accepted`
+      — `scripts/smoke-test.sh` (274 lines, 6 test cases: Python hello, unknown lang,
+      empty source, languages list, about endpoint, base64 round-trip)
 - [x] **Boot-time kernel preflight** runs via `NativeSandbox::new()` → `kernel_check::preflight()` on `--features native`
 - [ ] Verify on real Linux host: limits enforced (TLE, MLE, OOM), no host /proc
       leak, `cgroup.kill` cleanup, no zombies
@@ -270,8 +272,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
 - [ ] **Auto-scaling worker pool** driven by `pending_jobs / available_workers`
 - [ ] **OTLP tracing export** (`opentelemetry-otlp`)
-- [ ] **Prometheus metrics** endpoint
-- [ ] **Multi-arch images** (arm64)
+- [x] **Prometheus metrics** endpoint — API `/metrics` route (PrometheusHandle),
+      worker HTTP server on port 9090; both use `metrics-process` collector for
+      CPU/RSS/FD; named counters for submissions, cache hits/misses, webhooks
+- [x] **Multi-arch images** (arm64) — `deploy/Dockerfile.service` now selects
+      `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl` via `TARGETARCH`
 - [ ] **OpenAPI spec + generated SDKs** (Python, Node, Go)
 - [ ] **Per-language minimal runner images** (instead of monolithic 3 GB image)
 - [ ] **Sandbox warm-up pool** in Phase 4.6 generalised
@@ -298,9 +303,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ## Tech debt & cleanups
 
-- [ ] Move runtime-checked `sqlx::query()` to compile-time `query!` once CI provisions a test Postgres
-      — `.sqlx/` directory and `SQLX_OFFLINE=true` in `.env.example` ready; run
-        `cargo sqlx prepare --workspace` against a live DB to populate
+- [x] Move runtime-checked `sqlx::query()` to compile-time `query!` — all 19 query
+      sites across `zerocode-api`, `zerocode-worker`, `zerocode-cache`, and
+      `zerocode-stream` converted to `query!`/`query_scalar!` macros; `.sqlx/`
+      cache populated (18 entries; `pg_notify` queries dedupe) and committed for
+      `SQLX_OFFLINE=true` CI builds. Dev workflow: `docker compose -f deploy/docker-compose.yml
+      -f deploy/docker-compose.dev.yml up -d postgres migrate` then
+      `DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode cargo sqlx prepare --workspace`
+      after schema changes.
 - [x] Replace `tower-http`'s default `TraceLayer` with `SanitizedMakeSpan` that drops `Authorization` header from spans
 - [ ] Extract a shared `zerocode-db` crate if duplication between `api/db.rs` and `worker/db.rs` grows
 - [x] Removed `Cargo.lock.bak` exclusion from `.gitignore`
@@ -310,4 +320,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-12 (compile pipes, capsh tests, compile cache worker integration, ops tests, load test, nightly CI, Docker tags, sqlx offline setup)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`)._

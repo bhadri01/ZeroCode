@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO compile_artifacts (key, language_id, artifact_data, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76ae9c3ff5462012255749f47d0951f78c470062ab3a1956685e48f526de13a8"
+}

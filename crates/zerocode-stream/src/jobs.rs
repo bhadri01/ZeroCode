@@ -29,9 +29,7 @@ impl JobNotifier {
     pub async fn notify(&self, token: Token) -> Result<(), StreamError> {
         let payload = token.to_string();
         // pg_notify is parameterized to avoid SQL injection via channel names.
-        sqlx::query("SELECT pg_notify($1, $2)")
-            .bind(JOBS_CHANNEL)
-            .bind(payload)
+        sqlx::query!("SELECT pg_notify($1, $2)", JOBS_CHANNEL, payload)
             .execute(&self.pool)
             .await?;
         Ok(())

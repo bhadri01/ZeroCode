@@ -108,11 +108,13 @@ pub async fn deliver(
 }
 
 pub async fn update_callback_status(pool: &PgPool, token: Token, status: CallbackStatus) {
-    if let Err(e) = sqlx::query("UPDATE submissions SET callback_status = $2 WHERE token = $1")
-        .bind(token.to_string())
-        .bind(status.as_str())
-        .execute(pool)
-        .await
+    if let Err(e) = sqlx::query!(
+        "UPDATE submissions SET callback_status = $2 WHERE token = $1",
+        token.to_string(),
+        status.as_str(),
+    )
+    .execute(pool)
+    .await
     {
         tracing::error!(%token, error = %e, "failed to update callback_status");
     }

@@ -2,7 +2,6 @@
 //! binary's query surface stays small and reviewable.
 
 use sqlx::PgPool;
-use sqlx::Row;
 use zerocode_core::{
     LanguageId, LanguageRegistry, ResourceLimits, Signal, Status, Submission, Token,
 };
@@ -23,26 +22,26 @@ pub struct NewSubmission<'a> {
 
 pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result<(), ApiError> {
     let token_str = new.token.to_string();
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO submissions (\
             token, language_id, source_code, stdin, \
             cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
             status, callback_url, idempotency_key, idempotency_hash, \
             created_at\
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, NOW())",
+        token_str,
+        new.language_id as i32,
+        new.source_code,
+        new.stdin,
+        new.limits.cpu_time as f32,
+        new.limits.wall_time as f32,
+        new.limits.memory_mb as i32,
+        new.limits.max_pids as i32,
+        new.limits.enable_network,
+        new.callback_url,
+        new.idempotency_key,
+        new.idempotency_hash,
     )
-    .bind(&token_str)
-    .bind(new.language_id as i32)
-    .bind(new.source_code)
-    .bind(new.stdin)
-    .bind(new.limits.cpu_time as f32)
-    .bind(new.limits.wall_time as f32)
-    .bind(new.limits.memory_mb as i32)
-    .bind(new.limits.max_pids as i32)
-    .bind(new.limits.enable_network)
-    .bind(new.callback_url)
-    .bind(new.idempotency_key)
-    .bind(new.idempotency_hash)
     .execute(pool)
     .await?;
     Ok(())
@@ -53,23 +52,21 @@ pub async fn find_by_idempotency_key(
     key: &str,
     body_hash: &[u8],
 ) -> Result<Option<IdempotencyHit>, ApiError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT token, idempotency_hash FROM submissions WHERE idempotency_key = $1 \
          AND created_at > NOW() - INTERVAL '24 hours' LIMIT 1",
+        key,
     )
-    .bind(key)
     .fetch_optional(pool)
     .await?;
 
     let Some(row) = row else {
         return Ok(None);
     };
-    let token: String = row.get("token");
-    let stored_hash: Option<Vec<u8>> = row.get("idempotency_hash");
 
     Ok(Some(IdempotencyHit {
-        token,
-        body_matches: stored_hash.as_deref() == Some(body_hash),
+        token: row.token,
+        body_matches: row.idempotency_hash.as_deref() == Some(body_hash),
     }))
 }
 
@@ -79,58 +76,51 @@ pub struct IdempotencyHit {
 }
 
 pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Submission>, ApiError> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
                 exit_code, signal, cpu_time, wall_time, memory_kb, \
                 created_at, finished_at \
          FROM submissions WHERE token = $1",
+        token.to_string(),
     )
-    .bind(token.to_string())
     .fetch_optional(pool)
     .await?;
 
     let Some(row) = row else { return Ok(None) };
 
-    let token_str: String = row.get("token");
-    let token = token_str.parse::<Token>().map_err(|e| {
-        ApiError::Internal(format!("row had un-parseable token {token_str:?}: {e}"))
+    let token = row.token.parse::<Token>().map_err(|e| {
+        ApiError::Internal(format!("row had un-parseable token {:?}: {e}", row.token))
     })?;
 
-    let status_text: String = row.get("status");
-    let status_detail: Option<serde_json::Value> = row.get("status_detail");
-    let status = parse_status(&status_text, status_detail.as_ref())?;
+    let status = parse_status(&row.status, row.status_detail.as_ref())?;
 
     let limits = ResourceLimits {
-        cpu_time: row.get::<f32, _>("cpu_time_limit") as f64,
-        wall_time: row.get::<f32, _>("wall_time_limit") as f64,
-        memory_mb: row.get::<i32, _>("memory_limit_mb") as u32,
-        max_pids: row.get::<i32, _>("max_pids") as u32,
+        cpu_time: row.cpu_time_limit as f64,
+        wall_time: row.wall_time_limit as f64,
+        memory_mb: row.memory_limit_mb as u32,
+        max_pids: row.max_pids as u32,
         max_stdout: 64 * 1024,
         max_stderr: 64 * 1024,
-        enable_network: row.get("enable_network"),
+        enable_network: row.enable_network,
     };
-
-    let stdout: Option<Vec<u8>> = row.get("stdout");
-    let stderr: Option<Vec<u8>> = row.get("stderr");
-    let compile_output: Option<Vec<u8>> = row.get("compile_output");
 
     Ok(Some(Submission {
         token,
-        language_id: row.get::<i32, _>("language_id") as u32,
+        language_id: row.language_id as u32,
         status,
         limits,
-        stdout: stdout.map(zerocode_core::Payload::new),
-        stderr: stderr.map(zerocode_core::Payload::new),
-        compile_output: compile_output.map(zerocode_core::Payload::new),
-        exit_code: row.get("exit_code"),
-        signal: row.get::<Option<i32>, _>("signal").map(Signal::from_raw),
-        cpu_time: row.get::<Option<f32>, _>("cpu_time").map(|f| f as f64),
-        wall_time: row.get::<Option<f32>, _>("wall_time").map(|f| f as f64),
-        memory_kb: row.get::<Option<i32>, _>("memory_kb").map(|i| i as u32),
-        created_at: row.get("created_at"),
-        finished_at: row.get("finished_at"),
+        stdout: row.stdout.map(zerocode_core::Payload::new),
+        stderr: row.stderr.map(zerocode_core::Payload::new),
+        compile_output: row.compile_output.map(zerocode_core::Payload::new),
+        exit_code: row.exit_code,
+        signal: row.signal.map(Signal::from_raw),
+        cpu_time: row.cpu_time.map(|f| f as f64),
+        wall_time: row.wall_time.map(|f| f as f64),
+        memory_kb: row.memory_kb.map(|i| i as u32),
+        created_at: row.created_at,
+        finished_at: row.finished_at,
     }))
 }
 
@@ -148,7 +138,8 @@ fn parse_status(text: &str, detail: Option<&serde_json::Value>) -> Result<Status
 
 pub async fn sync_languages(pool: &PgPool, registry: &LanguageRegistry) -> Result<(), ApiError> {
     for spec in registry.list() {
-        sqlx::query(
+        let compile_cmd: Vec<String> = spec.compile_cmd.clone().unwrap_or_default();
+        sqlx::query!(
             "INSERT INTO languages (id, name, version, source_file, compile_cmd, run_cmd, env, is_archived, updated_at) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) \
              ON CONFLICT (id) DO UPDATE SET \
@@ -160,15 +151,15 @@ pub async fn sync_languages(pool: &PgPool, registry: &LanguageRegistry) -> Resul
                 env = EXCLUDED.env, \
                 is_archived = EXCLUDED.is_archived, \
                 updated_at = NOW()",
+            spec.id as i32,
+            spec.name,
+            spec.version,
+            spec.source_file,
+            &compile_cmd,
+            &spec.run_cmd,
+            serde_json::to_value(&spec.env).unwrap(),
+            spec.is_archived,
         )
-        .bind(spec.id as i32)
-        .bind(&spec.name)
-        .bind(&spec.version)
-        .bind(&spec.source_file)
-        .bind(spec.compile_cmd.clone().unwrap_or_default())
-        .bind(&spec.run_cmd)
-        .bind(serde_json::to_value(&spec.env).unwrap())
-        .bind(spec.is_archived)
         .execute(pool)
         .await?;
     }
@@ -186,16 +177,15 @@ pub async fn list_submissions(
     limit: i64,
     offset: i64,
 ) -> Result<SubmissionPage, ApiError> {
-    let count_row = sqlx::query(
-        "SELECT count(*)::bigint AS n FROM submissions \
+    let total: i64 = sqlx::query_scalar!(
+        "SELECT count(*)::bigint AS \"n!\" FROM submissions \
          WHERE ($1::text IS NULL OR status = $1)",
+        status_filter,
     )
-    .bind(status_filter)
     .fetch_one(pool)
     .await?;
-    let total: i64 = count_row.get("n");
 
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
@@ -205,53 +195,46 @@ pub async fn list_submissions(
          WHERE ($1::text IS NULL OR status = $1) \
          ORDER BY created_at DESC \
          LIMIT $2 OFFSET $3",
+        status_filter,
+        limit,
+        offset,
     )
-    .bind(status_filter)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
     .await?;
 
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
-        let token_str: String = row.get("token");
-        let token = token_str.parse::<Token>().map_err(|e| {
-            ApiError::Internal(format!("row had un-parseable token {token_str:?}: {e}"))
+        let token = row.token.parse::<Token>().map_err(|e| {
+            ApiError::Internal(format!("row had un-parseable token {:?}: {e}", row.token))
         })?;
 
-        let status_text: String = row.get("status");
-        let status_detail: Option<serde_json::Value> = row.get("status_detail");
-        let status = parse_status(&status_text, status_detail.as_ref())?;
+        let status = parse_status(&row.status, row.status_detail.as_ref())?;
 
         let limits = ResourceLimits {
-            cpu_time: row.get::<f32, _>("cpu_time_limit") as f64,
-            wall_time: row.get::<f32, _>("wall_time_limit") as f64,
-            memory_mb: row.get::<i32, _>("memory_limit_mb") as u32,
-            max_pids: row.get::<i32, _>("max_pids") as u32,
+            cpu_time: row.cpu_time_limit as f64,
+            wall_time: row.wall_time_limit as f64,
+            memory_mb: row.memory_limit_mb as u32,
+            max_pids: row.max_pids as u32,
             max_stdout: 64 * 1024,
             max_stderr: 64 * 1024,
-            enable_network: row.get("enable_network"),
+            enable_network: row.enable_network,
         };
-
-        let stdout: Option<Vec<u8>> = row.get("stdout");
-        let stderr: Option<Vec<u8>> = row.get("stderr");
-        let compile_output: Option<Vec<u8>> = row.get("compile_output");
 
         items.push(Submission {
             token,
-            language_id: row.get::<i32, _>("language_id") as u32,
+            language_id: row.language_id as u32,
             status,
             limits,
-            stdout: stdout.map(zerocode_core::Payload::new),
-            stderr: stderr.map(zerocode_core::Payload::new),
-            compile_output: compile_output.map(zerocode_core::Payload::new),
-            exit_code: row.get("exit_code"),
-            signal: row.get::<Option<i32>, _>("signal").map(Signal::from_raw),
-            cpu_time: row.get::<Option<f32>, _>("cpu_time").map(|f| f as f64),
-            wall_time: row.get::<Option<f32>, _>("wall_time").map(|f| f as f64),
-            memory_kb: row.get::<Option<i32>, _>("memory_kb").map(|i| i as u32),
-            created_at: row.get("created_at"),
-            finished_at: row.get("finished_at"),
+            stdout: row.stdout.map(zerocode_core::Payload::new),
+            stderr: row.stderr.map(zerocode_core::Payload::new),
+            compile_output: row.compile_output.map(zerocode_core::Payload::new),
+            exit_code: row.exit_code,
+            signal: row.signal.map(Signal::from_raw),
+            cpu_time: row.cpu_time.map(|f| f as f64),
+            wall_time: row.wall_time.map(|f| f as f64),
+            memory_kb: row.memory_kb.map(|i| i as u32),
+            created_at: row.created_at,
+            finished_at: row.finished_at,
         });
     }
 
@@ -260,10 +243,12 @@ pub async fn list_submissions(
 
 /// Used by the queue-depth admission control on `/v1/ready`.
 pub async fn queue_depth(pool: &PgPool) -> Result<i64, ApiError> {
-    let row = sqlx::query("SELECT count(*)::bigint AS n FROM submissions WHERE status = 'queued'")
-        .fetch_one(pool)
-        .await?;
-    Ok(row.get("n"))
+    let n: i64 = sqlx::query_scalar!(
+        "SELECT count(*)::bigint AS \"n!\" FROM submissions WHERE status = 'queued'",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(n)
 }
 
 #[derive(Debug, Clone, Copy)]

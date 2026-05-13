@@ -73,7 +73,7 @@ pub async fn run(pool: PgPool, config: RetentionConfig, shutdown: Arc<Notify>) {
 
 async fn scrub_payloads(pool: &PgPool, config: &RetentionConfig) -> Result<(), sqlx::Error> {
     let ttl_secs = config.payload_ttl.as_secs() as f64;
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "UPDATE submissions \
          SET source_code = '\\x'::bytea, \
              stdin = NULL, \
@@ -83,8 +83,8 @@ async fn scrub_payloads(pool: &PgPool, config: &RetentionConfig) -> Result<(), s
          WHERE finished_at IS NOT NULL \
          AND finished_at < NOW() - ($1 || ' seconds')::interval \
          AND (stdout IS NOT NULL OR stderr IS NOT NULL OR length(source_code) > 0)",
+        ttl_secs.to_string(),
     )
-    .bind(ttl_secs.to_string())
     .execute(pool)
     .await?;
 
@@ -97,12 +97,12 @@ async fn scrub_payloads(pool: &PgPool, config: &RetentionConfig) -> Result<(), s
 
 async fn expire_old_rows(pool: &PgPool, config: &RetentionConfig) -> Result<(), sqlx::Error> {
     let ttl_secs = config.row_ttl.as_secs() as f64;
-    let res = sqlx::query(
+    let res = sqlx::query!(
         "DELETE FROM submissions \
          WHERE finished_at IS NOT NULL \
          AND finished_at < NOW() - ($1 || ' seconds')::interval",
+        ttl_secs.to_string(),
     )
-    .bind(ttl_secs.to_string())
     .execute(pool)
     .await?;
 

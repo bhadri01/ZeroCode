@@ -23,9 +23,7 @@ fn channel(token: &Token) -> String {
 pub async fn publish_event(pool: &PgPool, token: Token, event: &Event) -> Result<(), StreamError> {
     let payload =
         serde_json::to_string(event).map_err(|e| StreamError::BadPayload(e.to_string()))?;
-    sqlx::query("SELECT pg_notify($1, $2)")
-        .bind(channel(&token))
-        .bind(payload)
+    sqlx::query!("SELECT pg_notify($1, $2)", channel(&token), payload)
         .execute(pool)
         .await?;
     Ok(())
