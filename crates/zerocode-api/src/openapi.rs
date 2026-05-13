@@ -34,6 +34,8 @@ use utoipa::{OpenApi, ToSchema};
         crate::routes::submissions::get_doc,
         crate::routes::submissions::list_doc,
         crate::routes::streaming::stream_doc,
+        crate::routes::batches::create_doc,
+        crate::routes::batches::get_doc,
     ),
     components(schemas(
         HealthBody,
@@ -45,6 +47,11 @@ use utoipa::{OpenApi, ToSchema};
         SubmissionViewBody,
         SubmissionListBody,
         ResourceLimitsBody,
+        BatchTestCaseBody,
+        BatchRequestBody,
+        BatchAckBody,
+        BatchSummaryBody,
+        BatchViewBody,
         ErrorBody,
     )),
     security(
@@ -193,6 +200,57 @@ pub struct SubmissionListBody {
     pub page: u32,
     pub per_page: u32,
     pub total: i64,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BatchTestCaseBody {
+    /// Per-case stdin. Plain UTF-8 by default; base64 when the parent request
+    /// has `base64_encoded=true`.
+    pub stdin: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BatchRequestBody {
+    #[schema(example = 71)]
+    pub language_id: u32,
+    #[schema(example = "import sys; print(int(sys.stdin.read()) * 2)")]
+    pub source_code: String,
+    /// 1–100 test cases. Each becomes an independent submission row sharing
+    /// one `batch_id`.
+    pub test_cases: Vec<BatchTestCaseBody>,
+    pub cpu_time_limit: Option<f64>,
+    pub wall_time_limit: Option<f64>,
+    pub memory_limit_mb: Option<u32>,
+    #[serde(default)]
+    pub base64_encoded: bool,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BatchAckBody {
+    #[schema(example = "01HX1ABCDEFGHJKMNPQRSTVWXY")]
+    pub batch_id: String,
+    pub count: usize,
+    pub tokens: Vec<String>,
+    #[schema(example = "queued")]
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BatchSummaryBody {
+    pub total: usize,
+    pub queued: usize,
+    pub processing: usize,
+    pub accepted: usize,
+    /// Count of any submission in a non-`accepted` terminal state
+    /// (`compile_error`, `runtime_error`, TLE, MLE, etc.).
+    pub failed: usize,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BatchViewBody {
+    pub batch_id: String,
+    pub items: Vec<SubmissionViewBody>,
+    pub summary: BatchSummaryBody,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

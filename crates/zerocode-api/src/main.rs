@@ -77,10 +77,17 @@ async fn main() -> Result<()> {
 
     let router = routes::router(state.clone());
 
-    axum::serve(listener, router.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("server error")?;
+    // `into_make_service_with_connect_info` attaches `ConnectInfo<SocketAddr>`
+    // to every request. `tower_governor`'s default `PeerIpKeyExtractor` needs
+    // it to derive the rate-limit bucket; without it every authenticated
+    // request fails with `Unable To Extract Key!`.
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .context("server error")?;
 
     tracing::info!("zerocode-api stopped cleanly");
     telemetry::shutdown(tracer_provider);

@@ -267,7 +267,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] **Firecracker microVM tier** with snapshot/restore (~5-10 ms cold-start)
 - [ ] **WASM tier** (Wasmtime + cwasm pre-compilation) for Rust/Go/C/C++
 - [ ] **CRIU interpreter snapshots** — pre-warmed CPython/JVM/Node images
-- [ ] **Test-case batching** — single submission with N parallel test runs
+- [x] **Test-case batching** — `POST /v1/submissions/batch` accepts a single
+      source plus 1–100 stdin test cases; server creates N independent
+      submission rows tied by one `batch_id` ULID. Workers process each as a
+      normal submission (no special worker semantics → per-case result caching
+      / sweeping / webhooks all keep working). `GET /v1/batches/{batch_id}`
+      returns aggregated items + status summary (queued/processing/accepted/failed).
+      Schema migration `20260513000001_batch_id.sql` adds `batch_id TEXT` +
+      partial index. OpenAPI spec annotated.
 - [ ] **gRPC API** alongside REST (binary protocol, HTTP/2 streaming)
 - [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
 - [~] **Auto-scaling worker pool** driven by `pending_jobs / available_workers` —
@@ -340,4 +347,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed)._

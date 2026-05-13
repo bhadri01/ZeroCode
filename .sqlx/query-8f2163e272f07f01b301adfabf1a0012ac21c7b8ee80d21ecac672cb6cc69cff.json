@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT token, language_id, status, status_detail, cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, stdout, stderr, compile_output, exit_code, signal, cpu_time, wall_time, memory_kb, created_at, finished_at FROM submissions WHERE batch_id = $1 ORDER BY created_at, token",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "token",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "language_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "status_detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "cpu_time_limit",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 5,
+        "name": "wall_time_limit",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 6,
+        "name": "memory_limit_mb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_pids",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "enable_network",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "stdout",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "stderr",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "compile_output",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 12,
+        "name": "exit_code",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "signal",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "cpu_time",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 15,
+        "name": "wall_time",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 16,
+        "name": "memory_kb",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "finished_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "8f2163e272f07f01b301adfabf1a0012ac21c7b8ee80d21ecac672cb6cc69cff"
+}

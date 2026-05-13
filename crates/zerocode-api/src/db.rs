@@ -18,6 +18,9 @@ pub struct NewSubmission<'a> {
     pub callback_url: Option<&'a str>,
     pub idempotency_key: Option<&'a str>,
     pub idempotency_hash: Option<&'a [u8]>,
+    /// When `Some`, marks this row as part of a batch. Multiple submissions
+    /// share the same `batch_id` ULID; `GET /v1/batches/{id}` aggregates them.
+    pub batch_id: Option<&'a str>,
 }
 
 pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result<(), ApiError> {
@@ -26,9 +29,9 @@ pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result
         "INSERT INTO submissions (\
             token, language_id, source_code, stdin, \
             cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
-            status, callback_url, idempotency_key, idempotency_hash, \
+            status, callback_url, idempotency_key, idempotency_hash, batch_id, \
             created_at\
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, NOW())",
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, $13, NOW())",
         token_str,
         new.language_id as i32,
         new.source_code,
@@ -41,6 +44,7 @@ pub async fn insert_submission(pool: &PgPool, new: &NewSubmission<'_>) -> Result
         new.callback_url,
         new.idempotency_key,
         new.idempotency_hash,
+        new.batch_id,
     )
     .execute(pool)
     .await?;
@@ -239,6 +243,63 @@ pub async fn list_submissions(
     }
 
     Ok(SubmissionPage { items, total })
+}
+
+/// Fetch every submission belonging to a given batch in the order they were
+/// inserted. The N+1 submissions of a batch all share the same `batch_id`
+/// ULID returned by `POST /v1/submissions/batch`.
+pub async fn list_batch(pool: &PgPool, batch_id: &str) -> Result<Vec<Submission>, ApiError> {
+    let rows = sqlx::query!(
+        "SELECT token, language_id, status, status_detail, \
+                cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
+                stdout, stderr, compile_output, \
+                exit_code, signal, cpu_time, wall_time, memory_kb, \
+                created_at, finished_at \
+         FROM submissions \
+         WHERE batch_id = $1 \
+         ORDER BY created_at, token",
+        batch_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let token = row.token.parse::<Token>().map_err(|e| {
+            ApiError::Internal(format!("row had un-parseable token {:?}: {e}", row.token))
+        })?;
+
+        let status = parse_status(&row.status, row.status_detail.as_ref())?;
+
+        let limits = ResourceLimits {
+            cpu_time: row.cpu_time_limit as f64,
+            wall_time: row.wall_time_limit as f64,
+            memory_mb: row.memory_limit_mb as u32,
+            max_pids: row.max_pids as u32,
+            max_stdout: 64 * 1024,
+            max_stderr: 64 * 1024,
+            enable_network: row.enable_network,
+        };
+
+        items.push(Submission {
+            token,
+            language_id: row.language_id as u32,
+            status,
+            limits,
+            stdout: row.stdout.map(zerocode_core::Payload::new),
+            stderr: row.stderr.map(zerocode_core::Payload::new),
+            compile_output: row.compile_output.map(zerocode_core::Payload::new),
+            exit_code: row.exit_code,
+            signal: row.signal.map(Signal::from_raw),
+            cpu_time: row.cpu_time.map(|f| f as f64),
+            wall_time: row.wall_time.map(|f| f as f64),
+            memory_kb: row.memory_kb.map(|i| i as u32),
+            created_at: row.created_at,
+            finished_at: row.finished_at,
+        });
+    }
+
+    Ok(items)
 }
 
 /// Used by the queue-depth admission control on `/v1/ready`.

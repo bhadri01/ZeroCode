@@ -12,6 +12,7 @@ use utoipa::OpenApi;
 use crate::auth;
 use crate::state::AppState;
 
+pub mod batches;
 pub mod health;
 pub mod languages;
 pub mod meta;
@@ -69,6 +70,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/submissions/{token}", get(submissions::get))
         .route("/v1/submissions/{token}/stream", get(streaming::stream))
+        .route("/v1/submissions/batch", post(batches::create))
+        .route("/v1/batches/{batch_id}", get(batches::get))
         .route("/v1/languages", get(languages::list))
         .layer(GovernorLayer::new(governor_conf))
         .layer(from_fn_with_state(state.clone(), auth::require_bearer));

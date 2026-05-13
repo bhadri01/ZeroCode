@@ -131,6 +131,7 @@ pub async fn create(
         callback_url: req.callback_url.as_ref().map(|u| u.as_str()),
         idempotency_key: idem_key.as_deref(),
         idempotency_hash: idem_key.as_ref().map(|_| body_hash.as_slice()),
+        batch_id: None,
     };
     db::insert_submission(state.pool(), &new).await?;
     state

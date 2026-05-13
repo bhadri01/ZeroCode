@@ -8,6 +8,49 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 — test-case batching + tower_governor key-extraction bug fix
+
+#### Added
+- **`POST /v1/submissions/batch`** ([crates/zerocode-api/src/routes/batches.rs]):
+  accepts one source program plus 1–100 stdin test cases, creates N
+  independent submission rows tied by a shared `batch_id` ULID. Workers
+  process each as a normal submission — per-case result caching, sweeping,
+  webhooks, retention all keep working unchanged. Returns
+  `{batch_id, count, tokens, status}` with `201 Created`.
+- **`GET /v1/batches/{batch_id}`**: returns aggregated items + status summary
+  (`{total, queued, processing, accepted, failed}`).
+- **Migration `20260513000001_batch_id.sql`**: adds `batch_id TEXT` column to
+  `submissions` + partial index on non-NULL `batch_id` so single-shot
+  submissions pay no index cost.
+- **OpenAPI annotations** for both endpoints + 5 new schemas
+  (`BatchRequestBody`, `BatchTestCaseBody`, `BatchAckBody`, `BatchSummaryBody`,
+  `BatchViewBody`). Spec at `/v1/openapi.json` now has 9 paths + 15 schemas.
+- **`zerocode_batches_created_total` counter**: counted per batch (`count`
+  bumps the existing `zerocode_submissions_created_total` by N).
+
+#### Fixed
+- **`tower_governor` "Unable To Extract Key!" bug** (`crates/zerocode-api/src/main.rs`):
+  axum's `into_make_service()` does NOT attach `ConnectInfo<SocketAddr>`,
+  which `tower_governor`'s default `PeerIpKeyExtractor` requires.
+  Switched to `into_make_service_with_connect_info::<SocketAddr>()` so the
+  rate limiter can derive the per-IP bucket. Without this fix every
+  authenticated request returned `500 Unable To Extract Key!`. This was a
+  pre-existing v1 bug surfaced by live smoke-testing the new batch endpoint.
+
+#### Verified end-to-end
+- Created a batch of 3 Python submissions via curl → received 3 ULIDs.
+- Polled `/v1/batches/{id}` → got 3 items in `queued` state with correct summary.
+- Validation errors fire correctly (`empty test_cases`, unknown batch returns 404).
+- `cargo test --workspace` — 83 tests pass (parity).
+- `.sqlx/` regenerated (19 entries, +1 for `list_batch`).
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (`SQLX_OFFLINE=true`) | 83 | 83 | — |
+
+---
+
 ### v2 continuation — auto-scaling metrics + SDK generation script
 
 #### Added

@@ -43,6 +43,7 @@ hex = { workspace = true }
 blake3 = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
+ulid = { workspace = true }
 futures = { workspace = true }
 tokio-stream = { workspace = true }
 metrics = { workspace = true }
