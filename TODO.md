@@ -282,8 +282,12 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       build time. Shares the REST `AppState` so idempotency, result cache, and
       rate-limit state stay consistent across protocols. Bearer auth via
       `authorization` metadata, constant-time compare same as REST.
-      Set `ZEROCODE_GRPC_BIND=off` to disable. Streaming RPCs and batch
-      operations deferred — REST already covers them.
+      Set `ZEROCODE_GRPC_BIND=off` to disable. **Reflection** wired via
+      `tonic-reflection` (clients use `grpcurl localhost:9091 list/describe`
+      without the .proto). Dockerfile.service installs `protobuf-compiler` in
+      the build stage; compose exposes port 9091. Smoke test extended with
+      gRPC reflection + GetHealth check. Streaming RPCs and batch operations
+      deferred — REST already covers them.
 - [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
 - [~] **Auto-scaling worker pool** driven by `pending_jobs / available_workers` —
       signal metrics exposed: `zerocode_pending_jobs` (gauge, sampled every 5 s

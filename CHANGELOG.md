@@ -8,6 +8,38 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 gRPC polish — reflection + Dockerfile + smoke-test coverage
+
+#### Added
+- **gRPC reflection** via `tonic-reflection 0.12`:
+  - `build.rs` now emits a `FileDescriptorSet` to `OUT_DIR/zerocode_descriptor.bin`.
+  - `grpc.rs` exposes the bytes as `FILE_DESCRIPTOR_SET` (`include_bytes!`).
+  - `main.rs` registers `grpc.reflection.v1.ServerReflection` alongside the
+    ZeroCode service so clients can discover schemas without the `.proto`:
+    `grpcurl -plaintext localhost:9091 list / describe`.
+- **`Dockerfile.service` builder stage** now installs `protobuf-compiler`
+  (Debian package) alongside `musl-tools` + `pkg-config`. Required for the
+  `tonic-build` step on production image rebuilds.
+- **`Dockerfile.service`** now `EXPOSE`s port 9091 in addition to 8080.
+- **`docker-compose.yml`** api service: `ZEROCODE_GRPC_BIND=0.0.0.0:9091` env
+  and `9091:9091` port mapping so dev compose serves both REST and gRPC.
+- **`scripts/smoke-test.sh`** test 4g: `gRPC: reflection + GetHealth`.
+  Calls `grpcurl localhost:9091 list` (verifies reflection advertises the
+  service) and `GetHealth` (verifies the unary call returns `status="ok"`).
+  Skipped (counted as pass) when `grpcurl` is not on the dev host's PATH so
+  the core smoke test doesn't fail in CI environments without it. `DIM`
+  ANSI escape added for the SKIP message.
+
+#### Verified
+- `grpcurl -plaintext localhost:9091 list` →
+  `grpc.reflection.v1.ServerReflection` + `zerocode.v2.ZeroCode`.
+- `grpcurl -plaintext localhost:9091 describe zerocode.v2.ZeroCode` →
+  full service definition with comments.
+- `grpcurl -plaintext -d '{}' localhost:9091 zerocode.v2.ZeroCode/GetHealth`
+  → `{status:"ok", ready:true}` without the `-proto` flag.
+
+---
+
 ### v2 — gRPC API alongside REST
 
 #### Added

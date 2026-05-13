@@ -22,6 +22,15 @@ pub mod pb {
     tonic::include_proto!("zerocode.v2");
 }
 
+/// Embedded FileDescriptorSet emitted by tonic-build. Used by
+/// `tonic-reflection` so clients (grpcurl, BloomRPC, …) can discover the
+/// service schema without the .proto file:
+///
+///   grpcurl -plaintext localhost:9091 list
+///   grpcurl -plaintext localhost:9091 zerocode.v2.ZeroCode/GetHealth
+pub const FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/zerocode_descriptor.bin"));
+
 use pb::zero_code_server::{ZeroCode, ZeroCodeServer};
 use pb::{
     CreateSubmissionRequest, CreateSubmissionResponse, GetHealthRequest, GetHealthResponse,

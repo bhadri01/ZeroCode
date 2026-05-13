@@ -57,6 +57,7 @@ services:
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
       ZEROCODE_API_BIND: 0.0.0.0:8080
+      ZEROCODE_GRPC_BIND: 0.0.0.0:9091
       ZEROCODE_API_KEY: dev-only-replace-me
       RUST_LOG: info,zerocode=debug
     depends_on:
@@ -64,6 +65,7 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
+      - "9091:9091"
     read_only: true
     tmpfs:
       - /tmp

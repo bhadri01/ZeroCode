@@ -92,9 +92,19 @@ async fn main() -> Result<()> {
         let addr: std::net::SocketAddr = grpc_bind
             .parse()
             .with_context(|| format!("parsing grpc_bind {grpc_bind}"))?;
+
+        // Reflection — lets grpcurl / BloomRPC discover the service schema
+        // without the .proto file. Driven off the FileDescriptorSet
+        // tonic-build embedded into the binary.
+        let reflection = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(grpc::FILE_DESCRIPTOR_SET)
+            .build_v1()
+            .context("build gRPC reflection service")?;
+
         tracing::info!(%addr, "gRPC server listening");
         tonic::transport::Server::builder()
             .add_service(grpc::service(grpc_state))
+            .add_service(reflection)
             .serve_with_shutdown(addr, shutdown_signal())
             .await
             .context("gRPC server error")

@@ -54,4 +54,5 @@ metrics-exporter-prometheus = { workspace = true }
 metrics-process = { workspace = true }
 utoipa = { workspace = true }
 tonic = { workspace = true }
+tonic-reflection = { workspace = true }
 prost = { workspace = true }

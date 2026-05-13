@@ -16,10 +16,11 @@ if [[ -t 1 ]]; then
   GREEN='\033[0;32m'
   RED='\033[0;31m'
   YELLOW='\033[0;33m'
+  DIM='\033[2m'
   BOLD='\033[1m'
   RESET='\033[0m'
 else
-  GREEN='' RED='' YELLOW='' BOLD='' RESET=''
+  GREEN='' RED='' YELLOW='' DIM='' BOLD='' RESET=''
 fi
 
 # -- constants ---------------------------------------------------------------
@@ -239,6 +240,33 @@ elif [[ "$http_code" == "201" ]]; then
   fi
 else
   fail "$test_name" "expected HTTP 200 or 201, got ${http_code}"
+fi
+
+###############################################################################
+# 4g. gRPC reflection + GetHealth
+#
+# Only runs if `grpcurl` is installed; otherwise skipped (don't make the
+# core smoke test fail when devs haven't installed an optional binary).
+###############################################################################
+test_name="gRPC: reflection + GetHealth"
+TESTS+=("$test_name")
+if ! command -v grpcurl &>/dev/null; then
+  printf "  ${DIM}SKIP${RESET}  %s (grpcurl not in PATH)\n" "$test_name"
+  RESULTS+=("pass")
+  PASSED=$((PASSED + 1))
+else
+  grpc_list=$(grpcurl -plaintext -max-time 5 "localhost:9091" list 2>&1 || true)
+  if ! echo "$grpc_list" | grep -q "zerocode.v2.ZeroCode"; then
+    fail "$test_name" "reflection did not advertise zerocode.v2.ZeroCode: ${grpc_list}"
+  else
+    grpc_health=$(grpcurl -plaintext -max-time 5 -d '{}' \
+      "localhost:9091" zerocode.v2.ZeroCode/GetHealth 2>&1 || true)
+    if echo "$grpc_health" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+      pass "$test_name"
+    else
+      fail "$test_name" "GetHealth response unexpected: ${grpc_health}"
+    fi
+  fi
 fi
 
 ###############################################################################
