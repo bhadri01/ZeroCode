@@ -199,7 +199,7 @@ async fn process(
             Ok(Some(artifact)) => {
                 tracing::info!(%token, "compile cache hit");
                 metrics::counter!("zerocode_compile_cache_hits_total").increment(1);
-                Some(Bytes::from(artifact.binary))
+                Some(Bytes::from(artifact.artifact_data))
             }
             Ok(None) => {
                 tracing::debug!(%token, "compile cache miss");

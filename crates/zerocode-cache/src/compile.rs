@@ -18,7 +18,7 @@ pub enum CompileCacheError {
 pub struct CompileArtifact {
     pub key: CacheKey,
     pub language_id: u32,
-    pub binary: Vec<u8>,
+    pub artifact_data: Vec<u8>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -37,7 +37,7 @@ impl CompileCache {
         // We'll switch to the `query_as!` macro once CI provisions a Postgres
         // for compile-time validation.
         let row = sqlx::query(
-            "SELECT language_id, binary, created_at \
+            "SELECT language_id, artifact_data, created_at \
              FROM compile_artifacts \
              WHERE key = $1",
         )
@@ -48,7 +48,7 @@ impl CompileCache {
         Ok(row.map(|r| CompileArtifact {
             key: *key,
             language_id: r.get::<i32, _>("language_id") as u32,
-            binary: r.get::<Vec<u8>, _>("binary"),
+            artifact_data: r.get::<Vec<u8>, _>("artifact_data"),
             created_at: r.get::<DateTime<Utc>, _>("created_at"),
         }))
     }
@@ -60,7 +60,7 @@ impl CompileCache {
         binary: Vec<u8>,
     ) -> Result<(), CompileCacheError> {
         sqlx::query(
-            "INSERT INTO compile_artifacts (key, language_id, binary, created_at) \
+            "INSERT INTO compile_artifacts (key, language_id, artifact_data, created_at) \
              VALUES ($1, $2, $3, NOW()) \
              ON CONFLICT (key) DO NOTHING",
         )

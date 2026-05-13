@@ -74,10 +74,10 @@ CREATE INDEX IF NOT EXISTS submissions_created_idx
     ON submissions (created_at);
 
 CREATE TABLE IF NOT EXISTS compile_artifacts (
-    key         BYTEA PRIMARY KEY,    -- blake3 cache key from CacheKey::compile
-    language_id INT NOT NULL REFERENCES languages(id),
-    binary      BYTEA NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    key           BYTEA PRIMARY KEY,    -- blake3 cache key from CacheKey::compile
+    language_id   INT NOT NULL REFERENCES languages(id),
+    artifact_data BYTEA NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS compile_artifacts_created_idx
     ON compile_artifacts (created_at);
