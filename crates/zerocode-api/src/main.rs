@@ -103,7 +103,9 @@ fn init_logging() {
 
 fn init_metrics() -> PrometheusHandle {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-    let handle = builder.install_recorder().expect("install metrics recorder");
+    let handle = builder
+        .install_recorder()
+        .expect("install metrics recorder");
 
     let collector = metrics_process::Collector::default();
     collector.describe();
@@ -121,14 +123,8 @@ fn init_metrics() -> PrometheusHandle {
         "zerocode_submissions_created_total",
         "Total submissions created"
     );
-    metrics::describe_counter!(
-        "zerocode_result_cache_hits_total",
-        "Result cache hits"
-    );
-    metrics::describe_counter!(
-        "zerocode_result_cache_misses_total",
-        "Result cache misses"
-    );
+    metrics::describe_counter!("zerocode_result_cache_hits_total", "Result cache hits");
+    metrics::describe_counter!("zerocode_result_cache_misses_total", "Result cache misses");
 
     handle
 }

@@ -49,7 +49,11 @@ struct Args {
     webhook_secret: Option<String>,
 
     /// Bind address for the /metrics Prometheus endpoint.
-    #[arg(long, env = "ZEROCODE_WORKER_METRICS_BIND", default_value = "0.0.0.0:9090")]
+    #[arg(
+        long,
+        env = "ZEROCODE_WORKER_METRICS_BIND",
+        default_value = "0.0.0.0:9090"
+    )]
     metrics_bind: String,
 }
 
@@ -65,7 +69,7 @@ async fn main() -> Result<()> {
     tracing::info!(%worker_id, "zerocode-worker starting");
 
     let prom_handle = metrics::init();
-    metrics::gauge!("zerocode_worker_parallelism").set(0.0);
+    ::metrics::gauge!("zerocode_worker_parallelism").set(0.0);
 
     // Install ourselves as the subreaper before spawning any children so
     // orphaned grandchildren reparent here instead of to PID 1.
@@ -107,7 +111,7 @@ async fn main() -> Result<()> {
     // children rather than the worker process under host memory pressure.
     reaper::set_oom_score_adj();
 
-    metrics::gauge!("zerocode_worker_parallelism").set(parallelism as f64);
+    ::metrics::gauge!("zerocode_worker_parallelism").set(parallelism as f64);
 
     let runner_shutdown = runner.shutdown_handle();
     let sweeper_shutdown = Arc::new(Notify::new());

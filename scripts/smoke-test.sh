@@ -67,6 +67,18 @@ printf "\n"
 ###############################################################################
 # 2. Start the stack
 ###############################################################################
+log "Ensuring runner rootfs image exists"
+if docker image inspect zerocode-runner:dev >/dev/null 2>&1; then
+  printf "  zerocode-runner:dev already present\n"
+else
+  docker build \
+    -f "${REPO_ROOT}/runners/Dockerfile.slim" \
+    --target full \
+    -t zerocode-runner:dev \
+    "${REPO_ROOT}"
+fi
+printf "\n"
+
 log "Starting docker compose stack"
 docker compose -f "${REPO_ROOT}/${COMPOSE_FILE}" up -d --build
 printf "\n"

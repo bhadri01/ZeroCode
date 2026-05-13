@@ -9,7 +9,9 @@ use tokio::sync::Notify;
 
 pub fn init() -> PrometheusHandle {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-    let handle = builder.install_recorder().expect("install metrics recorder");
+    let handle = builder
+        .install_recorder()
+        .expect("install metrics recorder");
 
     let collector = metrics_process::Collector::default();
     collector.describe();

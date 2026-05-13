@@ -9,27 +9,35 @@
 
 FROM rust:1-bookworm AS builder
 WORKDIR /src
+ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         musl-tools pkg-config && \
     rm -rf /var/lib/apt/lists/*
-
-RUN rustup target add x86_64-unknown-linux-musl
 
 COPY Cargo.toml rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
 
 # Build only the API + migrate binaries — sandbox/worker stay out of this image.
-RUN cargo build \
+RUN case "$TARGETARCH" in \
+        amd64) rust_target="x86_64-unknown-linux-musl" ;; \
+        arm64) rust_target="aarch64-unknown-linux-musl" ;; \
+        *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && rustup target add "$rust_target" \
+    && cargo build \
         --release \
-        --target x86_64-unknown-linux-musl \
+        --target "$rust_target" \
         -p zerocode-api \
-        -p zerocode-migrate
+        -p zerocode-migrate \
+    && mkdir -p /out \
+    && cp "target/${rust_target}/release/zerocode-api" /out/zerocode-api \
+    && cp "target/${rust_target}/release/zerocode-migrate" /out/zerocode-migrate
 
 FROM gcr.io/distroless/static-debian12:nonroot AS service
-COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/zerocode-api /usr/local/bin/zerocode-api
-COPY --from=builder /src/target/x86_64-unknown-linux-musl/release/zerocode-migrate /usr/local/bin/zerocode-migrate
+COPY --from=builder /out/zerocode-api /usr/local/bin/zerocode-api
+COPY --from=builder /out/zerocode-migrate /usr/local/bin/zerocode-migrate
 COPY --from=builder /src/migrations /var/lib/zerocode/migrations
 USER nonroot:nonroot
 EXPOSE 8080
