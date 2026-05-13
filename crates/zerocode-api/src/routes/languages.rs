@@ -31,3 +31,17 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<LanguageV
         .collect();
     Ok(Json(items))
 }
+
+#[utoipa::path(
+    get, path = "/v1/languages", tag = "languages",
+    summary = "List active languages",
+    description = "Returns the in-memory language registry the API was started \
+                   with. Stable Judge0-compatible numeric IDs. Bearer auth required.",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "Active registry", body = crate::openapi::LanguagesBody),
+        (status = 401, description = "Missing or invalid API key", body = crate::openapi::ErrorBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn list_doc() {}

@@ -84,6 +84,10 @@ opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["tonic"] }
 tracing-opentelemetry = "0.28"
 
+# --- OpenAPI ---
+utoipa = { version = "5", features = ["axum_extras", "chrono", "preserve_order"] }
+utoipa-axum = "0.1"
+
 # --- benchmarks ---
 criterion = { version = "0.5", features = ["html_reports"] }
 

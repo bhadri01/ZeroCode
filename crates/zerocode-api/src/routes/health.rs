@@ -16,6 +16,19 @@ pub async fn liveness() -> Json<Liveness> {
     Json(Liveness { status: "ok" })
 }
 
+#[utoipa::path(
+    get, path = "/v1/health", tag = "ops",
+    summary = "Liveness probe",
+    description = "Always-200 once the process is accepting connections. \
+                   Use for K8s `livenessProbe`. For traffic-gating use \
+                   `/v1/ready` instead, which also checks DB + queue depth.",
+    responses(
+        (status = 200, description = "Process is up", body = crate::openapi::HealthBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn liveness_doc() {}
+
 #[derive(Serialize)]
 pub struct Readiness {
     db: &'static str,
@@ -53,3 +66,17 @@ pub async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<Readi
         }),
     )
 }
+
+#[utoipa::path(
+    get, path = "/v1/ready", tag = "ops",
+    summary = "Readiness probe",
+    description = "Returns 200 only when the DB ping succeeds AND queue depth \
+                   is below the backpressure threshold (10000). Returns 503 \
+                   otherwise. Use for K8s `readinessProbe` to gate traffic.",
+    responses(
+        (status = 200, description = "Ready", body = crate::openapi::HealthBody),
+        (status = 503, description = "DB down or queue saturated", body = crate::openapi::HealthBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn readiness_doc() {}

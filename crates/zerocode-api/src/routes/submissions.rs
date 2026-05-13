@@ -513,6 +513,76 @@ fn is_private_or_loopback(ip: std::net::IpAddr) -> bool {
     }
 }
 
+// ------------ OpenAPI doc stubs --------------------------------------------
+// These exist so utoipa can attach `#[utoipa::path]` metadata without coupling
+// the runtime handler signatures (which take `State`, `Json`, etc.) to the
+// schema layer.
+
+#[utoipa::path(
+    post, path = "/v1/submissions", tag = "submissions",
+    summary = "Submit code for execution",
+    description = "Creates a queued submission. Returns immediately with a token \
+                   unless `?wait=true` is set, in which case the response holds \
+                   until the submission terminates (or 30s timeout). \
+                   Optionally idempotent via the `Idempotency-Key` header.",
+    security(("bearer" = [])),
+    params(
+        ("wait" = Option<bool>, Query, description = "Hold response until terminal (≤30s) instead of returning a token immediately."),
+    ),
+    request_body = crate::openapi::SubmissionRequestBody,
+    responses(
+        (status = 200, description = "Synchronous result (wait=true completed)", body = crate::openapi::SubmissionViewBody),
+        (status = 201, description = "Queued — token returned", body = crate::openapi::SubmissionAckBody),
+        (status = 401, description = "Missing or invalid bearer", body = crate::openapi::ErrorBody),
+        (status = 409, description = "Idempotency-Key reused with a different body", body = crate::openapi::ErrorBody),
+        (status = 413, description = "Body or field exceeds size cap", body = crate::openapi::ErrorBody),
+        (status = 422, description = "Validation error (unknown lang, limits over ceiling, …)", body = crate::openapi::ErrorBody),
+        (status = 429, description = "Rate-limited", body = crate::openapi::ErrorBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn create_doc() {}
+
+#[utoipa::path(
+    get, path = "/v1/submissions/{token}", tag = "submissions",
+    summary = "Fetch a submission",
+    description = "Returns the current state of a submission. Streams stdout/\
+                   stderr as UTF-8 strings (when valid) or as `{\"_b64\": \"...\"}` \
+                   for binary payloads. Pass `?base64_encoded=true` to force \
+                   base64-encoded plain strings for Judge0 compatibility.",
+    security(("bearer" = [])),
+    params(
+        ("token" = String, Path, description = "ULID token returned by `POST /v1/submissions`"),
+        ("base64_encoded" = Option<bool>, Query, description = "Force base64-encoded stdout/stderr."),
+    ),
+    responses(
+        (status = 200, description = "Submission view", body = crate::openapi::SubmissionViewBody),
+        (status = 401, description = "Missing or invalid bearer", body = crate::openapi::ErrorBody),
+        (status = 404, description = "Unknown token", body = crate::openapi::ErrorBody),
+        (status = 410, description = "Submission expired by retention policy", body = crate::openapi::ErrorBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn get_doc() {}
+
+#[utoipa::path(
+    get, path = "/v1/submissions", tag = "submissions",
+    summary = "List submissions",
+    description = "Paginated listing of submissions. Filterable by `?status=`.",
+    security(("bearer" = [])),
+    params(
+        ("page" = Option<u32>, Query, description = "1-indexed page. Default 1."),
+        ("per_page" = Option<u32>, Query, description = "1–100. Default 20."),
+        ("status" = Option<String>, Query, description = "Filter by terminal/non-terminal status (e.g. `accepted`, `queued`)."),
+    ),
+    responses(
+        (status = 200, description = "Paginated list", body = crate::openapi::SubmissionListBody),
+        (status = 401, description = "Missing or invalid bearer", body = crate::openapi::ErrorBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn list_doc() {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

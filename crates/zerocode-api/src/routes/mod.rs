@@ -1,21 +1,34 @@
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
+use axum::response::Json;
 use axum::routing::{get, post};
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, MakeSpan, TraceLayer};
 use tracing::Level;
+use utoipa::OpenApi;
 
 use crate::auth;
 use crate::state::AppState;
 
-mod health;
-mod languages;
-mod meta;
+pub mod health;
+pub mod languages;
+pub mod meta;
 mod metrics;
-mod streaming;
-mod submissions;
+pub mod streaming;
+pub mod submissions;
+
+/// Serve the spec generated from `crate::openapi::ApiDoc`. Unauthenticated so
+/// SDK generators can fetch it without provisioning a key.
+async fn openapi_spec() -> Result<Json<serde_json::Value>, crate::error::ApiError> {
+    let s = crate::openapi::ApiDoc::openapi()
+        .to_json()
+        .map_err(|e| crate::error::ApiError::Internal(format!("openapi serialize: {e}")))?;
+    let v: serde_json::Value = serde_json::from_str(&s)
+        .map_err(|e| crate::error::ApiError::Internal(format!("openapi reparse: {e}")))?;
+    Ok(Json(v))
+}
 
 const MAX_BODY_BYTES: usize = 256 * 1024;
 
@@ -40,6 +53,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/health", get(health::liveness))
         .route("/v1/ready", get(health::readiness))
         .route("/v1/about", get(meta::about))
+        .route("/v1/openapi.json", get(openapi_spec))
         .route("/metrics", get(metrics::prometheus));
 
     let governor_conf = GovernorConfigBuilder::default()

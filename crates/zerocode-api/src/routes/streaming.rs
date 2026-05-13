@@ -62,3 +62,23 @@ pub async fn stream(
         .keep_alive(KeepAlive::default())
         .into_response())
 }
+
+#[utoipa::path(
+    get, path = "/v1/submissions/{token}/stream", tag = "submissions",
+    summary = "Stream submission events (Server-Sent Events)",
+    description = "Subscribes to per-token events via PostgreSQL `LISTEN`. \
+                   Each event is one SSE message: `processing`, `stdout_chunk`, \
+                   `stderr_chunk`, or `finished`. Connection holds until the \
+                   submission reaches a terminal state, then closes.",
+    security(("bearer" = [])),
+    params(
+        ("token" = String, Path, description = "Submission token."),
+    ),
+    responses(
+        (status = 200, description = "SSE stream (content-type `text/event-stream`)"),
+        (status = 401, description = "Missing or invalid bearer", body = crate::openapi::ErrorBody),
+        (status = 404, description = "Unknown token", body = crate::openapi::ErrorBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn stream_doc() {}

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Parser;
 use metrics_exporter_prometheus::PrometheusHandle;
-use tracing_subscriber::EnvFilter;
 use zerocode_core::LanguageRegistry;
 
 mod auth;
@@ -11,8 +10,10 @@ mod config;
 mod db;
 mod error;
 mod metrics_layer;
+mod openapi;
 mod routes;
 mod state;
+mod telemetry;
 
 use crate::config::ApiConfig;
 use crate::state::AppState;
@@ -39,7 +40,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_logging();
+    let tracer_provider = telemetry::init().context("init telemetry")?;
     let args = Args::parse();
     let prom_handle = init_metrics();
 
@@ -82,6 +83,7 @@ async fn main() -> Result<()> {
         .context("server error")?;
 
     tracing::info!("zerocode-api stopped cleanly");
+    telemetry::shutdown(tracer_provider);
     Ok(())
 }
 
@@ -89,16 +91,6 @@ fn load_languages(path: &std::path::Path) -> Result<LanguageRegistry> {
     let toml = std::fs::read_to_string(path)
         .with_context(|| format!("reading languages file at {path:?}"))?;
     LanguageRegistry::from_toml(&toml).map_err(|e| anyhow::anyhow!(e))
-}
-
-fn init_logging() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,zerocode=debug")),
-        )
-        .json()
-        .init();
 }
 
 fn init_metrics() -> PrometheusHandle {

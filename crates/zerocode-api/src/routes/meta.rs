@@ -18,3 +18,15 @@ pub async fn about() -> Json<About> {
         description: "Sandboxed code execution API",
     })
 }
+
+#[utoipa::path(
+    get, path = "/v1/about", tag = "ops",
+    summary = "Service metadata",
+    description = "Returns name, version, build SHA, and a one-line description. \
+                   Unauthenticated; safe to expose for service discovery.",
+    responses(
+        (status = 200, description = "Metadata", body = crate::openapi::AboutBody),
+    ),
+)]
+#[allow(dead_code)]
+pub fn about_doc() {}

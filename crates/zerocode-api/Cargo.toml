@@ -28,6 +28,10 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 clap = { workspace = true }
@@ -44,3 +48,4 @@ tokio-stream = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-process = { workspace = true }
+utoipa = { workspace = true }

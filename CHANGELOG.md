@@ -8,6 +8,54 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 observability — OTLP tracing export + OpenAPI 3.1 spec
+
+#### Added
+- **OTLP tracing export** in both `zerocode-api` and `zerocode-worker`:
+  - New `telemetry.rs` module in each binary installs an
+    `opentelemetry-otlp` batch span exporter (tonic/gRPC) when
+    `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Unset/empty preserves the existing
+    JSON-stdout-only behavior.
+  - W3C `TraceContextPropagator` registered as the global text-map
+    propagator so incoming `traceparent` headers attach to spans.
+  - HTTP request spans from the existing `tower-http` `TraceLayer` (with
+    `SanitizedMakeSpan`) flow through to the OTLP exporter without any
+    additional wiring — `tracing-opentelemetry` instruments every tracing
+    span emitted in the process.
+  - Service metadata attached: `service.name` (`zerocode-api` / `zerocode-worker`)
+    and `service.version` (crate version at build time).
+  - Provider shutdown wired into main's exit path so in-flight spans are
+    flushed.
+- **OpenAPI 3.1 spec** at `GET /v1/openapi.json`:
+  - utoipa-based `ApiDoc` aggregates 7 endpoints (`/v1/health`, `/v1/ready`,
+    `/v1/about`, `/v1/languages`, `/v1/submissions` POST/GET, single-submission
+    GET + stream) and 10 component schemas.
+  - Bearer-token security scheme declared on protected routes.
+  - Wire-shape schemas defined in `openapi.rs` so existing handler types
+    stay free of utoipa derives (decoupling preserved; drift cost paid in
+    code review). Spec is ready to feed into `openapi-generator` /
+    `oapi-codegen` for SDK generation.
+- **Jaeger 1.60 all-in-one** in `deploy/docker-compose.dev.yml`:
+  - UI at `http://localhost:16686`, OTLP gRPC ingest on `:4317`,
+    OTLP HTTP on `:4318`. `COLLECTOR_OTLP_ENABLED=true`.
+- **`.env.example`** documents `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+#### Verified
+- Submitting a request to a running `zerocode-api` with
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` set produces traces
+  that appear in Jaeger under the `zerocode-api` service.
+- `GET /v1/openapi.json` returns a valid OpenAPI 3.1 document with 7 paths,
+  10 component schemas, bearer security definitions, and complete
+  response codes per endpoint.
+- `cargo test --workspace` — 83 tests pass (parity maintained).
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (`SQLX_OFFLINE=true`) | 83 | 83 | — |
+
+---
+
 ### Compile-time SQL validation — `sqlx::query` → `sqlx::query!` macros
 
 #### Changed
