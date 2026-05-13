@@ -11,6 +11,7 @@ use zerocode_core::LanguageRegistry;
 
 mod db;
 mod metrics;
+mod queue_depth;
 mod reaper;
 mod retention;
 mod runner;
@@ -118,6 +119,7 @@ async fn main() -> Result<()> {
     let reaper_shutdown = Arc::new(Notify::new());
     let retention_shutdown = Arc::new(Notify::new());
     let metrics_shutdown = Arc::new(Notify::new());
+    let queue_depth_shutdown = Arc::new(Notify::new());
 
     let retention_config = retention::RetentionConfig::from_env();
 
@@ -134,6 +136,10 @@ async fn main() -> Result<()> {
         prom_handle,
         metrics_shutdown.clone(),
     ));
+    let queue_depth_handle = tokio::spawn(queue_depth::run(
+        pool.clone(),
+        queue_depth_shutdown.clone(),
+    ));
 
     shutdown_signal().await;
     tracing::info!(%worker_id, "shutdown signal received, draining");
@@ -142,6 +148,7 @@ async fn main() -> Result<()> {
     reaper_shutdown.notify_waiters();
     retention_shutdown.notify_waiters();
     metrics_shutdown.notify_waiters();
+    queue_depth_shutdown.notify_waiters();
 
     if let Err(e) = runner_handle.await {
         tracing::error!(error = %e, "runner task join failed");
@@ -157,6 +164,9 @@ async fn main() -> Result<()> {
     }
     if let Err(e) = metrics_handle.await {
         tracing::error!(error = %e, "metrics task join failed");
+    }
+    if let Err(e) = queue_depth_handle.await {
+        tracing::error!(error = %e, "queue_depth task join failed");
     }
 
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");

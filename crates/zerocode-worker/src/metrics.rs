@@ -45,6 +45,10 @@ pub fn init() -> PrometheusHandle {
         "zerocode_worker_parallelism",
         "Configured max parallel sandbox slots"
     );
+    metrics::describe_gauge!(
+        "zerocode_pending_jobs",
+        "Submissions in `queued` state — sampled every 5s. Primary auto-scaling input."
+    );
 
     handle
 }

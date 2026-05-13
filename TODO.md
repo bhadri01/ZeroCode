@@ -270,7 +270,12 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 - [ ] **Test-case batching** — single submission with N parallel test runs
 - [ ] **gRPC API** alongside REST (binary protocol, HTTP/2 streaming)
 - [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
-- [ ] **Auto-scaling worker pool** driven by `pending_jobs / available_workers`
+- [~] **Auto-scaling worker pool** driven by `pending_jobs / available_workers` —
+      signal metrics exposed: `zerocode_pending_jobs` (gauge, sampled every 5 s
+      from `SELECT count(*) WHERE status='queued'`), `zerocode_active_sandboxes`
+      and `zerocode_worker_parallelism` (already present). Scaler/operator
+      that consumes these metrics (HPA, KEDA, …) is operator-side work, not
+      in-tree.
 - [x] **OTLP tracing export** (`opentelemetry-otlp`) — env-gated by
       `OTEL_EXPORTER_OTLP_ENDPOINT`. Both api + worker install a batch span
       exporter via tonic/gRPC; W3C TraceContext propagator registered; HTTP
@@ -282,11 +287,18 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       CPU/RSS/FD; named counters for submissions, cache hits/misses, webhooks
 - [x] **Multi-arch images** (arm64) — `deploy/Dockerfile.service` now selects
       `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl` via `TARGETARCH`
-- [~] **OpenAPI spec + generated SDKs** (Python, Node, Go) — spec served at
+- [x] **OpenAPI spec + generated SDKs** (Python, Node, Go) — spec served at
       `GET /v1/openapi.json` (OpenAPI 3.1 via utoipa). 7 endpoints + 10 schemas
-      annotated. SDK generation step still pending (run `openapi-generator`
-      against the served spec).
-- [ ] **Per-language minimal runner images** (instead of monolithic 3 GB image)
+      annotated. SDK generation driver at `scripts/generate-sdks.sh` runs
+      `openapi-generator-cli` (Dockerised) against a live API and emits
+      Python + TypeScript by default; pass `--generators=go,java,...` for
+      other targets.
+- [x] **Per-language minimal runner images** (Core 7) — `runners/Dockerfile.slim`
+      provides 7 single-language targets (python, node, go, rust, c-cpp, java)
+      plus `full` Core-7 combo, sizes 80 MB–1.2 GB instead of the 3 GB monolithic
+      image. Build all tags via `scripts/build-runner-tags.sh`. v1.5 batch
+      languages (Lua, Ruby, R, .NET, Swift, …) remain in `runners/Dockerfile`
+      only — generalising the slim approach to those is follow-up work.
 - [ ] **Sandbox warm-up pool** in Phase 4.6 generalised
 
 ---
@@ -328,4 +340,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓)._

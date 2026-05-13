@@ -8,6 +8,36 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 continuation — auto-scaling metrics + SDK generation script
+
+#### Added
+- **`zerocode_pending_jobs` gauge** (worker): new background task
+  `queue_depth::run` polls `SELECT count(*) WHERE status='queued'` every 5 s
+  and publishes the result as a Prometheus gauge. Primary auto-scaling input —
+  combined with the existing `zerocode_active_sandboxes` and
+  `zerocode_worker_parallelism` gauges, an HPA / KEDA scaler can compute
+  utilisation and queue ratio for scale-up / scale-down decisions. Wired
+  into `main.rs` with a clean shutdown notifier.
+- **`scripts/generate-sdks.sh`**: Dockerised `openapi-generator-cli` driver
+  that pulls the spec from a running API (`/v1/openapi.json`) and emits
+  Python + TypeScript-axios SDKs by default. Pass `--generators=go,java,...`
+  for other targets, `--api-url=...` for a remote spec source, `--out=...`
+  for the output directory.
+
+#### Updated TODO status (no code change)
+- Per-language minimal runner images: marked **done** for Core 7 (existing
+  `runners/Dockerfile.slim` already provides 7 targets + size table).
+- Auto-scaling worker pool: marked **in-progress** — signals exposed,
+  consumer (HPA/KEDA configuration) is operator-side work.
+- OpenAPI SDKs: marked **done** — driver script added.
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (`SQLX_OFFLINE=true`) | 83 | 83 | — |
+
+---
+
 ### v2 observability — OTLP tracing export + OpenAPI 3.1 spec
 
 #### Added
