@@ -8,6 +8,55 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### CI hardening — close the gaps that hid two v1 bugs
+
+Both bugs found during the v2 work — the PG16 `BINARY` keyword regression
+(fixed in `ae57bfd`) and the `tower_governor` missing `ConnectInfo` (fixed
+in `9a8c6a3`) — got past CI for the same reason: the existing CI runs
+`cargo test`, but no job applies migrations to a live DB, and no job hits
+an authenticated REST/gRPC route over HTTP. This change closes both gaps.
+
+#### Changed
+- **`integration` CI job** now actually applies migrations before running
+  the test suite:
+  - New `Apply migrations` step runs `cargo run -p zerocode-migrate`
+    against the `postgres:16` service container. A migration that fails
+    on PG16 (the `BINARY`-keyword class of bug) now fails CI hard
+    instead of getting swallowed at runtime by warn-and-continue cache
+    error handling.
+  - New `Verify expected schema` step `psql \d`'s key tables and greps
+    for the columns the worker queries by name (`batch_id` on
+    `submissions`, `artifact_data` on `compile_artifacts`). Catches the
+    case where `cargo run -p zerocode-migrate` exits 0 but the migration
+    silently skipped a CREATE TABLE.
+  - Job-level env now sets `SQLX_OFFLINE=false` so the `query!` macros
+    validate against the live schema, not the cached `.sqlx/` snapshot.
+    A column rename that wasn't propagated through `cargo sqlx prepare`
+    now blows up CI instead of waiting for a live-DB user to notice.
+
+#### Added
+- **`smoke-test` CI job** runs `scripts/smoke-test.sh` end-to-end:
+  builds the runner + service images, brings up the full docker-compose
+  stack (postgres → migrate → api → worker → runner rootfs init), and
+  hits authenticated REST routes plus gRPC reflection + GetHealth.
+  This is the only job that exercises HTTP over a real TCP socket, so
+  it's the regression guard for the bug class that the `tower_governor`
+  `ConnectInfo` issue belonged to — runtime-wiring bugs that unit tests
+  can't reproduce because `tower::ServiceExt::oneshot` bypasses the
+  `into_make_service*` adapter.
+- `grpcurl` install step in the smoke-test job so the gRPC sub-check
+  actually exercises the path (otherwise the script skips it).
+
+#### Why not a Rust unit test for the governor bug?
+The bug is specifically about how the router gets *served*, not about
+the router itself. `tower::ServiceExt::oneshot` against the router
+short-circuits the `into_make_service*` adapter, so the bug doesn't
+reproduce at the unit-test layer without standing up a real TCP server.
+The CI smoke-test does that — keeping a separate unit-level guard
+would duplicate effort and fail to repro the actual failure mode.
+
+---
+
 ### v2 — WasmSandbox dispatch wiring (TieredSandbox + raw-wasm language)
 
 #### Added

@@ -84,11 +84,16 @@ jobs:
       - run: docker build -f deploy/Dockerfile.service .
 
   # ── Integration tests against a real Postgres instance ──────────────
-  # This job will enable real DB tests once sqlx offline mode is set up.
-  # For now it runs the full workspace test suite with DATABASE_URL
-  # available so that any sqlx compile-time checks can resolve against
-  # a live schema. To add migration-dependent tests, run sqlx migrate
-  # before cargo test and remove the offline feature flag from sqlx.
+  # Applies every migration against a live postgres:16 service before
+  # running the workspace test suite. This catches three classes of bug
+  # that pure unit tests miss:
+  #   1. Migration SQL that fails on PG16 specifically — e.g. the
+  #      `binary` keyword regression that silently broke `compile_artifacts`
+  #      creation (fixed in `ae57bfd`). A migration-apply step here
+  #      surfaces those as hard CI failures.
+  #   2. Schema drift between code and DB — the `sqlx::query!` macro
+  #      validates against the live schema with `SQLX_OFFLINE=false`.
+  #   3. End-to-end DB round-trips for any test that wants `DATABASE_URL`.
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -107,13 +112,48 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+    env:
+      DATABASE_URL: postgres://zerocode:zerocode@localhost:5432/zerocode_test
+      # Force live-DB sqlx checks instead of the `.sqlx/` offline cache so
+      # column-rename mistakes blow up CI immediately.
+      SQLX_OFFLINE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.85'
       - uses: Swatinem/rust-cache@v2
+      - name: Apply migrations (regression guard for PG16 keyword bugs)
+        run: cargo run -p zerocode-migrate
+      - name: Verify expected schema
+        run: |
+          # Belt-and-suspenders check: confirm the columns the worker
+          # actually queries exist by name. If a migration is silently
+          # broken (e.g. PG16 `binary` keyword) this fails loudly even
+          # if `cargo run -p zerocode-migrate` somehow exited 0.
+          psql "$DATABASE_URL" -c "\d submissions" | grep -q batch_id
+          psql "$DATABASE_URL" -c "\d compile_artifacts" | grep -q artifact_data
       - name: Run integration tests
         run: cargo test --workspace
-        env:
-          DATABASE_URL: postgres://zerocode:zerocode@localhost:5432/zerocode_test
+
+  # ── End-to-end smoke test — full stack, real HTTP, real auth ────────
+  # Builds the runner + service images, brings the docker compose stack
+  # up, and runs `scripts/smoke-test.sh` against it. This is the only
+  # job that exercises authenticated REST + gRPC requests end-to-end,
+  # so it's the regression guard for runtime-config bugs like the
+  # `tower_governor` `ConnectInfo` issue (fixed in `9a8c6a3`) that
+  # never showed up in unit tests because they don't speak HTTP.
+  smoke-test:
+    name: Smoke Test (full stack)
+    runs-on: ubuntu-latest
+    needs: [check, docker-runner, docker-service]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runner image
+        run: docker build -f runners/Dockerfile.slim --target full -t zerocode-runner:dev .
+      - name: Install grpcurl
+        run: |
+          curl -sSL https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/grpcurl_1.9.3_linux_x86_64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin grpcurl
+      - name: Run smoke test
+        run: bash scripts/smoke-test.sh
