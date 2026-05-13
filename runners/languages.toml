@@ -512,3 +512,24 @@ run_cmd = ["/usr/local/bin/julia", "main.jl"]
 env = []
 default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
+
+# ---------- v2 WASM tier ----------
+# `raw-wasm` accepts a pre-compiled `.wasm` blob as source_code and runs its
+# `_start` function under WasmSandbox (wasmtime + WASI preview1). Cross-
+# platform, so it's the first language usable from a macOS dev host without
+# enabling the Linux NativeSandbox. The `tier = "wasm"` field opts the
+# language into WasmSandbox dispatch (see `worker/sandbox_select.rs`).
+# Future v2 work will add WASI-targeted compile pipelines (wasi-sdk) for
+# Rust / Go / C / C++ — those live upstream of the sandbox impl, so
+# `raw-wasm` is the explicit "bring your own .wasm" entry-point.
+[[language]]
+id = 200
+name = "raw-wasm"
+version = "wasi-preview1"
+source_file = "main.wasm"
+compile_cmd = []
+run_cmd = []
+env = []
+tier = "wasm"
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 1, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false

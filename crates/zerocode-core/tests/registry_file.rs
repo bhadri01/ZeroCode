@@ -229,8 +229,17 @@ fn batch_a_languages_present_and_interpreted() {
 fn total_language_count() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
-    // + 5 Batch F + 5 Batch G = 41
-    assert_eq!(reg.list().len(), 41, "expected 41 languages total");
+    // + 5 Batch F + 5 Batch G + 1 v2 raw-wasm = 42
+    assert_eq!(reg.list().len(), 42, "expected 42 languages total");
+}
+
+#[test]
+fn raw_wasm_is_registered_with_wasm_tier() {
+    use zerocode_core::SandboxTier;
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let wasm = reg.require(200).expect("raw-wasm (id 200) missing");
+    assert_eq!(wasm.name, "raw-wasm");
+    assert_eq!(wasm.tier, SandboxTier::Wasm);
 }
 
 #[test]

@@ -8,6 +8,48 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 — WasmSandbox dispatch wiring (TieredSandbox + raw-wasm language)
+
+#### Added
+- **`SandboxTier` enum** in `zerocode-core` (`Native` | `Wasm`, defaults
+  `Native`, `#[serde(rename_all = "snake_case")]`). New field
+  `LanguageSpec.tier` with `#[serde(default)]` so every existing TOML
+  entry continues to deserialize unchanged.
+- **`TieredSandbox`** wrapper in `worker/sandbox_select.rs`. Holds an
+  `Option<Arc<dyn Sandbox>>` per tier (built at startup based on cargo
+  features) and dispatches each job to the matching backend by inspecting
+  `job.language.tier`. Returns `SandboxError::NotImplemented` (logged
+  with token + language_id) when the requested tier wasn't built in.
+- **`zerocode-worker` `wasm` cargo feature**: forwards to
+  `zerocode-sandbox/wasm` so production builds opt into WasmSandbox
+  alongside native explicitly. Default features unchanged.
+- **`raw-wasm` language** (`id=200`, `tier="wasm"`) in
+  `runners/languages.toml`. `source_code` is interpreted as the
+  pre-compiled `.wasm` blob; no compile_cmd / run_cmd. Default limits
+  tuned for WASM (`cpu_time=2s`, `wall_time=5s`, `memory_mb=64`).
+- **Three new dispatch unit tests** in `worker/sandbox_select.rs`
+  (mock-based, no real sandboxes needed):
+  - `routes_native_tier_to_native_backend`
+  - `routes_wasm_tier_to_wasm_backend`
+  - `returns_not_implemented_when_tier_missing`
+- **New registry test** `raw_wasm_is_registered_with_wasm_tier` confirms
+  the TOML entry round-trips through serde with the correct tier.
+- Updated `total_language_count` assertion to 42 (was 41 — raw-wasm
+  added).
+
+#### Changed
+- Worker dispatch now returns `Arc<TieredSandbox>` instead of a single
+  backend. `pick()` is now feature-axis-agnostic; the per-language axis
+  is decided at runtime via `LanguageSpec.tier`.
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (`SQLX_OFFLINE=true`) | 83 | 85 | +2 (registry: +1 raw-wasm test, +1 count update; worker dispatch tests gated on wasm feature) |
+| macOS (`--features zerocode-worker/wasm zerocode-sandbox/wasm`) | 85 | 87 | +2 (WasmSandbox + dispatch on top of native) |
+
+---
+
 ### v2 — WASM tier (WasmSandbox)
 
 #### Added

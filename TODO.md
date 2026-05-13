@@ -273,10 +273,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       stdout/stderr captured to `MemoryOutputPipe`. Cross-platform (works on
       macOS), so it's the first usable v2 isolation tier without a Linux host.
       Status mapping mirrors NativeSandbox triage flow.
+      **Dispatch wired**: `LanguageSpec.tier: SandboxTier` (`Native` |
+      `Wasm`, defaults `Native`); `worker/sandbox_select.rs` returns a
+      `TieredSandbox` that routes each job to the matching backend; worker
+      `wasm` feature enables WasmSandbox. Registry entry `id=200 raw-wasm`
+      with `tier="wasm"` accepts a pre-compiled `.wasm` as source_code.
       Still to do: WASI-targeted compile pipelines for Rust/Go/C/C++ (the
-      sandbox runs `.wasm` today; the compile-to-wasm step is upstream of it
-      and per-language); `cwasm` AOT pre-compilation; sandbox-select wiring
-      so the worker can route specific submissions to the WASM tier.
+      sandbox runs `.wasm` today; the compile-to-wasm step is upstream of
+      it and per-language); `cwasm` AOT pre-compilation.
 - [ ] **CRIU interpreter snapshots** — pre-warmed CPython/JVM/Node images
 - [x] **Test-case batching** — `POST /v1/submissions/batch` accepts a single
       source plus 1–100 stdin test cases; server creates N independent
@@ -351,6 +355,84 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
+## Web UI — landing, docs, code space
+
+Self-hosted frontend served alongside the Rust API. API-only usage stays a
+first-class path; the UI consumes the same public REST + gRPC surface that
+external clients use, so nothing in the UI is privileged. Lives in a new
+top-level `web/` directory (not a crate).
+
+### Stack decisions (record once chosen)
+
+- [ ] Framework: Next.js (App Router) vs. SvelteKit vs. Astro + islands
+- [ ] Hosting: served by `zerocode-api` as static assets vs. separate container
+      (lean: separate `zerocode-web` image, reverse-proxied so API stays headless)
+- [ ] Editor: Monaco vs. CodeMirror 6 (lean: CodeMirror for bundle size + 41-lang grammars)
+- [ ] Docs engine: Nextra vs. Astro Starlight vs. hand-rolled MDX
+- [ ] Shared design tokens between landing / docs / code space
+- [ ] Typed API client: import generated TypeScript SDK from `scripts/generate-sdks.sh`
+
+### Landing page
+
+- [ ] Hero with curl snippet + "Try in playground" CTA + GitHub link
+- [ ] Trust strip: "8 isolation layers · 41 languages · sub-5ms dispatch · Judge0-compatible"
+- [ ] "Why ZeroCode" three-up: Security · Speed · Compatibility
+- [ ] Architecture diagram (animated or annotated SVG of API → Postgres ↔ Worker → Sandbox)
+- [ ] Language matrix (41 chips, Core 7 highlighted, search/filter)
+- [ ] Embedded playground teaser (read-only or one-shot run)
+- [ ] Judge0 comparison table (CVE history, isolation layers, cold-start)
+- [ ] Deploy section: `docker compose up` one-liner + Helm/K8s "coming soon"
+- [ ] Footer: docs, GitHub, dual MIT/Apache license, status page
+- [ ] Dark/light theme, responsive, prefers-reduced-motion respected
+
+### Docs site
+
+- [ ] Quickstart (mirrors README, with copy buttons + tabbed shell snippets)
+- [ ] REST API reference auto-generated from `/v1/openapi.json`
+- [ ] gRPC reference auto-generated from `crates/zerocode-api/proto/zerocode.proto`
+- [ ] Language catalog page (41 langs: version, type, default limits, env)
+- [ ] Architecture page (port from `docs/ARCHITECTURE.md`)
+- [ ] Threat model page (port from `docs/THREAT_MODEL.md`)
+- [ ] Deployment page (port from `docs/DEPLOY.md`)
+- [ ] SDK pages: Python, TypeScript, Go (link to generated SDK output)
+- [ ] Observability page (Prometheus `/metrics`, OTLP/Jaeger, dashboards)
+- [ ] Changelog page sourced from `CHANGELOG.md`
+- [ ] Sidebar nav, breadcrumbs, full-text search, "Edit on GitHub", versioned URLs
+
+### Code Space (in-browser playground)
+
+- [ ] Language picker with search (41 langs, Core 7 pinned)
+- [ ] Code editor: syntax highlighting per language, vim/emacs keymap opt-in
+- [ ] Stdin pane
+- [ ] Run button → `POST /v1/submissions` (with `?wait=false` + stream)
+- [ ] Live output via `GET /v1/submissions/{token}/stream` (SSE)
+- [ ] Output tabs: stdout · stderr · compile output · metadata (wall, CPU, memory peak, exit)
+- [ ] Status pill (Queued → Processing → Accepted / TLE / MLE / RE / CE / Sandbox)
+      with the shared status-chip color palette used across the brand
+- [ ] Memory / time-limit sliders, capped by server-enforced ceilings
+- [ ] Share link `/play/{token}` reproduces source + stdin + language + result
+- [ ] "Open in API" panel showing equivalent curl + gRPC + Python/TS SDK snippets
+      (reinforces the message that the UI is just a client)
+- [ ] Empty-state example snippets per language
+- [ ] Anonymous play with rate limit; signed-in users get higher quota + history
+- [ ] Submission history pane (signed-in only) backed by `GET /v1/submissions`
+- [ ] Mobile-friendly layout (collapsible editor/output split)
+- [ ] Keyboard shortcut: ⌘/Ctrl+Enter to run
+
+### Plumbing & integration
+
+- [ ] CORS allowlist on API (currently locked; needs config for hosted UI origin)
+- [ ] CSP + COOP/COEP headers from the static server
+- [ ] Auth tier for UI users (browser session → short-lived UI API key vs. server API keys)
+- [ ] Anonymous quota strategy (cookie/IP bucket via `tower_governor`)
+- [ ] Decide SSE vs. WebSocket for live output behind reverse proxies
+- [ ] Frontend CI: lint, typecheck, build, smoke-test against running API
+- [ ] `deploy/Dockerfile.web` (or build step that injects bundle into `zerocode-service`)
+- [ ] `docker-compose.yml` wires up `web` service alongside `api` / `worker`
+- [ ] README + docs note: "UI is optional; the API is the contract"
+
+---
+
 ## Tech debt & cleanups
 
 - [x] Move runtime-checked `sqlx::query()` to compile-time `query!` — all 19 query
@@ -370,4 +452,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth, **web UI scoped**: landing + docs + in-browser code space planned as `web/` workspace consuming the public REST/gRPC API)._

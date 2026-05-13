@@ -6,6 +6,22 @@ use crate::limits::ResourceLimits;
 /// IDs ≤ 99 are reserved for the Core 6 v1 languages; v1.5 batches start at 100.
 pub type LanguageId = u32;
 
+/// Which sandbox backend handles this language's submissions.
+///
+/// Default `Native` covers every existing v1/v1.5 language — they run as
+/// real processes inside cgroups + namespaces + landlock + seccomp.
+/// `Wasm` opts a language into the wasmtime-backed `WasmSandbox`; the
+/// language's source code is interpreted as a pre-compiled `.wasm` blob
+/// (id 200 = `raw-wasm`). Future v2 work adds WASI-targeted compile
+/// pipelines for Rust/Go/C/C++ that emit `.wasm` from source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxTier {
+    #[default]
+    Native,
+    Wasm,
+}
+
 /// Declarative description of how to compile + run code in one language.
 /// Loaded from `runners/languages.toml` at API/worker boot.
 ///
@@ -35,6 +51,11 @@ pub struct LanguageSpec {
     /// True once a newer version supersedes this entry.
     #[serde(default)]
     pub is_archived: bool,
+    /// Which sandbox backend handles this language. Defaults to `Native`,
+    /// so every existing language keeps its current isolation semantics
+    /// without touching the registry.
+    #[serde(default)]
+    pub tier: SandboxTier,
 }
 
 impl LanguageSpec {
@@ -60,6 +81,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: SandboxTier::Native,
         };
         assert!(!s.is_compiled());
         let j = serde_json::to_string(&s).unwrap();
@@ -87,6 +109,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: SandboxTier::Native,
         };
         assert!(s.is_compiled());
     }

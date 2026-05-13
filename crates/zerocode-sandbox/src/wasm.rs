@@ -270,6 +270,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: zerocode_core::SandboxTier::Wasm,
         }
     }
 

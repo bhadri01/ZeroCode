@@ -17,6 +17,9 @@ default = []
 # loop end-to-end before Phase 1.5's native sandbox lands.
 unsafe-naive = ["zerocode-sandbox/unsafe-naive"]
 native = ["zerocode-sandbox/native"]
+# v2 WASM tier — enables WasmSandbox dispatch for languages with tier=wasm.
+# Cross-platform; safe to combine with `native`.
+wasm = ["zerocode-sandbox/wasm"]
 
 [dependencies]
 zerocode-core = { path = "../zerocode-core" }

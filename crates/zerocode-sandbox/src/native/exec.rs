@@ -478,6 +478,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: zerocode_core::SandboxTier::Native,
         };
         let argv = build_argv(&spec);
         assert_eq!(argv.len(), 2);
@@ -498,6 +499,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: zerocode_core::SandboxTier::Native,
         };
         let env = build_env(&spec, &ResourceLimits::default());
         let any = |needle: &str| env.iter().any(|c| c.to_bytes() == needle.as_bytes());
@@ -521,6 +523,7 @@ mod tests {
             default_limits: None,
             compile_limits: None,
             is_archived: false,
+            tier: zerocode_core::SandboxTier::Native,
         };
         let mut limits = ResourceLimits::default();
         limits.memory_mb = 256;

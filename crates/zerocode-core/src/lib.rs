@@ -8,7 +8,7 @@ pub mod submission;
 pub mod token;
 
 pub use error::{CoreError, CoreResult};
-pub use language::{LanguageId, LanguageSpec};
+pub use language::{LanguageId, LanguageSpec, SandboxTier};
 pub use limits::ResourceLimits;
 pub use payload::Payload;
 pub use registry::LanguageRegistry;
