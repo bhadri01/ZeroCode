@@ -5,6 +5,7 @@ use clap::Parser;
 use metrics_exporter_prometheus::PrometheusHandle;
 use zerocode_core::LanguageRegistry;
 
+mod anon_quota;
 mod auth;
 mod config;
 mod db;
@@ -41,6 +42,24 @@ struct Args {
     /// gRPC server bind address. Empty/`off` disables the gRPC tier (REST-only mode).
     #[arg(long, env = "ZEROCODE_GRPC_BIND", default_value = "0.0.0.0:9091")]
     grpc_bind: String,
+
+    /// Comma-separated list of browser origins permitted to call the API.
+    /// Empty disables CORS (same-origin only). Use `*` for fully public access
+    /// (only safe with `--allow-anonymous`).
+    #[arg(long, env = "ZEROCODE_CORS_ORIGINS", default_value = "")]
+    cors_origins: String,
+
+    /// When set, requests without an `Authorization` header are admitted and
+    /// rate-limited as anonymous. Required for the hosted playground.
+    #[arg(long, env = "ZEROCODE_ALLOW_ANONYMOUS", default_value_t = false)]
+    allow_anonymous: bool,
+
+    /// Maximum anonymous submissions per IP within `--anon-window-secs`.
+    #[arg(long, env = "ZEROCODE_ANON_MAX_PER_WINDOW", default_value_t = 6)]
+    anon_max_per_window: u32,
+
+    #[arg(long, env = "ZEROCODE_ANON_WINDOW_SECS", default_value_t = 60)]
+    anon_window_secs: u64,
 }
 
 #[tokio::main]
@@ -48,6 +67,18 @@ async fn main() -> Result<()> {
     let tracer_provider = telemetry::init().context("init telemetry")?;
     let args = Args::parse();
     let prom_handle = init_metrics();
+
+    let cors_origins = ApiConfig::parse_origins(&args.cors_origins);
+    if !cors_origins.is_empty() {
+        tracing::info!(origins = ?cors_origins, "CORS allowlist active");
+    }
+    if args.allow_anonymous {
+        tracing::info!(
+            max = args.anon_max_per_window,
+            window_secs = args.anon_window_secs,
+            "anonymous submissions enabled"
+        );
+    }
 
     let cfg = ApiConfig {
         bind: args.bind.clone(),
@@ -62,6 +93,10 @@ async fn main() -> Result<()> {
             max_stderr: 256 * 1024,
             enable_network: false,
         },
+        cors_origins,
+        allow_anonymous: args.allow_anonymous,
+        anon_max_per_window: args.anon_max_per_window,
+        anon_window: std::time::Duration::from_secs(args.anon_window_secs),
     };
 
     let languages = load_languages(&args.languages_file)?;

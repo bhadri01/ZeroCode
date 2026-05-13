@@ -51,6 +51,7 @@ futures = { workspace = true }
 tokio-stream = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
+moka = { workspace = true }
 metrics-process = { workspace = true }
 utoipa = { workspace = true }
 tonic = { workspace = true }

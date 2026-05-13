@@ -59,6 +59,11 @@ services:
       ZEROCODE_API_BIND: 0.0.0.0:8080
       ZEROCODE_GRPC_BIND: 0.0.0.0:9091
       ZEROCODE_API_KEY: dev-only-replace-me
+      # Browser-facing controls — see .env.example.
+      ZEROCODE_CORS_ORIGINS: ${ZEROCODE_CORS_ORIGINS:-}
+      ZEROCODE_ALLOW_ANONYMOUS: ${ZEROCODE_ALLOW_ANONYMOUS:-false}
+      ZEROCODE_ANON_MAX_PER_WINDOW: ${ZEROCODE_ANON_MAX_PER_WINDOW:-6}
+      ZEROCODE_ANON_WINDOW_SECS: ${ZEROCODE_ANON_WINDOW_SECS:-60}
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:

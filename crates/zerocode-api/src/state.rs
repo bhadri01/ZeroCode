@@ -9,6 +9,7 @@ use zerocode_cache::ResultCache;
 use zerocode_core::LanguageRegistry;
 use zerocode_stream::JobNotifier;
 
+use crate::anon_quota::AnonymousQuota;
 use crate::config::ApiConfig;
 
 const RESULT_CACHE_CAPACITY: u64 = 10_000;
@@ -24,6 +25,7 @@ pub struct Inner {
     pub jobs: JobNotifier,
     pub result_cache: ResultCache,
     pub prom_handle: PrometheusHandle,
+    pub anon_quota: AnonymousQuota,
 }
 
 impl AppState {
@@ -41,6 +43,8 @@ impl AppState {
 
         let jobs = JobNotifier::new(pool.clone());
         let result_cache = ResultCache::new(RESULT_CACHE_CAPACITY, RESULT_CACHE_TTL);
+        let anon_quota =
+            AnonymousQuota::new(config.anon_max_per_window, config.anon_window);
 
         Ok(Self(Arc::new(Inner {
             config,
@@ -49,6 +53,7 @@ impl AppState {
             jobs,
             result_cache,
             prom_handle,
+            anon_quota,
         })))
     }
 
@@ -74,5 +79,9 @@ impl AppState {
 
     pub fn prom_handle(&self) -> &PrometheusHandle {
         &self.0.prom_handle
+    }
+
+    pub fn anon_quota(&self) -> &AnonymousQuota {
+        &self.0.anon_quota
     }
 }

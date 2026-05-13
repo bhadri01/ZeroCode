@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use blake3::Hasher;
@@ -11,6 +12,7 @@ use zerocode_core::{
     Payload, ResourceLimits, Signal, Status, Submission, SubmissionRequest, Token,
 };
 
+use crate::auth::AuthTier;
 use crate::db::{self, NewSubmission};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -34,10 +36,27 @@ pub struct CreateParams {
 
 pub async fn create(
     State(state): State<AppState>,
+    Extension(tier): Extension<AuthTier>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Query(params): Query<CreateParams>,
     headers: HeaderMap,
     Json(mut req): Json<SubmissionRequest>,
 ) -> ApiResult<Response> {
+    // Anonymous callers can't ship webhook callbacks (would let them point the
+    // server at arbitrary URLs without ever proving identity) and are
+    // rate-limited far more aggressively than the authenticated tier.
+    if tier == AuthTier::Anonymous {
+        if req.callback_url.is_some() {
+            return Err(ApiError::Validation(
+                "callback_url is not allowed for anonymous submissions".into(),
+            ));
+        }
+        if state.anon_quota().check(peer.ip()).is_err() {
+            tracing::info!(ip = %peer.ip(), "anonymous submission quota exceeded");
+            return Err(ApiError::RateLimited);
+        }
+    }
+
     // Decode base64-encoded payloads (Judge0 compatibility).
     if req.base64_encoded {
         let raw = req.source_code.as_utf8().map_err(|_| {

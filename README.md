@@ -95,6 +95,24 @@ curl -H 'Authorization: Bearer dev-only-replace-me' \
      http://localhost:8080/v1/languages
 ```
 
+### Browser playground (Code Space)
+
+The bundled `web/playground.html` talks to a real API over REST + SSE when one
+is reachable. To run it against a local backend from a different origin (e.g.
+`python3 -m http.server 8000` for `web/`), enable CORS and — optionally — the
+anonymous tier so visitors can run snippets without provisioning a key:
+
+```sh
+# .env
+ZEROCODE_CORS_ORIGINS=http://localhost:8000
+ZEROCODE_ALLOW_ANONYMOUS=true        # opt-in only; off by default
+ZEROCODE_ANON_MAX_PER_WINDOW=6       # per-IP cap for anonymous submissions
+ZEROCODE_ANON_WINDOW_SECS=60
+```
+
+The anonymous tier is gated by a per-IP quota independent of the authed
+`tower_governor` bucket; callback URLs and batch jobs remain authed-only.
+
 For production deployment with Docker Compose, see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Architecture

@@ -362,62 +362,167 @@ first-class path; the UI consumes the same public REST + gRPC surface that
 external clients use, so nothing in the UI is privileged. Lives in a new
 top-level `web/` directory (not a crate).
 
+**Initial scaffold** lifted verbatim from a Claude Design handoff bundle on
+2026-05-13: static HTML + React 18 UMD + Babel-standalone (in-browser JSX),
+deep slate + rust-orange palette, Instrument Serif display + Figtree body +
+IBM Plex Mono code. Serve `web/index.html` with any static server
+(`python3 -m http.server` is enough for now). Build pipeline (Vite/Next) is
+still TBD — keep the JSX modular so the migration is a syntactic lift.
+
 ### Stack decisions (record once chosen)
 
 - [ ] Framework: Next.js (App Router) vs. SvelteKit vs. Astro + islands
+      *(initial scaffold is plain React 18 UMD + Babel-standalone — no build step)*
 - [ ] Hosting: served by `zerocode-api` as static assets vs. separate container
       (lean: separate `zerocode-web` image, reverse-proxied so API stays headless)
 - [ ] Editor: Monaco vs. CodeMirror 6 (lean: CodeMirror for bundle size + 41-lang grammars)
 - [ ] Docs engine: Nextra vs. Astro Starlight vs. hand-rolled MDX
-- [ ] Shared design tokens between landing / docs / code space
+- [x] Shared design tokens between landing / docs / code space —
+      `web/shared/tokens.css` (dark/light, accents, status colors, type stack)
 - [ ] Typed API client: import generated TypeScript SDK from `scripts/generate-sdks.sh`
 
 ### Landing page
 
-- [ ] Hero with curl snippet + "Try in playground" CTA + GitHub link
-- [ ] Trust strip: "8 isolation layers · 41 languages · sub-5ms dispatch · Judge0-compatible"
-- [ ] "Why ZeroCode" three-up: Security · Speed · Compatibility
-- [ ] Architecture diagram (animated or annotated SVG of API → Postgres ↔ Worker → Sandbox)
-- [ ] Language matrix (41 chips, Core 7 highlighted, search/filter)
-- [ ] Embedded playground teaser (read-only or one-shot run)
-- [ ] Judge0 comparison table (CVE history, isolation layers, cold-start)
-- [ ] Deploy section: `docker compose up` one-liner + Helm/K8s "coming soon"
-- [ ] Footer: docs, GitHub, dual MIT/Apache license, status page
-- [ ] Dark/light theme, responsive, prefers-reduced-motion respected
+- [x] **Scaffolded** in `web/index.html` — 8 JSX modules under `web/landing/`
+- [x] Hero with animated 8-layer concentric-ring diagram, curl terminal,
+      kicker line (`v0.1.4 · rust 1.85 · kernel ≥ 5.14`), and "get started /
+      view on github / open playground" CTAs (`landing/hero.jsx` + `layer-diagram.jsx`)
+- [x] Trust strip with 5 stats (8 layers · 41 langs · <5ms · 71 tests · 0 CVEs)
+      (`landing/sections.jsx`)
+- [x] "Why ZeroCode" three-up: Security · Speed · Compatibility, with glyphs +
+      data points (`landing/sections.jsx`)
+- [x] Architecture SVG diagram (Client → API → Postgres ↔ Worker → Sandbox → Runtime)
+      with animated forward path + dashed return path (`landing/diagrams.jsx`)
+- [x] Language matrix: Core 7 as detailed cards + 34 compact chips
+      (`landing/languages.jsx`)
+- [x] Embedded playground teaser with simulated SSE streaming Queued →
+      Processing → Accepted (`landing/playground-teaser.jsx`)
+- [x] Judge0 comparison table — 12 honest rows including wins for Judge0
+      (`landing/diagrams.jsx`)
+- [x] Deploy section with tabbed snippets (Docker Compose / Helm / from source)
+      (`landing/sections.jsx`)
+- [x] Footer with product / developers / company columns, license + kernel +
+      version bottom-strip (`landing/sections.jsx`)
+- [x] Dark/light theme tokens defined; design defaults to dark
+- [x] Language search/filter on the 41-chip matrix — name / id / version / kind
+      with empty-state, count chip, and clear button (`landing/languages.jsx`)
+- [x] `prefers-reduced-motion` honored — RAF loop short-circuits, packet parks
+      mid-cycle so passed/active/upcoming rings still read (`landing/layer-diagram.jsx`)
+- [x] Replaced Claude Design tweaks-panel with a production theme toggle in
+      the nav. Theme manager at `web/shared/theme.js` persists to localStorage
+      and reacts to OS `prefers-color-scheme` changes when no explicit pref
+      is set. Orphan `tweaks-panel.jsx` deleted.
+- [ ] Wire real GitHub star count + version chip from a build-time fetch
 
 ### Docs site
 
-- [ ] Quickstart (mirrors README, with copy buttons + tabbed shell snippets)
-- [ ] REST API reference auto-generated from `/v1/openapi.json`
-- [ ] gRPC reference auto-generated from `crates/zerocode-api/proto/zerocode.proto`
-- [ ] Language catalog page (41 langs: version, type, default limits, env)
-- [ ] Architecture page (port from `docs/ARCHITECTURE.md`)
-- [ ] Threat model page (port from `docs/THREAT_MODEL.md`)
-- [ ] Deployment page (port from `docs/DEPLOY.md`)
-- [ ] SDK pages: Python, TypeScript, Go (link to generated SDK output)
-- [ ] Observability page (Prometheus `/metrics`, OTLP/Jaeger, dashboards)
-- [ ] Changelog page sourced from `CHANGELOG.md`
-- [ ] Sidebar nav, breadcrumbs, full-text search, "Edit on GitHub", versioned URLs
+- [x] **Scaffolded** in `web/docs.html` — shell + content modules under `web/docs/`
+- [x] Docs shell with top nav, left sidebar IA (5 sections, 9 pages), scrollable
+      content area, right-rail TOC with scroll-spy, hash-routed page switching
+      (`docs/app.jsx`)
+- [x] Quickstart page (`docs/content.jsx#quickstart`)
+- [x] REST API reference page — written by hand for now (`docs/content.jsx#api`)
+- [x] Language catalog page placeholder (`docs/content.jsx#languages`)
+- [x] Architecture page — full content ported from `docs/ARCHITECTURE.md`:
+      system overview · channels table · 7-crate map · 9-step lifecycle
+      diagram · parent↔child handshake · perf table · 3-image table
+- [x] Threat model page with detailed 8-layer concentric-ring diagram +
+      STRIDE table + Judge0 CVE comparison (`docs/content.jsx#security`,
+      reuses `landing/layer-diagram.jsx` with `variant="detailed"`)
+- [x] Deployment page — full content ported from `docs/DEPLOY.md`: host
+      preflight · env var tables for API + worker · compose quickstart ·
+      rootfs extraction · TLS proxy snippet · cgroup delegation (systemd
+      + compose) · troubleshooting table
+- [x] SDKs page — OpenAPI 3.1 spec endpoint · `scripts/generate-sdks.sh`
+      driver · Python/TypeScript/Go usage examples · REST vs. gRPC table
+- [x] gRPC reference page (NEW) auto-mirrored from
+      `crates/zerocode-api/proto/zerocode.proto` — service surface,
+      messages, auth header, `grpcurl` examples (`docs/content.jsx#grpc`,
+      wired into `docs/app.jsx` PAGES)
+- [x] Observability page — Prometheus series table · OTLP env-gated +
+      Jaeger dev compose snippet · structured-logs JSON-lines guidance ·
+      starter Grafana dashboard pointer
+- [x] Changelog page — Unreleased / v0.1.4 / v0.1.3 / v0.1.2 / v0.1.1 +
+      versioning policy
+- [x] **⌘K palette** — client-side fuzzy search across every page and
+      every TOC section (60+ entries). Token-aware scorer, arrow-key
+      navigation, hash-routed pick. (`docs/app.jsx · SearchPalette`)
+- [x] **"Edit on GitHub"** link per page — `docs/app.jsx · SOURCE_FOR_PAGE`
+      maps each docs page to its source file in the repo (markdown for
+      ported pages, the proto for gRPC, the JSX module for auto-generated
+      pages).
+- [ ] Replace hand-written REST reference with auto-generation from
+      `/v1/openapi.json` at build time (currently hand-written content
+      already covers every endpoint)
+- [ ] Versioned URLs (`/v0.1/docs`, `/v0.2/docs`) once we have ≥ 2
+      released versions to switch between
 
 ### Code Space (in-browser playground)
 
-- [ ] Language picker with search (41 langs, Core 7 pinned)
-- [ ] Code editor: syntax highlighting per language, vim/emacs keymap opt-in
-- [ ] Stdin pane
-- [ ] Run button → `POST /v1/submissions` (with `?wait=false` + stream)
-- [ ] Live output via `GET /v1/submissions/{token}/stream` (SSE)
-- [ ] Output tabs: stdout · stderr · compile output · metadata (wall, CPU, memory peak, exit)
-- [ ] Status pill (Queued → Processing → Accepted / TLE / MLE / RE / CE / Sandbox)
-      with the shared status-chip color palette used across the brand
-- [ ] Memory / time-limit sliders, capped by server-enforced ceilings
-- [ ] Share link `/play/{token}` reproduces source + stdin + language + result
-- [ ] "Open in API" panel showing equivalent curl + gRPC + Python/TS SDK snippets
-      (reinforces the message that the UI is just a client)
-- [ ] Empty-state example snippets per language
-- [ ] Anonymous play with rate limit; signed-in users get higher quota + history
-- [ ] Submission history pane (signed-in only) backed by `GET /v1/submissions`
-- [ ] Mobile-friendly layout (collapsible editor/output split)
-- [ ] Keyboard shortcut: ⌘/Ctrl+Enter to run
+- [x] **Scaffolded** in `web/playground.html` — `playground/app.jsx` + `playground/data.jsx`
+- [x] Top nav with token chip + breadcrumb to home/docs
+- [x] Searchable language picker rail (41 langs) with Core 7 pinned + history (`playground/app.jsx`)
+- [x] Syntax-highlighted editor (custom tokenizer in `playground/app.jsx`)
+- [x] Stdin pane
+- [x] Workspace bar: language version chip, status pill, **⌘↵ to run**,
+      reset, memory/time/pids limit sliders, "Open in API" trigger
+- [x] Tabbed output pane (stdout · stderr · compile · meta) with simulated
+      SSE streaming Queued → Processing → Accepted (`playground/app.jsx`)
+- [x] Status pill state machine (Queued / Processing / Accepted / TLE / MLE /
+      RE / CE / Sandbox) using shared status-color tokens
+- [x] Memory + wall-time sliders wired to a server-fetched ceiling
+      (computed from `/v1/languages` on probe success), with a "server
+      ceilings" / "client defaults" label flip in the popover. **pids
+      slider dropped** — the REST API doesn't accept a client override
+      for `max_pids` (resolved per-language on the server).
+- [x] "Open in API" modal showing curl + gRPC + Python SDK + TypeScript SDK
+      snippets generated from the current source/limits (`playground/app.jsx`)
+- [x] Empty-state example snippets per language (41 entries in `playground/data.jsx`)
+- [x] Submission history rail — now backed by `localStorage` (20-entry cap)
+      with verdict, token, and timestamp per row
+- [x] Status strip at the bottom (token · wall · cpu · memory · exit) +
+      `live api` / `demo` mode chip
+- [x] **Real `POST /v1/submissions` + SSE** integration via
+      `web/shared/api.js` — request shape now matches the Rust contract:
+      `memory_limit_mb` / `cpu_time_limit` / `wall_time_limit` + body-level
+      `base64_encoded: true`. SSE events `processing` / `stdout` / `stderr` /
+      `finished` are JSON-parsed (`{data: "..."}` and `{status: {kind, detail}}`).
+      Verdicts decoded from the tagged Status object into a flat code
+      (accepted / tle / mle / ole / ce / re / nze / se / cancelled / expired).
+      Outputs round-trip via `?base64_encoded=true` and `decode()` on the
+      client. Sends an Idempotency-Key on each submit.
+- [x] **SSE → polling fallback** — when the stream errors out, the run
+      falls through to `poll(token, intervalMs=400)` against `GET
+      /v1/submissions/{token}` until terminal status.
+- [x] **Settings dialog** (`web/playground/app.jsx · SettingsDialog`) —
+      API base URL + bearer key inputs, "test connection" hits
+      `/v1/health` then `/v1/languages` so a bad bearer is caught up-front,
+      "clear" wipes localStorage, "save · reload api" reprobes the API and
+      flips the workspace bar to `live api` / `no auth` / `demo`.
+- [x] **Cancel button** while running — drops the SSE stream client-side
+      (server-side cancellation is a v2 API). ⌘. keyboard shortcut.
+- [x] **Verdict colors per kind** — chip colour pulled from
+      `--st-accepted` / `--st-tle` / `--st-mle` / `--st-ce` / `--st-re` /
+      `--st-se` tokens, plus a status-detail line ("wall", signal name,
+      etc.). Output pane auto-jumps to compile/stderr/meta on the
+      relevant verdict.
+- [x] **Server-fetched language versions** — after probe success, the
+      version chip + "Open in API" snippet reflect what the server actually
+      reports rather than the snapshot in `playground/data.jsx`.
+- [x] **Error bar** — surfaces transport-level failures with `retry` and
+      (when auth is the issue) an `open settings` shortcut.
+- [x] **Share link** via URL hash (`#code=…&stdin=…&lang=73&token=zc_…`) —
+      `share` button in the workspace bar copies the current URL; opening
+      a share-linked URL restores source / stdin / language / token.
+      `localStorage` also caches the in-progress draft so reloads aren't
+      destructive.
+- [x] Mobile-friendly layout — three-column desktop split collapses to a
+      stack at ≤ 880 px (rail on top with bounded height, editor in the
+      middle, output below); workspace bar + status strip wrap; top nav
+      reflows below ≤ 760 px (`playground/app.jsx` + `playground.html`
+      media queries)
+- [ ] Anonymous play rate limit + signed-in higher quota + persistent history
+      backed by `GET /v1/submissions` (server-side; needs auth tier)
 
 ### Plumbing & integration
 
@@ -452,4 +557,4 @@ top-level `web/` directory (not a crate).
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth, **web UI scoped**: landing + docs + in-browser code space planned as `web/` workspace consuming the public REST/gRPC API)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth, **web UI scoped**: landing + docs + in-browser code space planned as `web/` workspace consuming the public REST/gRPC API, **landing scaffolded**: `web/index.html` + 8 JSX modules ported from Claude Design handoff — hero with animated 8-layer concentric-ring diagram, trust strip, three-up, architecture SVG, 41-language matrix, playground teaser, Judge0 comparison, deploy tabs, footer; serves via plain `python3 -m http.server` for now, **playground + docs scaffolded**: `web/playground.html` (rail/editor/output IDE with simulated SSE streaming, 41-lang picker, limit sliders, "Open in API" modal with curl/gRPC/Python/TS snippets, ⌘↵ run) + `web/docs.html` (sidebar IA + scroll-spy + hash routing, Quickstart/API/Security pages written, Architecture/Deployment/SDKs/Observability/Changelog as placeholders, detailed 8-layer diagram reused on security page), **landing/docs/playground completion pass**: language search/filter on 41-chip matrix ✓, prefers-reduced-motion on 8-layer diagram ✓, Claude Design tweaks-panel replaced with production theme toggle (`web/shared/theme.js`) ✓ and orphan file deleted, all 5 placeholder docs pages fleshed out from `docs/*.md` ✓, new gRPC reference page auto-mirrored from `crates/zerocode-api/proto/zerocode.proto` ✓, ⌘K fuzzy-search palette across pages + TOC sections ✓, "Edit on GitHub" link per docs page ✓, playground wired to real `POST /v1/submissions` + SSE via `web/shared/api.js` with simulation fallback ✓, share link via URL hash with `localStorage` draft persistence ✓, submission history persisted to `localStorage` (20-entry cap) ✓, sliders wired to `/v1/languages` ceilings ✓, mobile-friendly responsive layout for playground + docs ≤880 px ✓)._
