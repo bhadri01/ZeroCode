@@ -21,6 +21,11 @@ native = []
 # Phase 2 hardening — adds seccomp + landlock + libcontainer integration.
 native-hardened = ["native"]
 edge-cases = ["native"]
+# v2 WASM tier: alternative cross-platform Sandbox impl backed by wasmtime
+# + WASI preview1. Accepts a pre-compiled `.wasm` blob in
+# `SandboxJob.source_code` and runs `_start` under fuel + memory +
+# wall-time limits. Works on macOS dev hosts.
+wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
 
 [dependencies]
 zerocode-core = { path = "../zerocode-core" }
@@ -33,6 +38,16 @@ bytes = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
+
+# v2 WASM tier — feature-gated.
+wasmtime = { workspace = true, optional = true }
+wasmtime-wasi = { workspace = true, optional = true }
+
+[dev-dependencies]
+# `wat` lets the WasmSandbox unit tests embed inline `.wat` text instead of
+# checking compiled `.wasm` bytes into the repo.
+wat = "1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 # Linux primitives. macOS dev hosts skip these entirely; the `native` module
 # is `#[cfg(target_os = "linux")]`-gated internally so the workspace still

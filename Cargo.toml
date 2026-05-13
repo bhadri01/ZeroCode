@@ -98,9 +98,12 @@ prost-types = "0.13"
 # --- benchmarks ---
 criterion = { version = "0.5", features = ["html_reports"] }
 
-# --- v2 (kept here for visibility; not used in v1) ---
-# wasmtime = "44.0"
-# wasmtime-wasi = "44.0"
+# --- WASM sandbox tier (v2) ---
+# Conservative pin: wasmtime 27 is the last release with the original
+# `wasmtime-wasi` preview1 surface we depend on. Bumping requires migrating
+# to component-model WASI bindings.
+wasmtime = { version = "27", default-features = false, features = ["cranelift", "runtime", "async"] }
+wasmtime-wasi = "27"
 
 [profile.release]
 opt-level = 3

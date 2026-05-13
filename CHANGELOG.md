@@ -8,6 +8,60 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 — WASM tier (WasmSandbox)
+
+#### Added
+- **`WasmSandbox`** ([crates/zerocode-sandbox/src/wasm.rs]) — new
+  cross-platform `Sandbox` implementation backed by `wasmtime 27` + WASI
+  preview1. Accepts a pre-compiled `.wasm` blob in
+  `SandboxJob.source_code`, runs `_start` under three orthogonal limits:
+  - **Wall time**: tokio `timeout` around the future.
+  - **CPU**: wasmtime fuel metering (`consume_fuel(true)`) with a fuel
+    budget ≈ `cpu_time × 200_000_000`.
+  - **Memory**: `StoreLimits::memory_size` capped to `memory_mb × 1MB`.
+  Stdin from `SandboxJob.stdin` is piped in via `MemoryInputPipe`;
+  stdout/stderr captured to `MemoryOutputPipe` with `max_stdout` /
+  `max_stderr` caps. No filesystem access, no env vars, no preopened
+  dirs — defense-in-depth at the WASI boundary.
+- **`wasm` feature flag** on `zerocode-sandbox` — gates the wasmtime +
+  wasmtime-wasi deps so default builds stay slim. Re-exported as
+  `zerocode_sandbox::WasmSandbox` when enabled.
+- **Two unit tests** (`wasm::tests`):
+  - `hello_world_wasm_runs_and_captures_stdout` — inline `.wat` builds a
+    minimal WASI module that writes `hello-from-wasm\n` via `fd_write`;
+    asserts `Status::Accepted`, exit_code=0, exact stdout bytes.
+  - `invalid_wasm_returns_error` — non-wasm bytes return
+    `SandboxError::Internal`.
+- **Workspace deps** (unconditional, deduplicated by feature gating in
+  `zerocode-sandbox`):
+  - `wasmtime = "27"` (default-features off, `cranelift+runtime+async`).
+  - `wasmtime-wasi = "27"` (preview1 sync API).
+- **Dev-deps**: `wat = "1"` so tests can embed inline `.wat` text instead
+  of checking compiled `.wasm` bytes into the repo.
+
+#### Trade-offs vs `NativeSandbox`
+- **Pros**: cross-platform (works on macOS dev hosts), single-process
+  isolation via wasmtime, no kernel feature requirements, far cheaper
+  cold-start than `pivot_root` + cgroup creation.
+- **Cons**: weaker resource accounting (fuel ≠ CPU time; conversion
+  factor calibrated empirically); no peak-memory surfacing (`memory_kb=0`
+  in results); no path-based filesystem access (programs that need to
+  write must use stdout/stderr).
+
+#### Status
+v2 TODO marked `[~]` (partial). The WasmSandbox runs `.wasm` today but the
+per-language compile-to-wasm pipelines (Rust/Go/C/C++ via wasi-sdk),
+`cwasm` AOT pre-compilation, and worker `sandbox_select.rs` routing are
+follow-up work upstream of the sandbox.
+
+#### Test count
+| Env | Before | After | Delta |
+|---|---|---|---|
+| macOS (`SQLX_OFFLINE=true`) | 83 | 83 | — (wasm feature not default) |
+| macOS (`--features zerocode-sandbox/wasm`) | 83 | 85 | +2 (WasmSandbox) |
+
+---
+
 ### v2 gRPC polish — reflection + Dockerfile + smoke-test coverage
 
 #### Added

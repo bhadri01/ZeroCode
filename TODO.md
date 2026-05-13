@@ -265,7 +265,18 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 ## v2 — Performance + advanced
 
 - [ ] **Firecracker microVM tier** with snapshot/restore (~5-10 ms cold-start)
-- [ ] **WASM tier** (Wasmtime + cwasm pre-compilation) for Rust/Go/C/C++
+- [~] **WASM tier** (Wasmtime + cwasm pre-compilation) for Rust/Go/C/C++ —
+      `WasmSandbox` impl in `crates/zerocode-sandbox/src/wasm.rs` (feature
+      `wasm`) runs a pre-compiled `.wasm` blob via wasmtime 27 + WASI
+      preview1. Limits: fuel-based CPU bound, `StoreLimits::memory_size`
+      cap, tokio `timeout` for wall-clock. Stdin pipes from `SandboxJob.stdin`;
+      stdout/stderr captured to `MemoryOutputPipe`. Cross-platform (works on
+      macOS), so it's the first usable v2 isolation tier without a Linux host.
+      Status mapping mirrors NativeSandbox triage flow.
+      Still to do: WASI-targeted compile pipelines for Rust/Go/C/C++ (the
+      sandbox runs `.wasm` today; the compile-to-wasm step is upstream of it
+      and per-language); `cwasm` AOT pre-compilation; sandbox-select wiring
+      so the worker can route specific submissions to the WASM tier.
 - [ ] **CRIU interpreter snapshots** — pre-warmed CPython/JVM/Node images
 - [x] **Test-case batching** — `POST /v1/submissions/batch` accepts a single
       source plus 1–100 stdin test cases; server creates N independent
