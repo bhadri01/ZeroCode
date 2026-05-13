@@ -9,6 +9,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod grpc;
 mod metrics_layer;
 mod openapi;
 mod routes;
@@ -36,6 +37,10 @@ struct Args {
         default_value = "runners/languages.toml"
     )]
     languages_file: PathBuf,
+
+    /// gRPC server bind address. Empty/`off` disables the gRPC tier (REST-only mode).
+    #[arg(long, env = "ZEROCODE_GRPC_BIND", default_value = "0.0.0.0:9091")]
+    grpc_bind: String,
 }
 
 #[tokio::main]
@@ -77,6 +82,24 @@ async fn main() -> Result<()> {
 
     let router = routes::router(state.clone());
 
+    let grpc_state = state.clone();
+    let grpc_bind = args.grpc_bind.clone();
+    let grpc_task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
+        if grpc_bind.is_empty() || grpc_bind.eq_ignore_ascii_case("off") {
+            tracing::info!("gRPC server disabled (ZEROCODE_GRPC_BIND empty/off)");
+            return Ok(());
+        }
+        let addr: std::net::SocketAddr = grpc_bind
+            .parse()
+            .with_context(|| format!("parsing grpc_bind {grpc_bind}"))?;
+        tracing::info!(%addr, "gRPC server listening");
+        tonic::transport::Server::builder()
+            .add_service(grpc::service(grpc_state))
+            .serve_with_shutdown(addr, shutdown_signal())
+            .await
+            .context("gRPC server error")
+    });
+
     // `into_make_service_with_connect_info` attaches `ConnectInfo<SocketAddr>`
     // to every request. `tower_governor`'s default `PeerIpKeyExtractor` needs
     // it to derive the rate-limit bucket; without it every authenticated
@@ -87,7 +110,14 @@ async fn main() -> Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await
-    .context("server error")?;
+    .context("REST server error")?;
+
+    // Wait for the gRPC task to finish its own graceful shutdown.
+    match grpc_task.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::error!(error = %e, "gRPC task errored"),
+        Err(e) => tracing::error!(error = %e, "gRPC task join failed"),
+    }
 
     tracing::info!("zerocode-api stopped cleanly");
     telemetry::shutdown(tracer_provider);

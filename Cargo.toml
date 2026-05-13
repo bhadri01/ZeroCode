@@ -88,6 +88,12 @@ tracing-opentelemetry = "0.28"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "preserve_order"] }
 utoipa-axum = "0.1"
 
+# --- gRPC (v2) ---
+tonic = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+
 # --- benchmarks ---
 criterion = { version = "0.5", features = ["html_reports"] }
 

@@ -275,7 +275,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       returns aggregated items + status summary (queued/processing/accepted/failed).
       Schema migration `20260513000001_batch_id.sql` adds `batch_id TEXT` +
       partial index. OpenAPI spec annotated.
-- [ ] **gRPC API** alongside REST (binary protocol, HTTP/2 streaming)
+- [x] **gRPC API** alongside REST (binary protocol, HTTP/2) — `zerocode.v2.ZeroCode`
+      service on `ZEROCODE_GRPC_BIND` (default `0.0.0.0:9091`): `CreateSubmission`,
+      `GetSubmission`, `ListLanguages`, `GetHealth`. Proto at
+      `crates/zerocode-api/proto/zerocode.proto`; compiled via `tonic-build` at
+      build time. Shares the REST `AppState` so idempotency, result cache, and
+      rate-limit state stay consistent across protocols. Bearer auth via
+      `authorization` metadata, constant-time compare same as REST.
+      Set `ZEROCODE_GRPC_BIND=off` to disable. Streaming RPCs and batch
+      operations deferred — REST already covers them.
 - [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
 - [~] **Auto-scaling worker pool** driven by `pending_jobs / available_workers` —
       signal metrics exposed: `zerocode_pending_jobs` (gauge, sampled every 5 s
@@ -347,4 +355,4 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed)._
+_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth)._

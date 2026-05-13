@@ -8,6 +8,58 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### v2 — gRPC API alongside REST
+
+#### Added
+- **`zerocode.v2.ZeroCode` gRPC service**:
+  - `CreateSubmission` — validates inputs (64 KB source/stdin caps),
+    resolves limits against per-language defaults + global ceiling,
+    honours idempotency keys with the same blake3 hash discriminant as
+    REST, inserts and `pg_notify`s the worker. Returns
+    `{token, status: "queued"}`.
+  - `GetSubmission` — fetches by ULID token; returns the full
+    `SubmissionView` mirror with status text, status_detail_json,
+    stdout/stderr/compile_output bytes, exit code (-1 sentinel for absent),
+    signal name, CPU/wall time, memory, RFC3339 timestamps.
+  - `ListLanguages` — emits the in-memory registry as repeated
+    `Language` messages.
+  - `GetHealth` — unauthenticated; returns `status="ok"`, `ready`
+    (DB ping + queue under backpressure threshold), and current
+    `queue_depth`.
+- **Proto file** at `crates/zerocode-api/proto/zerocode.proto` (proto3,
+  package `zerocode.v2`). Compiled at build time via `tonic-build`
+  (added to `build-dependencies`); generated code lives in `OUT_DIR` and
+  is included from `src/grpc.rs` with `tonic::include_proto!("zerocode.v2")`.
+- **Server task** spawned from `main.rs`; bind address controlled by
+  `ZEROCODE_GRPC_BIND` (default `0.0.0.0:9091`). Set to `off` or empty
+  to run REST-only. Server shuts down gracefully on the same SIGTERM/
+  SIGINT signal as the REST server.
+- **Auth**: bearer-token check via `authorization` metadata header on
+  every RPC except `GetHealth`. Constant-time compare against
+  `ZEROCODE_API_KEY`, same as the REST middleware.
+- **Metrics**: `zerocode_grpc_create_submission_total` counter on every
+  successful gRPC create. Per-protocol metric breakdown for scaling
+  insight.
+
+#### Verified end-to-end
+- `grpcurl GetHealth` (no auth) → `{status:"ok", ready:true}`.
+- `grpcurl ListLanguages` (no auth) → `Unauthenticated`.
+- `grpcurl ListLanguages` (bearer dev) → 41 language entries.
+- `grpcurl CreateSubmission` → ULID token returned.
+- `grpcurl GetSubmission` on that token → full view with limits, status,
+  RFC3339 timestamps.
+- `cargo test --workspace` — 83 tests pass.
+
+#### Dependencies
+- Added workspace deps: `tonic = "0.12"`, `tonic-build = "0.12"`,
+  `prost = "0.13"`, `prost-types = "0.13"`.
+- Requires `protoc` on the build host. Dev: `brew install protobuf`.
+  Production builders pull it via the rust:1-bookworm image's
+  `apt-get install protobuf-compiler` step (added separately when
+  Docker images are rebuilt).
+
+---
+
 ### v2 — test-case batching + tower_governor key-extraction bug fix
 
 #### Added

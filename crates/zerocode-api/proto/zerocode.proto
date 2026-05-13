@@ -1,0 +1,120 @@
+// ZeroCode gRPC API (v2). Mirrors the REST surface for clients that want
+// binary protocol + HTTP/2 streaming. Listens on `ZEROCODE_GRPC_BIND`
+// alongside the REST server.
+//
+// Generated code goes into OUT_DIR via tonic-build; included from
+// `src/grpc.rs` with `tonic::include_proto!`.
+
+syntax = "proto3";
+
+package zerocode.v2;
+
+// ---------- Languages ----------
+
+message Language {
+  uint32 id           = 1;
+  string name         = 2;
+  string version      = 3;
+  string source_file  = 4;
+  bool   is_compiled  = 5;
+  bool   is_archived  = 6;
+}
+
+message ListLanguagesRequest {}
+
+message ListLanguagesResponse {
+  repeated Language languages = 1;
+}
+
+// ---------- Health ----------
+
+message GetHealthRequest {}
+
+message GetHealthResponse {
+  // "ok" when the process is up.
+  string status = 1;
+  // True when the DB ping succeeds and the queue is below the backpressure
+  // threshold. Use as a traffic-gating signal.
+  bool   ready  = 2;
+  // Current `submissions WHERE status='queued'` count.
+  int64  queue_depth = 3;
+}
+
+// ---------- Submissions ----------
+
+message ResourceLimits {
+  double cpu_time      = 1;
+  double wall_time     = 2;
+  uint32 memory_mb     = 3;
+  uint32 max_pids      = 4;
+  bool   enable_network = 5;
+}
+
+message CreateSubmissionRequest {
+  uint32 language_id = 1;
+  // Raw source code bytes. Use the `bytes` wire type so binary payloads
+  // (executable bytecode, etc.) round-trip without base64.
+  bytes  source_code = 2;
+  // Optional stdin payload.
+  bytes  stdin       = 3;
+  // Override defaults. Zero values mean "use server default".
+  double cpu_time_limit  = 4;
+  double wall_time_limit = 5;
+  uint32 memory_limit_mb = 6;
+  // Optional. POSTed to with HMAC signature when the submission terminates.
+  string callback_url    = 7;
+  // Optional. 24-hour dedup window keyed on (key, body_hash).
+  string idempotency_key = 8;
+}
+
+message CreateSubmissionResponse {
+  string token = 1;
+  // Always "queued" for fresh submissions; reflects the existing status
+  // for idempotency-key hits.
+  string status = 2;
+}
+
+message GetSubmissionRequest {
+  string token = 1;
+}
+
+// Mirror of `SubmissionView` from the REST surface.
+message SubmissionView {
+  string token       = 1;
+  uint32 language_id = 2;
+  string status      = 3;
+  // Free-form JSON detail attached to certain status kinds (e.g. "wall"
+  // / "cpu" for time_limit_exceeded). Encoded as a UTF-8 string to keep
+  // proto3 simple.
+  string status_detail_json = 4;
+  ResourceLimits limits = 5;
+  bytes  stdout         = 6;
+  bytes  stderr         = 7;
+  bytes  compile_output = 8;
+  // -1 sentinel = absent. proto3 makes optional<int32> awkward; clients
+  // should treat any negative value as "no exit code".
+  int32  exit_code     = 9;
+  string signal_name   = 10;
+  // Seconds.
+  double cpu_time      = 11;
+  double wall_time     = 12;
+  // KB.
+  uint32 memory        = 13;
+  // RFC3339 UTC.
+  string created_at    = 14;
+  // Empty string when not yet finished.
+  string finished_at   = 15;
+}
+
+// ---------- Service ----------
+
+service ZeroCode {
+  // Submit code; returns immediately with a token (no `wait=true` mode
+  // on the gRPC surface — use the unary GetSubmission to poll, or the
+  // REST `/v1/submissions/{token}/stream` SSE for live updates).
+  rpc CreateSubmission(CreateSubmissionRequest) returns (CreateSubmissionResponse);
+  rpc GetSubmission(GetSubmissionRequest) returns (SubmissionView);
+
+  rpc ListLanguages(ListLanguagesRequest) returns (ListLanguagesResponse);
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
+}
