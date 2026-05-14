@@ -124,11 +124,13 @@ pub async fn write_sandbox_failure(
     sqlx::query!(
         "UPDATE submissions \
          SET status = 'sandbox_failure', \
-             status_detail = $2, \
+            status_detail = $2, \
              finished_at = NOW() \
          WHERE token = $1",
         token.to_string(),
-        serde_json::json!({ "message": msg }),
+        // Store no structured detail for sandbox failures so the API can
+        // deserialize the `Status::SandboxFailure` variant cleanly.
+        Option::<serde_json::Value>::None,
     )
     .execute(pool)
     .await?;

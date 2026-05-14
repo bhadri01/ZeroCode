@@ -80,6 +80,10 @@ services:
     ports:
       - "8080:8080"
       - "9091:9091"
+    # Mount the local `web/` directory into the container during development
+    # so edits to the UI are served immediately without rebuilding the image.
+    volumes:
+      - ../web:/web:ro
     read_only: true
     tmpfs:
       - /tmp

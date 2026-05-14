@@ -16,9 +16,12 @@ COPY crates ./crates
 COPY migrations ./migrations
 COPY .sqlx ./.sqlx
 
-# Phase 0 builds without the `native` feature; Phase 1.5 flips it on.
+# Build the worker with the `native` sandbox feature enabled so the
+# worker can actually run submissions inside an OS-level sandbox.
 ENV SQLX_OFFLINE=true
-RUN cargo build --release -p zerocode-worker
+# Use an unsafe, naive sandbox for local development where kernel cgroup
+# features are unavailable (Docker for Mac). Do NOT use in production.
+RUN cargo build --release -p zerocode-worker --features unsafe-naive
 
 FROM debian:trixie-slim AS worker
 RUN apt-get update && apt-get install -y --no-install-recommends \
