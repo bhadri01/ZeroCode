@@ -104,8 +104,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         octave \
         sqlite3 \
         # Batch G: modern (some installed separately below)
-        nim \
-        crystal \
         && rm -rf /var/lib/apt/lists/* \
     && sed -i '/^# C.UTF-8/s/^# //' /etc/locale.gen 2>/dev/null || true \
     && update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8

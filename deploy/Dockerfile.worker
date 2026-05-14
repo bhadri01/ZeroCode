@@ -14,8 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
+COPY .sqlx ./.sqlx
 
 # Phase 0 builds without the `native` feature; Phase 1.5 flips it on.
+ENV SQLX_OFFLINE=true
 RUN cargo build --release -p zerocode-worker
 
 FROM debian:trixie-slim AS worker
@@ -24,5 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 RUN groupadd --system zerocode && useradd --system --gid zerocode --uid 10001 --home /var/lib/zerocode --no-create-home zerocode
 COPY --from=builder /src/target/release/zerocode-worker /usr/local/bin/zerocode-worker
+COPY runners/languages.toml /runners/languages.toml
+ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
 USER zerocode
 ENTRYPOINT ["/usr/local/bin/zerocode-worker"]

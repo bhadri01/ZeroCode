@@ -24,9 +24,7 @@ services:
       retries: 10
 
   migrate:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.service
+    image: zerocode-service:dev
     entrypoint: ["/usr/local/bin/zerocode-migrate"]
     command:
       - --database-url=postgres://zerocode:zerocode@postgres:5432/zerocode
@@ -44,16 +42,27 @@ services:
     command:
       - |
         set -eu
-        cp -a / /target/ 2>/dev/null || true
+        # Clear old contents without touching "." or "..".
+        for path in /target/* /target/.[!.]* /target/..?*; do
+          [ -e "$$path" ] || continue
+          rm -rf -- "$$path"
+        done
+        # Copy the runner image filesystem, but skip pseudo-filesystems and the
+        # target mount itself so procfs/sysfs entries do not get baked in.
+        tar -C / \
+          --exclude=./target \
+          --exclude=./dev \
+          --exclude=./proc \
+          --exclude=./sys \
+          --exclude=./tmp \
+          -cf - . | tar -C /target -xf -
         echo "runner rootfs ready"
     volumes:
       - runner-rootfs:/target
     restart: "no"
 
   api:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.service
+    image: zerocode-service:dev
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
       ZEROCODE_API_BIND: 0.0.0.0:8080
@@ -80,9 +89,7 @@ services:
     restart: unless-stopped
 
   worker:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.worker
+    image: zerocode-worker:dev
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
       ZEROCODE_WORKER_ID: worker-1

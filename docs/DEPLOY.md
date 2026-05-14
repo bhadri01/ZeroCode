@@ -173,7 +173,17 @@ runner-rootfs-init:
   command:
     - |
       set -eu
-      cp -a / /target/ 2>/dev/null || true
+      for path in /target/* /target/.[!.]* /target/..?*; do
+        [ -e "$$path" ] || continue
+        rm -rf -- "$$path"
+      done
+      tar -C / \
+        --exclude=./target \
+        --exclude=./dev \
+        --exclude=./proc \
+        --exclude=./sys \
+        --exclude=./tmp \
+        -cf - . | tar -C /target -xf -
       echo "runner rootfs ready"
   volumes:
     - runner-rootfs:/target
@@ -183,6 +193,10 @@ runner-rootfs-init:
 It copies the entire runner image filesystem into the `runner-rootfs` named
 volume. The worker then mounts that volume read-only at
 `/var/lib/zerocode/runner-rootfs`.
+
+The exclusions are important: `/proc`, `/sys`, and `/dev` are kernel-backed
+pseudo-filesystems, not normal image content. Copying them into the volume can
+inflate the rootfs dramatically and produce bogus files such as `pagemap`.
 
 ### Manual setup (without Compose)
 

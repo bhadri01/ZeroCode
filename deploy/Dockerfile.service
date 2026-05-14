@@ -18,8 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml rust-toolchain.toml ./
 COPY crates ./crates
 COPY migrations ./migrations
+COPY .sqlx ./.sqlx
 
 # Build only the API + migrate binaries — sandbox/worker stay out of this image.
+ENV SQLX_OFFLINE=true
 RUN case "$TARGETARCH" in \
         amd64) rust_target="x86_64-unknown-linux-musl" ;; \
         arm64) rust_target="aarch64-unknown-linux-musl" ;; \
@@ -39,6 +41,8 @@ FROM gcr.io/distroless/static-debian12:nonroot AS service
 COPY --from=builder /out/zerocode-api /usr/local/bin/zerocode-api
 COPY --from=builder /out/zerocode-migrate /usr/local/bin/zerocode-migrate
 COPY --from=builder /src/migrations /var/lib/zerocode/migrations
+COPY runners/languages.toml /runners/languages.toml
+ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
 USER nonroot:nonroot
 EXPOSE 8080 9091
 ENTRYPOINT ["/usr/local/bin/zerocode-api"]

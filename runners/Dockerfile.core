@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1.7
+# Simplified runner image for core 7 languages
+# Build with: docker build -f runners/Dockerfile.core -t zerocode-runner:dev runners/
+
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils tar gnupg \
+        # Core 7 languages
+        python3.13 python3.13-dev \
+        nodejs npm \
+        gcc-14 g++-14 libc6-dev libstdc++-14-dev \
+        openjdk-21-jdk-headless \
+        && rm -rf /var/lib/apt/lists/*
+
+# Create necessary directories for sandboxing
+RUN mkdir -p /etc/zerocode && \
+    mkdir -p /tmp && \
+    chmod 1777 /tmp
+
+# Install Go
+RUN curl -fsSL https://go.dev/dl/go1.23.5.linux-$(dpkg --print-architecture).tar.gz -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    ln -sf /usr/local/go/bin/go /usr/bin/go && \
+    ln -sf /usr/local/go/bin/gofmt /usr/bin/gofmt && \
+    rm /tmp/go.tar.gz
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \
+    . $HOME/.cargo/env && \
+    ln -sf $HOME/.cargo/bin/rustc /usr/bin/rustc && \
+    ln -sf $HOME/.cargo/bin/cargo /usr/bin/cargo && \
+    ln -sf $HOME/.cargo/bin/rust-analyzer /usr/bin/rust-analyzer
+
+# Create symlinks for Node
+RUN if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then \
+        ln -sf /usr/bin/nodejs /usr/bin/node; \
+    fi
+
+# Add C/C++ defaults
+RUN ln -sf /usr/bin/gcc-14 /usr/bin/gcc && \
+    ln -sf /usr/bin/g++-14 /usr/bin/g++ && \
+    ln -sf /usr/bin/gfortran-14 /usr/bin/gfortran
+
+WORKDIR /
