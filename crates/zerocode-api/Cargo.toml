@@ -22,7 +22,7 @@ zerocode-stream = { path = "../zerocode-stream" }
 tokio = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true }
+tower-http = { workspace = true, features = ["fs"] }
 tower_governor = { workspace = true }
 http = { workspace = true }
 sqlx = { workspace = true }

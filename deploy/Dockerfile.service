@@ -42,6 +42,7 @@ COPY --from=builder /out/zerocode-api /usr/local/bin/zerocode-api
 COPY --from=builder /out/zerocode-migrate /usr/local/bin/zerocode-migrate
 COPY --from=builder /src/migrations /var/lib/zerocode/migrations
 COPY runners/languages.toml /runners/languages.toml
+COPY web /web
 ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
 USER nonroot:nonroot
 EXPOSE 8080 9091

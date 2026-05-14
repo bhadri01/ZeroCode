@@ -9,6 +9,7 @@ use axum::routing::{get, post};
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::services::ServeDir;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, MakeSpan, TraceLayer};
 use tracing::Level;
 use utoipa::OpenApi;
@@ -143,7 +144,9 @@ pub fn router(state: AppState) -> Router {
         .merge(authed)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(trace_layer)
-        .layer(crate::metrics_layer::HttpMetricsLayer);
+        .layer(crate::metrics_layer::HttpMetricsLayer)
+        // Serve static web files (playground, docs, etc.) as fallback
+        .fallback_service(ServeDir::new("/web"));
 
     if let Some(cors) = cors_layer {
         router = router.layer(cors);
