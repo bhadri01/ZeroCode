@@ -57,10 +57,19 @@ name = "Java"
 version = "21"
 source_file = "Main.java"
 compile_cmd = ["/usr/bin/javac", "Main.java"]
-run_cmd = ["/usr/bin/java", "Main"]
-env = [
-    ["JAVA_TOOL_OPTIONS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
+# JVM flags go on the command line, not in JAVA_TOOL_OPTIONS — the JVM prints
+# "Picked up JAVA_TOOL_OPTIONS: ..." to stderr whenever that env var is set,
+# which leaks into the user-visible output and there's no flag to silence it.
+run_cmd = [
+    "/usr/bin/java",
+    "-Xmx${jvm_heap_mb}m",
+    "-Xss512k",
+    "-XX:MaxMetaspaceSize=128m",
+    "-XX:ReservedCodeCacheSize=64m",
+    "-XX:+ExitOnOutOfMemoryError",
+    "Main",
 ]
+env = []
 default_limits = { cpu_time = 5.0, wall_time = 15.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
@@ -96,14 +105,16 @@ id = 73
 name = "Rust"
 version = "1.x-latest"
 source_file = "main.rs"
-compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
+compile_cmd = ["/usr/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
 run_cmd = ["./prog"]
 env = [
     # rustup needs a toolchain selection — there's no `rustup default` baked
     # into the runner rootfs. Naming `stable` lets rustup pick whichever
     # stable-* toolchain is installed (matches the host arch).
     ["RUSTUP_TOOLCHAIN", "stable"],
-    ["RUSTUP_HOME", "/usr/local/rustup"],
-    ["CARGO_HOME", "/usr/local/cargo"],
+    # rustup was installed under root's HOME in the runner image (Dockerfile.core),
+    # so RUSTUP_HOME/CARGO_HOME live under /root rather than /usr/local.
+    ["RUSTUP_HOME", "/root/.rustup"],
+    ["CARGO_HOME", "/root/.cargo"],
 ]
 is_archived = false

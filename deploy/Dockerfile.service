@@ -21,7 +21,7 @@ WORKDIR /src
 ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        musl-tools pkg-config protobuf-compiler && \
+        musl-tools pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml rust-toolchain.toml ./
@@ -55,5 +55,5 @@ COPY --from=web /web/dist /srv/web
 ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml \
     ZEROCODE_WEB_DIR=/srv/web
 USER nonroot:nonroot
-EXPOSE 8080 9091
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/zerocode-api"]

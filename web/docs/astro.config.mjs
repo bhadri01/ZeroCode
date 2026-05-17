@@ -39,7 +39,6 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'REST API', slug: 'api' },
-            { label: 'gRPC', slug: 'grpc' },
             { label: 'SDKs', slug: 'sdks' },
             { label: 'Languages', slug: 'languages' },
           ],

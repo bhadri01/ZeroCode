@@ -5,40 +5,28 @@ stdout/stderr/exit status back. Built for modern Linux (cgroups v2,
 kernel >=5.14) with defense-in-depth isolation: user namespaces, pivot_root,
 landlock, seccomp BPF, capability drop, and per-submission cgroup limits.
 
-Designed as a drop-in replacement for [Judge0](https://judge0.com) with a
-focus on security, performance, and modern toolchains.
+Built with a focus on security, performance, and modern toolchains. Each
+language has a stable numeric ID so existing self-hosted-sandbox clients
+drop in by ID alone.
 
-## Supported languages (41)
+## Supported languages
 
-**Core 7 (v1)**
+The Core 7 ship today:
 
 | ID | Language | Version | Type |
 |----|----------|---------|------|
-| 71 | Python | 3.13 | Interpreted |
-| 63 | Node.js | 22 LTS | Interpreted |
-| 73 | Rust | stable | Compiled |
-| 60 | Go | 1.23+ | Compiled |
-| 48 | C | gcc-14, C17 | Compiled |
-| 52 | C++ | g++-14, C++23 | Compiled |
-| 62 | Java | 21 LTS | Compiled |
+| 71 | Python | 3.13 | interpreted |
+| 63 | Node.js | 22 LTS | interpreted |
+| 73 | Rust | stable | compile-then-run |
+| 60 | Go | 1.23+ | compile-then-run |
+| 48 | C | gcc-14, C17 | compile-then-run |
+| 52 | C++ | g++-14, C++23 | compile-then-run |
+| 62 | Java | OpenJDK 21 LTS | javac → java |
 
-**v1.5 expansion (34 languages)**
-
-| ID | Language | ID | Language | ID | Language |
-|----|----------|----|----------|----|----------|
-| 100 | Bash | 120 | Kotlin | 150 | COBOL |
-| 101 | Lua | 121 | Scala 3 | 151 | Prolog |
-| 102 | Perl | 122 | Groovy | 152 | Swift 6 |
-| 103 | Ruby | 123 | Clojure | 153 | Octave |
-| 104 | R | 130 | Haskell | 154 | SQL |
-| 105 | PHP | 131 | OCaml | 160 | Zig |
-| 106 | TypeScript | 132 | Erlang | 161 | Nim |
-| 110 | Fortran | 133 | Elixir | 162 | Crystal |
-| 111 | Pascal | 134 | Common Lisp | 163 | Dart |
-| 112 | D | 140 | C# | 164 | Julia |
-| 113 | Objective-C | 141 | F# | | |
-| 114 | Assembly | | | | |
-| 115 | Ada | | | | |
+Source of truth is `runners/languages.toml`; the running registry is
+served at `GET /v1/languages`. Wider catalog coverage is on the roadmap
+(see `TODO.md`); each addition ships with its own edge-case test file under
+`tests/edge_cases/<lang>.rs`.
 
 ## API
 
@@ -205,7 +193,7 @@ ZeroCode applies 8 layers of isolation to every submission:
 8. **PR_SET_NO_NEW_PRIVS** -- prevents privilege re-acquisition
 
 See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for the full STRIDE analysis
-and CVE comparison with Judge0.
+and prior-art CVE walkthrough.
 
 ## Testing
 

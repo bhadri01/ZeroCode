@@ -290,32 +290,34 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
       returns aggregated items + status summary (queued/processing/accepted/failed).
       Schema migration `20260513000001_batch_id.sql` adds `batch_id TEXT` +
       partial index. OpenAPI spec annotated.
-- [x] **gRPC API** alongside REST (binary protocol, HTTP/2) — `zerocode.v2.ZeroCode`
-      service on `ZEROCODE_GRPC_BIND` (default `0.0.0.0:9091`): `CreateSubmission`,
-      `GetSubmission`, `ListLanguages`, `GetHealth`. Proto at
-      `crates/zerocode-api/proto/zerocode.proto`; compiled via `tonic-build` at
-      build time. Shares the REST `AppState` so idempotency, result cache, and
-      rate-limit state stay consistent across protocols. Bearer auth via
-      `authorization` metadata, constant-time compare same as REST.
-      Set `ZEROCODE_GRPC_BIND=off` to disable. **Reflection** wired via
-      `tonic-reflection` (clients use `grpcurl localhost:9091 list/describe`
-      without the .proto). Dockerfile.service installs `protobuf-compiler` in
-      the build stage; compose exposes port 9091. Smoke test extended with
-      gRPC reflection + GetHealth check. Streaming RPCs and batch operations
-      deferred — REST already covers them.
-- [ ] **WebSocket interactive REPL** sessions (Python, Node, Ruby)
+- [x] ~~**gRPC API**~~ — **removed (2026-05-18).** Shipped in v0.1.4 as
+      `zerocode.v2.ZeroCode` on `:9091`, deleted in Unreleased: the tier
+      didn't earn its surface-area cost vs. REST + SSE. All `tonic`,
+      `prost`, `tonic-reflection`, and `tonic-build` deps dropped from the
+      workspace; `crates/zerocode-api/src/grpc.rs`, `build.rs`, and
+      `proto/zerocode.proto` deleted; main.rs no longer spawns the gRPC
+      server task; compose no longer publishes `:9091`; Dockerfile.service
+      no longer installs `protobuf-compiler`; smoke-test drops the
+      reflection + GetHealth check. Docs page deleted; landing diagram +
+      hero copy reworded to REST + SSE only.
+- [x] ~~**WebSocket interactive REPL** sessions~~ — **dropped** (2026-05-18).
+      Out of scope alongside the gRPC removal. REST + SSE is the only
+      protocol surface; long-lived bidirectional sessions aren't on the
+      roadmap.
 - [~] **Auto-scaling worker pool** driven by `pending_jobs / available_workers` —
       signal metrics exposed: `zerocode_pending_jobs` (gauge, sampled every 5 s
       from `SELECT count(*) WHERE status='queued'`), `zerocode_active_sandboxes`
       and `zerocode_worker_parallelism` (already present). Scaler/operator
       that consumes these metrics (HPA, KEDA, …) is operator-side work, not
       in-tree.
-- [x] **OTLP tracing export** (`opentelemetry-otlp`) — env-gated by
-      `OTEL_EXPORTER_OTLP_ENDPOINT`. Both api + worker install a batch span
-      exporter via tonic/gRPC; W3C TraceContext propagator registered; HTTP
-      spans from the existing `TraceLayer` flow through automatically.
-      Dev compose ships Jaeger 1.60 all-in-one (UI at http://localhost:16686,
-      OTLP ingest on `:4317`).
+- [x] ~~**OTLP tracing export**~~ — **removed (2026-05-18) alongside gRPC.**
+      The exporter used the tonic gRPC backend, and keeping just tonic for
+      OTLP egress would have undone the gRPC removal's dependency-trim win.
+      All `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, and
+      `tracing-opentelemetry` packs dropped from both api + worker crates.
+      Observability surface is now Prometheus metrics + structured stdout
+      logs. Re-add via `opentelemetry-otlp`'s `http-proto` exporter when
+      distributed tracing is needed again.
 - [x] **Prometheus metrics** endpoint — API `/metrics` route (PrometheusHandle),
       worker HTTP server on port 9090; both use `metrics-process` collector for
       CPU/RSS/FD; named counters for submissions, cache hits/misses, webhooks
@@ -358,7 +360,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started · `[!]` blocked
 ## Web UI — landing, docs, code space
 
 Self-hosted frontend served alongside the Rust API. API-only usage stays a
-first-class path; the UI consumes the same public REST + gRPC surface that
+first-class path; the UI consumes the same public REST + SSE surface that
 external clients use, so nothing in the UI is privileged. Lives in a new
 top-level `web/` directory (not a crate).
 
@@ -617,7 +619,11 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
 - [~] Anonymous quota wired via `tower_governor` with `ZEROCODE_ALLOW_ANONYMOUS`
       + `ZEROCODE_ANON_MAX_PER_WINDOW` / `ZEROCODE_ANON_WINDOW_SECS` env vars;
       cookie/IP bucket tuning is operator-side.
-- [ ] Decide SSE vs. WebSocket for live output behind reverse proxies
+- [x] ~~Decide SSE vs. WebSocket for live output behind reverse proxies~~
+      — **decided: SSE only** (2026-05-18). WebSocket interactive REPL was
+      dropped alongside gRPC; SSE is the sole streaming surface. Operators
+      with proxies that buffer SSE (nginx without `proxy_buffering off`)
+      should disable buffering on `/v1/submissions/*/stream` specifically.
 - [x] **Frontend CI**: `.github/workflows/web.yml` runs
       pnpm install (frozen lockfile) → `pnpm -r typecheck` → `pnpm build`
       (assembles `web/dist/` with both app + docs) → sanity-check key

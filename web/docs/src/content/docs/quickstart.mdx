@@ -9,7 +9,7 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 - Linux host, kernel ≥ 5.14 with cgroup v2 (run `mount | grep cgroup2` to confirm).
 - Docker 24+ and Docker Compose.
-- A spare port for the API (defaults to `8080`) and gRPC (`9091`).
+- A spare port for the API (defaults to `8080`).
 
 <Aside type="caution">
   macOS dev machines work for building and running the API, but the sandbox
@@ -38,7 +38,7 @@ This starts:
 
 - `postgres` (the queue lives here — no broker needed)
 - `zerocode-migrate` (one-shot; applies all SQL migrations)
-- `zerocode-api` (REST on `:8080`, gRPC on `:9091`)
+- `zerocode-api` (REST + SSE on `:8080`)
 - `zerocode-worker` (sandbox executor with 8 isolation layers)
 - `runner-rootfs-init` (extracts language toolchains into a volume)
 

@@ -25,7 +25,8 @@
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::Once;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -33,6 +34,7 @@ use bytes::Bytes;
 use chrono::Utc;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use tokio::task::JoinHandle;
 use zerocode_core::{ResourceLimits, Signal, Status};
 
 use crate::{Sandbox, SandboxError, SandboxJob, SandboxResult};
@@ -109,6 +111,36 @@ fn cap(mut v: Vec<u8>, max: usize) -> Bytes {
         v.truncate(max);
     }
     Bytes::from(v)
+}
+
+/// Background task that polls `/proc/<pid>/status` for `VmHWM` (peak resident
+/// set size, in KiB) and records the maximum into a shared atomic. Used by
+/// the NaiveSandbox to surface a real memory number on Docker Desktop
+/// (where cgroup-v2 `memory.peak` isn't accessible). The task exits when the
+/// child disappears from /proc or when the caller aborts it.
+fn spawn_peak_rss_sampler(pid: u32) -> (JoinHandle<()>, Arc<AtomicU32>) {
+    let peak = Arc::new(AtomicU32::new(0));
+    let peak_writer = peak.clone();
+    let handle = tokio::spawn(async move {
+        let path = format!("/proc/{pid}/status");
+        loop {
+            match tokio::fs::read_to_string(&path).await {
+                Ok(s) => {
+                    if let Some(kb) = s
+                        .lines()
+                        .find(|l| l.starts_with("VmHWM:"))
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .and_then(|n| n.parse::<u32>().ok())
+                    {
+                        peak_writer.fetch_max(kb, Ordering::Relaxed);
+                    }
+                }
+                Err(_) => break,
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    });
+    (handle, peak)
 }
 
 #[async_trait]
@@ -270,6 +302,12 @@ impl Sandbox for NaiveSandbox {
             .spawn()
             .map_err(|e| SandboxError::Spawn(format!("run spawn: {e}")))?;
 
+        // Sample VmHWM while the child is alive — NaiveSandbox can't read
+        // cgroup memory.peak under Docker Desktop. The sampler stops on its
+        // own when the child exits and /proc/<pid>/ disappears.
+        let pid = child.id().unwrap_or(0);
+        let (sampler, peak_rss_kb) = spawn_peak_rss_sampler(pid);
+
         if let Some(mut stdin) = child.stdin.take() {
             stdin
                 .write_all(&job.stdin)
@@ -280,8 +318,13 @@ impl Sandbox for NaiveSandbox {
 
         let remaining = wall_budget.saturating_sub(start.elapsed());
         let output = match tokio::time::timeout(remaining, child.wait_with_output()).await {
-            Ok(r) => r.map_err(|e| SandboxError::Wait(e.to_string()))?,
+            Ok(r) => {
+                sampler.abort();
+                r.map_err(|e| SandboxError::Wait(e.to_string()))?
+            }
             Err(_) => {
+                sampler.abort();
+                let memory_kb = peak_rss_kb.load(Ordering::Relaxed);
                 let _ = std::fs::remove_dir_all(&host_workdir);
                 return Ok(SandboxResult {
                     status: Status::TimeLimitExceeded(zerocode_core::status::TimeLimitKind::Wall),
@@ -293,7 +336,7 @@ impl Sandbox for NaiveSandbox {
                     signal: Some(Signal::Sigkill),
                     cpu_time: start.elapsed(),
                     wall_time: start.elapsed(),
-                    memory_kb: 0,
+                    memory_kb,
                     started_at,
                     finished_at: Utc::now(),
                 });
@@ -310,6 +353,7 @@ impl Sandbox for NaiveSandbox {
             }
         };
 
+        let memory_kb = peak_rss_kb.load(Ordering::Relaxed);
         let _ = std::fs::remove_dir_all(&host_workdir);
 
         Ok(SandboxResult {
@@ -322,7 +366,7 @@ impl Sandbox for NaiveSandbox {
             signal: None,
             cpu_time: elapsed,
             wall_time: elapsed,
-            memory_kb: 0,
+            memory_kb,
             started_at,
             finished_at: Utc::now(),
         })

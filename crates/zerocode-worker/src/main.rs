@@ -60,7 +60,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let tracer_provider = telemetry::init().context("init telemetry")?;
+    telemetry::init().context("init telemetry")?;
     let args = Args::parse();
     let worker_id = args
         .worker_id
@@ -170,7 +170,7 @@ async fn main() -> Result<()> {
     }
 
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");
-    telemetry::shutdown(tracer_provider);
+    telemetry::shutdown(());
     Ok(())
 }
 

@@ -8,7 +8,7 @@ description: System overview, crate map, submission lifecycle, sandbox execution
 ```
 ┌──────────┐  POST  ┌─────────────┐  INSERT  ┌──────────┐  NOTIFY   ┌─────────────┐  clone()  ┌─────────────┐
 │  Client  │──────► │   API       │ ───────► │ Postgres │ ────────► │   Worker    │ ────────► │   Sandbox   │
-└──────────┘ ◄────  │ axum+tonic  │ ◄──────  │  queue   │           │ sqlx+moka   │ ◄──────── │  8 layers   │
+└──────────┘ ◄────  │  axum+SSE   │ ◄──────  │  queue   │           │ sqlx+moka   │ ◄──────── │  8 layers   │
               SSE  └─────────────┘  fetch   └──────────┘           └─────────────┘  stdout   └─────────────┘
                                                                                                       │
                                                                                                       ▼
@@ -26,8 +26,8 @@ a state machine: `queued → processing → {accepted | tle | mle | ce | re | ..
 
 | Crate | Purpose |
 |---|---|
-| `zerocode-api` | axum (REST) + tonic (gRPC), shared `AppState`, auth, rate-limit, OpenAPI, metrics. |
-| `zerocode-worker` | LISTEN/NOTIFY claim loop, sandbox dispatch, retention sweeper, OTLP. |
+| `zerocode-api` | axum REST handlers + SSE streaming, shared `AppState`, auth, rate-limit, OpenAPI, metrics. |
+| `zerocode-worker` | LISTEN/NOTIFY claim loop, sandbox dispatch, retention sweeper. |
 | `zerocode-sandbox` | `Sandbox` trait + `NativeSandbox` (Linux) + `WasmSandbox` (wasmtime) + `StubSandbox` (cross-platform tests). |
 | `zerocode-core` | `LanguageRegistry`, `ResourceLimits`, `SandboxJob` / `SandboxResult` types. |
 | `zerocode-cache` | Moka-backed result cache (5 min TTL) + compile-artifact cache. |

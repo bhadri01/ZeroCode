@@ -20,8 +20,8 @@ sandbox compile/run model.
 | 71 | Python | 3.13 | interpreted (single file) |
 | 73 | Rust | latest stable | compile-then-run (`-C panic=abort`) |
 
-IDs are Judge0-compatible where they overlap, so most Judge0 clients work
-against ZeroCode without remapping.
+Numeric IDs are stable across releases; existing clients only need to know
+the integer, not the name.
 
 <Aside>
   The runner image bundles every toolchain; the API never invokes them
@@ -73,9 +73,9 @@ that produces `/box/prog`. Compile errors surface via the dedicated
 
 ## Future languages
 
-Wider coverage (the Judge0 catalog has ~60 entries) is on the roadmap but
-not shipping today — each language adds runner image weight, toolchain
-attack surface, and a maintenance burden. Tracked in
+Wider coverage is on the roadmap but not shipping today — each language
+adds runner image weight, toolchain attack surface, and a maintenance
+burden. Tracked in
 [`TODO.md`](https://github.com/bhadri01/ZeroCode/blob/main/TODO.md) under
 the v1.5 section. Open an issue if you have a specific language you'd like
 to see prioritized; PRs adding a language come with `tests/edge_cases/<lang>.rs`

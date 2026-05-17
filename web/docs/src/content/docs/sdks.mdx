@@ -136,15 +136,6 @@ const stop = stream(ack.token, {
 It's ~330 lines, MIT-licensed via the repo. Copy it as a starting point if
 you want full control over the wire protocol.
 
-## REST vs gRPC
-
-| | REST | gRPC |
-|---|---|---|
-| **Wire** | JSON over HTTP/1.1 or HTTP/2 | Protobuf over HTTP/2 |
-| **Spec** | `/v1/openapi.json` (OpenAPI 3.1) | [`proto/zerocode.proto`](/docs/grpc) |
-| **Streaming** | SSE (`GET /v1/submissions/{token}/stream`) | Not exposed today — REST covers it |
-| **Use for** | Browsers, scripts, polyglot integrations | Service-to-service, strict latency budgets |
-
 ## What's *not* shipping today
 
 Honest summary of the gaps:

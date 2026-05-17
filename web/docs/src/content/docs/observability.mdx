@@ -1,13 +1,13 @@
 ---
 title: Observability
-description: Prometheus metrics, OTLP traces, structured logs, dashboards.
+description: Prometheus metrics and structured JSON logs.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
-ZeroCode emits three signal kinds: Prometheus metrics, OTLP traces, and
-structured JSON logs. Everything is opt-in via env vars; the default config is
-silent in production.
+ZeroCode emits two signal kinds today: **Prometheus metrics** (scraped from
+`/metrics` on each binary's HTTP port) and **structured JSON logs** on
+stdout. OTLP/gRPC tracing was removed when the gRPC API tier was dropped —
+add it back with the `opentelemetry-otlp` HTTP exporter if you need
+distributed traces.
 
 ## Prometheus metrics
 
@@ -41,32 +41,6 @@ sum by (verdict) (rate(zerocode_submissions_total[1m]))
 histogram_quantile(0.99,
   sum by (language_id, le) (rate(zerocode_submission_duration_seconds_bucket[5m])))
 ```
-
-## OTLP tracing
-
-Set `OTEL_EXPORTER_OTLP_ENDPOINT` and ZeroCode (both API and worker) install
-a tonic-based batch span exporter. W3C TraceContext propagation is wired into
-the existing `TraceLayer`, so HTTP spans flow automatically.
-
-```bash title="docker-compose.yml fragment for Jaeger"
-jaeger:
-  image: jaegertracing/all-in-one:1.60
-  ports:
-    - "16686:16686"   # UI
-    - "4317:4317"     # OTLP gRPC
-  environment:
-    COLLECTOR_OTLP_ENABLED: "true"
-```
-
-Then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317` on the api + worker
-services. The Jaeger UI shows full submission traces — REST handler → DB
-INSERT → worker claim → sandbox spans.
-
-<Aside>
-  Spans include the bearer key prefix (first 8 chars) as an attribute by
-  default. Set `ZEROCODE_TRACE_REDACT_AUTH=true` to redact it entirely if your
-  trace collector is shared with other tenants.
-</Aside>
 
 ## Structured logs
 

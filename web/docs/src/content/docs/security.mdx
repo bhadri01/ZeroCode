@@ -1,6 +1,6 @@
 ---
 title: Threat model
-description: STRIDE pass, 8-layer defense-in-depth, Judge0 CVE comparison.
+description: STRIDE pass, 8-layer defense-in-depth, prior-art CVE analysis.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -74,13 +74,17 @@ The three trust boundaries are crossed by, respectively:
 - **Network.** The submission's NET namespace is empty by default. Set `enable_network=true` on a language to bring up `lo`; for outbound access, run an egress firewall (v3 roadmap).
 - **Compile vs run limits.** Today both phases share the wall budget. Separate `compile_time_limit` / `compile_memory_limit` are roadmap (v1 followup).
 
-## Judge0 CVE comparison
+## Prior-art CVE analysis
 
-| CVE | Affects | ZeroCode status |
+Three CVEs assigned against an earlier-generation self-hosted code-execution
+sandbox, and how ZeroCode's design happens to sidestep each — included as
+honest evidence the threat model isn't theoretical.
+
+| CVE | Class | ZeroCode status |
 |---|---|---|
-| [CVE-2023-28599](https://nvd.nist.gov/vuln/detail/CVE-2023-28599) | Judge0 — isolate sandbox escape via `/proc` symlink | Not applicable. ZeroCode uses `pivot_root` + landlock; host `/proc` is never reachable. |
-| [CVE-2024-28185](https://nvd.nist.gov/vuln/detail/CVE-2024-28185) | Judge0 — submission status manipulation via API | Not applicable. The status field is a typed discriminated union written only by the worker. |
-| [CVE-2024-28189](https://nvd.nist.gov/vuln/detail/CVE-2024-28189) | Judge0 — privilege escalation via misconfigured cgroup v1 | Not applicable. We require cgroup v2 unified; `cgroup.kill` is atomic. |
+| [CVE-2023-28599](https://nvd.nist.gov/vuln/detail/CVE-2023-28599) | sandbox escape via `/proc` symlink | Not applicable. ZeroCode `pivot_root`s into a read-only runner rootfs; landlock denies host `/proc`. |
+| [CVE-2024-28185](https://nvd.nist.gov/vuln/detail/CVE-2024-28185) | submission status manipulation via API | Not applicable. The status field is a typed discriminated union written only by the worker — no API path mutates it. |
+| [CVE-2024-28189](https://nvd.nist.gov/vuln/detail/CVE-2024-28189) | privilege escalation via misconfigured cgroup v1 | Not applicable. ZeroCode requires cgroup v2 unified hierarchy; `cgroup.kill` is atomic. |
 
 ZeroCode CVE history: 0 known.
 

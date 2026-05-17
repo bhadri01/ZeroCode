@@ -10,7 +10,6 @@ mod auth;
 mod config;
 mod db;
 mod error;
-mod grpc;
 mod metrics_layer;
 mod openapi;
 mod routes;
@@ -39,10 +38,6 @@ struct Args {
     )]
     languages_file: PathBuf,
 
-    /// gRPC server bind address. Empty/`off` disables the gRPC tier (REST-only mode).
-    #[arg(long, env = "ZEROCODE_GRPC_BIND", default_value = "0.0.0.0:9091")]
-    grpc_bind: String,
-
     /// Comma-separated list of browser origins permitted to call the API.
     /// Empty disables CORS (same-origin only). Use `*` for fully public access
     /// (only safe with `--allow-anonymous`).
@@ -70,7 +65,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let tracer_provider = telemetry::init().context("init telemetry")?;
+    telemetry::init().context("init telemetry")?;
     let args = Args::parse();
     let prom_handle = init_metrics();
 
@@ -124,34 +119,6 @@ async fn main() -> Result<()> {
 
     let router = routes::router(state.clone());
 
-    let grpc_state = state.clone();
-    let grpc_bind = args.grpc_bind.clone();
-    let grpc_task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
-        if grpc_bind.is_empty() || grpc_bind.eq_ignore_ascii_case("off") {
-            tracing::info!("gRPC server disabled (ZEROCODE_GRPC_BIND empty/off)");
-            return Ok(());
-        }
-        let addr: std::net::SocketAddr = grpc_bind
-            .parse()
-            .with_context(|| format!("parsing grpc_bind {grpc_bind}"))?;
-
-        // Reflection — lets grpcurl / BloomRPC discover the service schema
-        // without the .proto file. Driven off the FileDescriptorSet
-        // tonic-build embedded into the binary.
-        let reflection = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(grpc::FILE_DESCRIPTOR_SET)
-            .build_v1()
-            .context("build gRPC reflection service")?;
-
-        tracing::info!(%addr, "gRPC server listening");
-        tonic::transport::Server::builder()
-            .add_service(grpc::service(grpc_state))
-            .add_service(reflection)
-            .serve_with_shutdown(addr, shutdown_signal())
-            .await
-            .context("gRPC server error")
-    });
-
     // `into_make_service_with_connect_info` attaches `ConnectInfo<SocketAddr>`
     // to every request. `tower_governor`'s default `PeerIpKeyExtractor` needs
     // it to derive the rate-limit bucket; without it every authenticated
@@ -164,15 +131,8 @@ async fn main() -> Result<()> {
     .await
     .context("REST server error")?;
 
-    // Wait for the gRPC task to finish its own graceful shutdown.
-    match grpc_task.await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => tracing::error!(error = %e, "gRPC task errored"),
-        Err(e) => tracing::error!(error = %e, "gRPC task join failed"),
-    }
-
     tracing::info!("zerocode-api stopped cleanly");
-    telemetry::shutdown(tracer_provider);
+    telemetry::shutdown(());
     Ok(())
 }
 

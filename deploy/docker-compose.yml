@@ -66,7 +66,6 @@ services:
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
       ZEROCODE_API_BIND: 0.0.0.0:8080
-      ZEROCODE_GRPC_BIND: 0.0.0.0:9091
       ZEROCODE_API_KEY: dev-only-replace-me
       # Browser-facing controls — integrated playground enabled by default.
       ZEROCODE_CORS_ORIGINS: "*"
@@ -79,7 +78,6 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
-      - "9091:9091"
     # The image bakes the built `web/dist/` at /srv/web (see deploy/Dockerfile.service,
     # which runs `pnpm build` in a node:20 stage). ZEROCODE_WEB_DIR is set to
     # /srv/web by the Dockerfile, so the API picks it up automatically.

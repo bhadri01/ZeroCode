@@ -6,12 +6,14 @@
  *   - real submission via shared/api → SSE stream → polling fallback,
  *   - offline simulation when the API is unreachable,
  *   - ⌘↵ run · ⌘. cancel, share-link via URL hash, localStorage history,
- *   - "Open in API" curl/grpc snippet modal, settings dialog.
+ *   - Settings dialog (API base URL + bearer key).
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Editor, type EditorHandle } from './Editor';
 import { LANGS, VERDICT_COLOR, VERDICT_LABEL, type Lang, type Verdict } from './data';
+import { getTheme, toggleTheme, type Theme } from '../shared/theme';
+import { LangIcon, langKeyFromId } from '../shared/lang-icons';
 import {
   decode, encode, get as apiGet, getBase, getKey, getBaseSource,
   health, idemKey, languages, poll, probe, resetProbe,
@@ -87,6 +89,16 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+// Memory is stored internally in MB (the API reports KiB, we divide by 1024).
+// Pick a readable unit so tiny programs don't all read "0.0 MB".
+function formatMem(mb: number | null): string {
+  if (mb == null) return '—';
+  const kib = mb * 1024;
+  if (kib < 1) return `${Math.round(kib * 1024)} B`;
+  if (kib < 1024) return kib < 10 ? `${kib.toFixed(1)} KB` : `${Math.round(kib)} KB`;
+  return mb < 100 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`;
+}
+
 interface ShareHash { lang: string | null; token: string | null; code: string | null; stdin: string }
 function readShareHash(): ShareHash | null {
   const h = (location.hash || '').replace(/^#/, '');
@@ -111,6 +123,53 @@ function writeShareHash(s: { langId?: number; code?: string; stdin?: string; tok
   if (s.token) p.set('token', s.token);
   const qs = p.toString();
   history.replaceState(null, '', qs ? '#' + qs : location.pathname);
+}
+
+/* ─── ThemeToggle ─────────────────────────────────────────────────
+ * Sun/moon button in the top-right of the playground nav. Listens to the
+ * shared `zerocode:theme` event so the icon flips whether the click came
+ * from this button, the landing nav, or the user's OS preference change.
+ * Toggle path goes through ../shared/theme so localStorage persistence +
+ * data-theme attribute sync stay consistent across all three surfaces. */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<Theme>(() => getTheme());
+  useEffect(() => {
+    const onChange = (e: Event) => setTheme((e as CustomEvent<Theme>).detail);
+    window.addEventListener('zerocode:theme', onChange as EventListener);
+    return () => window.removeEventListener('zerocode:theme', onChange as EventListener);
+  }, []);
+  const isLight = theme === 'light';
+  return (
+    <button
+      type="button"
+      className="pg-theme"
+      aria-label={isLight ? 'Switch to dark theme' : 'Switch to light theme'}
+      title={isLight ? 'Dark mode' : 'Light mode'}
+      onClick={() => toggleTheme()}
+    >
+      <style>{`
+        .pg-theme {
+          appearance: none; border: 1px solid var(--line-2); background: transparent;
+          color: var(--fg-1); width: 28px; height: 28px; border-radius: 6px;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease;
+        }
+        .pg-theme:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+        .pg-theme:active { transform: translateY(1px); }
+        .pg-theme svg { display: block; }
+      `}</style>
+      {isLight ? (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M13.5 10.3A6 6 0 0 1 5.7 2.5a6 6 0 1 0 7.8 7.8z"/>
+        </svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5l-1.1-1.1"/>
+        </svg>
+      )}
+    </button>
+  );
 }
 
 /* ─── TopNav ──────────────────────────────────────────────────────── */
@@ -141,6 +200,7 @@ function TopNav({ token }: { token: string }) {
         <a href="/docs/">docs</a>
         <span>·</span>
         <span className="pg-tok">token · {token}</span>
+        <ThemeToggle />
       </div>
     </nav>
   );
@@ -205,17 +265,22 @@ function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory
       </div>
       <div className="pg-rail-list">
         {filtered.length === 0 && <div className="pg-rail-empty">no match · try clearing the search</div>}
-        {filtered.map(l => (
-          <button key={l.id}
-            className={`pg-row ${selected.id === l.id ? 'active' : ''}`}
-            onClick={() => onSelect(l)}
-            style={{ '--row-accent': l.accent } as CSSProperties}>
-            <span className="dot"/>
-            <span className="name">{l.name}</span>
-            <span className="v">{l.version}</span>
-            <span className="id">{l.id}</span>
-          </button>
-        ))}
+        {filtered.map(l => {
+          const lk = langKeyFromId(l.id);
+          return (
+            <button key={l.id}
+              className={`pg-row ${selected.id === l.id ? 'active' : ''}`}
+              onClick={() => onSelect(l)}
+              style={{ '--row-accent': l.accent } as CSSProperties}>
+              {lk
+                ? <LangIcon lang={lk} size={16} className="lico" />
+                : <span className="dot" aria-hidden="true" />}
+              <span className="name">{l.name}</span>
+              <span className="v">{l.version}</span>
+              <span className="id">{l.id}</span>
+            </button>
+          );
+        })}
       </div>
       {/* Drag delta is INVERTED: dragging down (positive delta) shrinks
           history, dragging up grows it — matches user expectation when the
@@ -613,7 +678,7 @@ function OutputPane(p: OutputPaneProps) {
               {p.metrics.signal && <> · signal {p.metrics.signal}</>}
             </dd>
             <dt>wall time</dt><dd>{p.metrics.time != null ? p.metrics.time.toFixed(3) + ' s' : '—'}</dd>
-            <dt>memory peak</dt><dd>{p.metrics.memory != null ? p.metrics.memory.toFixed(1) + ' MB' : '—'}</dd>
+            <dt>memory peak</dt><dd>{formatMem(p.metrics.memory)}</dd>
             <dt>language</dt><dd>{p.lang.name} · {p.lang.version} · id {p.lang.id}</dd>
             <dt>runner</dt><dd>zerocode-runner</dd>
             <dt>sandbox</dt><dd>8 layers · cgroup v2 · landlock</dd>
@@ -666,7 +731,7 @@ function StatusStrip({ status, statusDetail, metrics, apiOnline, cursor, themeMo
       </div>
       <div className="metrics">
         <span>wall · <b>{metrics.time != null ? metrics.time.toFixed(3) + 's' : '—'}</b></span>
-        <span>mem · <b>{metrics.memory != null ? metrics.memory.toFixed(1) + ' MB' : '—'}</b></span>
+        <span>mem · <b>{formatMem(metrics.memory)}</b></span>
         <span>exit · <b>{metrics.exitCode != null ? metrics.exitCode : (status === 'accepted' ? '0' : '—')}</b></span>
         <span>Ln <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.line}</b>, Col <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.col}</b></span>
       </div>

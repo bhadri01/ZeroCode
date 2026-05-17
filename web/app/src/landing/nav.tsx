@@ -66,7 +66,9 @@ function ThemeToggle() {
 
 export function Nav() {
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const stars = useGitHubStars(GITHUB_REPO);
+
   useEffect(() => {
     const onScroll = () => {
       const y = window.scrollY;
@@ -79,6 +81,24 @@ export function Nav() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Close the mobile menu on outside click / Escape / route change.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest('.zc-nav') && !t.closest('.zc-nav-mobile-sheet')) setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('click', onClick);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('click', onClick);
+      document.body.style.overflow = '';
+    };
+  }, [menuOpen]);
   return (
     <>
     <div className="zc-scrollbar" />
@@ -136,7 +156,62 @@ export function Nav() {
           color: var(--fg-2);
           white-space: nowrap;
         }
-        @media (max-width: 1080px) { .zc-nav-links { display: none; } }
+        @media (max-width: 920px) { .zc-nav-links { display: none; } }
+        @media (max-width: 480px) {
+          .zc-star span:not(.sep):not(.count) { display: none; }
+          .zc-cta-primary span.cta-label { display: none; }
+          .zc-mark .ver { display: none; }
+        }
+
+        /* Mobile menu toggle — shown only when the inline links hide. */
+        .zc-nav-burger {
+          display: none;
+          appearance: none; background: transparent;
+          border: 1px solid var(--line-2); border-radius: 6px;
+          width: 36px; height: 36px; padding: 0;
+          align-items: center; justify-content: center;
+          color: var(--fg-1); cursor: pointer;
+          transition: border-color .15s ease, color .15s ease, background .15s ease;
+        }
+        .zc-nav-burger:hover { border-color: var(--accent); color: var(--accent); }
+        .zc-nav-burger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        @media (max-width: 920px) { .zc-nav-burger { display: inline-flex; } }
+
+        /* Full-screen menu sheet (only mounts when open). */
+        .zc-nav-mobile-sheet {
+          position: fixed; inset: 56px 0 0 0; z-index: 49;
+          background: color-mix(in oklab, var(--bg) 96%, transparent);
+          backdrop-filter: blur(20px) saturate(160%);
+          -webkit-backdrop-filter: blur(20px) saturate(160%);
+          padding: 24px clamp(20px, 5vw, 32px);
+          display: flex; flex-direction: column; gap: 4px;
+          animation: zc-sheet-in 180ms ease;
+        }
+        @keyframes zc-sheet-in {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .zc-nav-mobile-sheet a {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 16px 8px;
+          font-family: var(--f-mono); font-size: 16px;
+          color: var(--fg-1); text-decoration: none;
+          border-bottom: 1px solid var(--line);
+          min-height: 48px;
+          transition: color .15s ease;
+        }
+        .zc-nav-mobile-sheet a:hover { color: var(--accent); }
+        .zc-nav-mobile-sheet a .arrow { color: var(--fg-3); }
+        .zc-nav-mobile-sheet .cta {
+          margin-top: 16px;
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+          padding: 14px 18px; border-radius: 8px;
+          background: var(--accent); color: #0a0a0a;
+          font: 500 14px var(--f-sans);
+          text-decoration: none;
+          min-height: 48px;
+          border: 0;
+        }
         .zc-nav-links a { position: relative; transition: color .15s ease; }
         .zc-nav-links a:hover { color: var(--fg); }
         .zc-nav-links a::after {
@@ -178,8 +253,8 @@ export function Nav() {
           <span className="ver">v0.1.4</span>
         </a>
         <div className="zc-nav-links">
-          <a href="#features">features</a>
-          <a href="#architecture">architecture</a>
+          <a href="#isolation">isolation</a>
+          <a href="#how">how it works</a>
           <a href="#languages">languages</a>
           <a href="/docs/">docs</a>
           <a href="/playground.html">playground</a>
@@ -191,12 +266,40 @@ export function Nav() {
             <span>github</span>
             {stars != null && <><span className="sep">·</span><span className="count">{stars}</span></>}
           </a>
-          <a className="zc-cta-primary" href="/docs/">
-            get started
+          <a className="zc-cta-primary" href="/docs/quickstart">
+            <span className="cta-label">get started</span>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 5h8M5 1l4 4-4 4"/></svg>
           </a>
+          <button
+            type="button"
+            className="zc-nav-burger"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+          >
+            {menuOpen ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M3 3l10 10M13 3L3 13"/>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <path d="M3 5h12M3 9h12M3 13h12"/>
+              </svg>
+            )}
+          </button>
         </div>
       </div>
+      {menuOpen && (
+        <div className="zc-nav-mobile-sheet" role="menu">
+          <a href="#isolation" onClick={() => setMenuOpen(false)}>isolation<span className="arrow">→</span></a>
+          <a href="#how" onClick={() => setMenuOpen(false)}>how it works<span className="arrow">→</span></a>
+          <a href="#languages" onClick={() => setMenuOpen(false)}>languages<span className="arrow">→</span></a>
+          <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>
+          <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
+          <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>
+          <a className="cta" href="/docs/quickstart" onClick={() => setMenuOpen(false)}>get started →</a>
+        </div>
+      )}
     </nav>
     </>
   );

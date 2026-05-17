@@ -5,14 +5,25 @@ description: Per-release notes and versioning policy.
 
 ## Unreleased
 
+- **Removed gRPC API tier.** `zerocode.v2.ZeroCode` service + tonic reflection
+  are gone; REST + SSE is the sole protocol surface. Dropped `tonic`,
+  `prost`, `tonic-reflection`, and `tonic-build` from the workspace.
+  Compose no longer exposes `:9091`; Dockerfile.service no longer installs
+  `protoc`.
+- **Removed OTLP tracing.** The gRPC-based OTLP exporter went with tonic.
+  Observability is now Prometheus metrics + structured stdout logs.
+  Re-add via `opentelemetry-otlp` with the `http-proto` exporter if needed.
+- **Removed Open-in-API modal** from the playground (already in v0.1.4 docs;
+  formalized here).
 - Web UI migrated from plain React 18 UMD + Babel-standalone to a pnpm
   workspace with Vite + React + TypeScript (landing + playground) and Astro 5
-  + Starlight (docs). Editor swapped from Monaco-CDN to bundled CodeMirror 6
-  with `@codemirror/lang-*` per Core 7 language.
+  + Starlight (docs). Editor is **Monaco** with a custom Monokai Pro theme.
 - `zerocode-api` gained `ZEROCODE_WEB_DIR` to serve a configurable static
   directory as the fallback route; the new `deploy/Dockerfile.service`
   builds `web/dist/` in a node:20 stage and bundles it into the distroless
   final image at `/srv/web`.
+- Static-fallback security headers: CSP, COOP, X-Content-Type-Options,
+  Referrer-Policy, Permissions-Policy, X-Frame-Options.
 
 ## v0.1.4
 
@@ -63,5 +74,6 @@ description: Per-release notes and versioning policy.
 
 ZeroCode follows [semver](https://semver.org). v0.x ⇒ breaking changes allowed
 within minor versions; once at v1.0, breaking changes only on major bumps.
-The wire protocol (REST + gRPC) is versioned with `/v1` (or `/v2`) prefixes;
-SDKs are regenerated per release.
+The REST wire protocol is versioned with a `/v1` prefix; future breaking
+changes will live under `/v2`. SDKs (when published) are regenerated per
+release from the OpenAPI 3.1 spec.

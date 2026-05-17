@@ -7,11 +7,11 @@ export function ArchitectureDiagram() {
   const W = 1320, H = 580;
   const N: Record<string, ArchNode> = {
     client:   { x: 60,   y: 286, w: 170, h: 88, l: 'Client',   s: 'http · curl · agent' },
-    api:      { x: 470,  y: 286, w: 210, h: 88, l: 'API',      s: 'axum · tonic · openapi 3.1' },
+    api:      { x: 470,  y: 286, w: 210, h: 88, l: 'API',      s: 'axum · sse · openapi 3.1' },
     pg:       { x: 770,  y: 70,  w: 220, h: 88, l: 'Postgres', s: 'submissions · listen/notify' },
-    worker:   { x: 770,  y: 492, w: 220, h: 88, l: 'Worker',   s: 'sqlx · moka cache · otlp' },
+    worker:   { x: 770,  y: 492, w: 220, h: 88, l: 'Worker',   s: 'sqlx · moka cache' },
     sandbox:  { x: 1040, y: 286, w: 200, h: 88, l: 'Sandbox',  s: '8 isolation layers' },
-    runtime:  { x: 1080, y: 70,  w: 140, h: 88, l: 'Runtime',  s: '41 languages' },
+    runtime:  { x: 1080, y: 70,  w: 140, h: 88, l: 'Runtime',  s: '7 languages' },
   };
   const cx = (n: ArchNode) => n.x + n.w/2;
   const cy = (n: ArchNode) => n.y + n.h/2;
@@ -91,7 +91,7 @@ export function ArchitectureDiagram() {
         <SectionHeader
           kicker="architecture"
           title='Two binaries. <span class="it">One Postgres.</span>'
-          sub="Same axum + tonic state on REST and gRPC. Workers wake on LISTEN/NOTIFY — no polling, no queue daemon. Submissions are the queue."
+          sub="One REST + SSE surface on axum, one Postgres queue. Workers wake on LISTEN/NOTIFY — no polling, no broker daemon. Submissions are the queue."
         />
         <div className="zc-arch-wrap">
           <div className="zc-arch-svg-wrap">
@@ -151,7 +151,7 @@ export function ArchitectureDiagram() {
               })}
 
               <EdgeLabel x={(N.client.x + N.client.w + N.api.x) / 2} y={cy(N.api) - 22}>POST /v1/submissions</EdgeLabel>
-              <EdgeLabel x={(N.client.x + N.client.w + N.api.x) / 2} y={cy(N.api) + 32} color="var(--blue-1)">SSE · grpc stream</EdgeLabel>
+              <EdgeLabel x={(N.client.x + N.client.w + N.api.x) / 2} y={cy(N.api) + 32} color="var(--blue-1)">SSE · live stdout/stderr</EdgeLabel>
               <EdgeLabel x={(cx(N.api) + cx(N.pg)) / 2 - 6} y={N.pg.y + N.pg.h + 48}>insert · row</EdgeLabel>
               <EdgeLabel x={cx(N.pg) - 24} y={(N.pg.y + N.pg.h + N.worker.y) / 2}>NOTIFY · &lt; 5 ms</EdgeLabel>
               <EdgeLabel x={(N.worker.x + N.worker.w + N.sandbox.x) / 2 + 40} y={cy(N.worker) + 24}>clone() · 8 layers</EdgeLabel>
@@ -176,7 +176,7 @@ export function ArchitectureDiagram() {
           </div>
           <div className="zc-arch-legend">
             <span className="it">forward · primary path</span>
-            <span className="it return">return · SSE / gRPC stream</span>
+            <span className="it return">return · SSE stream</span>
             <span className="it dim">internal · exec</span>
           </div>
         </div>

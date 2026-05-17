@@ -31,8 +31,7 @@ worker.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `ZEROCODE_API_BIND` | `0.0.0.0:8080` | REST listener |
-| `ZEROCODE_GRPC_BIND` | `0.0.0.0:9091` | gRPC listener; `off` disables |
+| `ZEROCODE_API_BIND` | `0.0.0.0:8080` | REST + SSE listener |
 | `DATABASE_URL` | — | Postgres DSN (required) |
 | `ZEROCODE_API_KEY` | — | Bearer key (required; rotate via this env) |
 | `ZEROCODE_LANGUAGES_FILE` | `runners/languages.toml` | Language registry source |

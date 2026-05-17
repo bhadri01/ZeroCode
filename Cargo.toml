@@ -75,25 +75,17 @@ async-trait = "0.1"
 futures = "0.3"
 tokio-stream = "0.1"
 
-# --- metrics + telemetry ---
+# --- metrics ---
+# OTLP/gRPC tracing was removed alongside the gRPC API tier — opentelemetry
+# packs and tonic are gone. Observability surface is now Prometheus +
+# structured stdout logs.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 metrics-process = "2.3"
-opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.27", features = ["tonic"] }
-tracing-opentelemetry = "0.28"
 
 # --- OpenAPI ---
 utoipa = { version = "5", features = ["axum_extras", "chrono", "preserve_order"] }
 utoipa-axum = "0.1"
-
-# --- gRPC (v2) ---
-tonic = "0.12"
-tonic-build = "0.12"
-tonic-reflection = "0.12"
-prost = "0.13"
-prost-types = "0.13"
 
 # --- benchmarks ---
 criterion = { version = "0.5", features = ["html_reports"] }
