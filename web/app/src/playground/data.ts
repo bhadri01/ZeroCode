@@ -22,7 +22,9 @@ export interface Lang {
   metrics: { time: number; memory: number; exit: number };
 }
 
-export const LANGS: Lang[] = [
+// Source-of-truth catalog. Kept in author-friendly order (most-used first)
+// for diffs; the picker consumes the sorted `LANGS` export below.
+const LANG_CATALOG: Lang[] = [
   {
     id: 71, name: 'Python', version: '3.13', ext: 'py', family: 'py', core: true,
     accent: '#3776ab', cm: 'python',
@@ -157,6 +159,11 @@ int main() {
     metrics: { time: 0.087, memory: 38.2, exit: 0 },
   },
 ];
+
+// Picker shows languages alphabetically (C, C++, Go, Java, Node.js, Python, Rust).
+export const LANGS: Lang[] = [...LANG_CATALOG].sort((a, b) =>
+  a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+);
 
 export type Verdict =
   | 'idle' | 'queued' | 'processing' | 'accepted'

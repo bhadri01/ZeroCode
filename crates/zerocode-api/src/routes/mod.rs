@@ -115,9 +115,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/openapi.json", get(openapi_spec))
         .route("/metrics", get(metrics::prometheus));
 
+    let cfg = state.config();
     let governor_conf = GovernorConfigBuilder::default()
-        .per_second(100)
-        .burst_size(100)
+        .per_second(cfg.governor_rps.max(1) as u64)
+        .burst_size(cfg.governor_burst.max(1))
         .finish()
         .unwrap();
 

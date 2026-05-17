@@ -63,7 +63,12 @@ if (typeof window !== 'undefined' && !window.MonacoEnvironment) {
 function langId(l: CmLang): string {
   switch (l) {
     case 'python':     return 'python';
-    case 'javascript': return 'typescript';     // ts mode parses js too
+    // Use Monaco's dedicated JS grammar, not the TS one. Both extend the
+    // same Monarch tokenizer, but TS sets `defaultToken: "invalid"` with a
+    // `.ts` postfix — so JS-only syntax (BigInt `0n`, certain regexps) gets
+    // marked invalid and the Monokai theme renders it red/underlined,
+    // making the file look untheme'd.
+    case 'javascript': return 'javascript';
     case 'rust':       return 'rust';
     case 'go':         return 'go';
     case 'cpp':        return 'cpp';

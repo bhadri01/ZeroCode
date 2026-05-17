@@ -233,8 +233,8 @@ impl Sandbox for NaiveSandbox {
             let out = match tokio::time::timeout(wall_budget, child.wait_with_output()).await {
                 Ok(r) => r.map_err(|e| SandboxError::Wait(format!("compile wait: {e}")))?,
                 Err(_) => {
+                    // Compile timed out — user code never ran, so wall/cpu = 0.
                     let _ = std::fs::remove_dir_all(&host_workdir);
-                    let elapsed = start.elapsed();
                     return Ok(SandboxResult {
                         status: Status::TimeLimitExceeded(
                             zerocode_core::status::TimeLimitKind::Wall,
@@ -245,8 +245,8 @@ impl Sandbox for NaiveSandbox {
                         compiled_binary: None,
                         exit_code: None,
                         signal: Some(Signal::Sigkill),
-                        cpu_time: elapsed,
-                        wall_time: elapsed,
+                        cpu_time: Duration::ZERO,
+                        wall_time: Duration::ZERO,
                         memory_kb: 0,
                         started_at,
                         finished_at: Utc::now(),
@@ -265,8 +265,8 @@ impl Sandbox for NaiveSandbox {
             };
 
             if !out.status.success() {
+                // Compile failed — user code never ran, so wall/cpu = 0.
                 let _ = std::fs::remove_dir_all(&host_workdir);
-                let elapsed = start.elapsed();
                 return Ok(SandboxResult {
                     status: Status::CompileError,
                     stdout: Bytes::new(),
@@ -275,8 +275,8 @@ impl Sandbox for NaiveSandbox {
                     compiled_binary: None,
                     exit_code: out.status.code(),
                     signal: None,
-                    cpu_time: elapsed,
-                    wall_time: elapsed,
+                    cpu_time: Duration::ZERO,
+                    wall_time: Duration::ZERO,
                     memory_kb: 0,
                     started_at,
                     finished_at: Utc::now(),
@@ -297,6 +297,12 @@ impl Sandbox for NaiveSandbox {
             .iter()
             .map(|a| substitute_limits(a, &job.limits))
             .collect();
+
+        // wall_time / cpu_time on the result reflect *user-code execution
+        // only*. Compile time is accounted for separately when picking the
+        // run-phase wall budget but never folded into the reported numbers,
+        // so a Rust hello-world doesn't look like a 2-second program.
+        let run_start = Instant::now();
 
         let mut child = prepare_cmd(rprog, &rargs_subbed, Stdio::piped())
             .spawn()
@@ -324,6 +330,7 @@ impl Sandbox for NaiveSandbox {
             }
             Err(_) => {
                 sampler.abort();
+                let run_elapsed = run_start.elapsed();
                 let memory_kb = peak_rss_kb.load(Ordering::Relaxed);
                 let _ = std::fs::remove_dir_all(&host_workdir);
                 return Ok(SandboxResult {
@@ -334,8 +341,8 @@ impl Sandbox for NaiveSandbox {
                     compiled_binary: None,
                     exit_code: None,
                     signal: Some(Signal::Sigkill),
-                    cpu_time: start.elapsed(),
-                    wall_time: start.elapsed(),
+                    cpu_time: run_elapsed,
+                    wall_time: run_elapsed,
                     memory_kb,
                     started_at,
                     finished_at: Utc::now(),
@@ -343,7 +350,7 @@ impl Sandbox for NaiveSandbox {
             }
         };
 
-        let elapsed = start.elapsed();
+        let run_elapsed = run_start.elapsed();
         let status = if output.status.success() {
             Status::Accepted
         } else {
@@ -364,8 +371,8 @@ impl Sandbox for NaiveSandbox {
             compiled_binary: None,
             exit_code: output.status.code(),
             signal: None,
-            cpu_time: elapsed,
-            wall_time: elapsed,
+            cpu_time: run_elapsed,
+            wall_time: run_elapsed,
             memory_kb,
             started_at,
             finished_at: Utc::now(),

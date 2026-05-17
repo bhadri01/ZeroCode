@@ -56,6 +56,15 @@ struct Args {
     #[arg(long, env = "ZEROCODE_ANON_WINDOW_SECS", default_value_t = 60)]
     anon_window_secs: u64,
 
+    /// Per-IP request budget (refill rate, requests/second) for the
+    /// `tower_governor` layer in front of every authenticated route.
+    #[arg(long, env = "ZEROCODE_GOVERNOR_RPS", default_value_t = 100)]
+    governor_rps: u32,
+
+    /// Per-IP request budget (bucket size) for the `tower_governor` layer.
+    #[arg(long, env = "ZEROCODE_GOVERNOR_BURST", default_value_t = 100)]
+    governor_burst: u32,
+
     /// Directory to serve as static fallback (landing, playground, docs).
     /// Set to an empty string to disable static serving. Built by the
     /// `web/` workspace; assemble via `pnpm --dir web build`.
@@ -98,6 +107,8 @@ async fn main() -> Result<()> {
         allow_anonymous: args.allow_anonymous,
         anon_max_per_window: args.anon_max_per_window,
         anon_window: std::time::Duration::from_secs(args.anon_window_secs),
+        governor_rps: args.governor_rps,
+        governor_burst: args.governor_burst,
         web_dir: resolve_web_dir(&args.web_dir),
     };
 

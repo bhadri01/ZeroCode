@@ -22,6 +22,13 @@ pub struct ApiConfig {
     /// inside `anon_window`. Only enforced when `allow_anonymous` is true.
     pub anon_max_per_window: u32,
     pub anon_window: Duration,
+    /// Per-IP request budget enforced by the `tower_governor` layer wrapping
+    /// every authenticated route. `governor_rps` is the steady-state refill
+    /// rate (requests/second), `governor_burst` is the bucket size. Both
+    /// default to 100 in prod-shape compose; setting them to a large value
+    /// (or pairing with `dev compose`) gives local dev unbounded headroom.
+    pub governor_rps: u32,
+    pub governor_burst: u32,
     /// Directory served as the static fallback (landing page, playground, docs).
     /// `None` disables static serving — `/` and unknown paths return 404 instead.
     pub web_dir: Option<PathBuf>,

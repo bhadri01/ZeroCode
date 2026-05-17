@@ -47,7 +47,14 @@ impl AnonymousQuota {
     /// `Err(())` once the cap is exceeded. The window slides by entry-TTL —
     /// after `window` of inactivity the entry is dropped and the counter
     /// resets to zero on the next call.
+    ///
+    /// A `max_per_window` of `0` disables the quota entirely (always `Ok`).
+    /// Use this for local dev where the tower_governor layer is the only
+    /// rate limit you actually want to enforce.
     pub fn check(&self, ip: IpAddr) -> Result<(), ()> {
+        if self.inner.max_per_window == 0 {
+            return Ok(());
+        }
         let counter = self
             .inner
             .cache
@@ -79,6 +86,15 @@ mod tests {
         assert!(q.check(ip).is_ok());
         assert!(q.check(ip).is_err());
         assert!(q.check(ip).is_err());
+    }
+
+    #[test]
+    fn max_zero_disables_quota() {
+        let q = AnonymousQuota::new(0, Duration::from_secs(60));
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        for _ in 0..1000 {
+            assert!(q.check(ip).is_ok());
+        }
     }
 
     #[test]

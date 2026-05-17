@@ -70,8 +70,17 @@ services:
       # Browser-facing controls — integrated playground enabled by default.
       ZEROCODE_CORS_ORIGINS: "*"
       ZEROCODE_ALLOW_ANONYMOUS: "true"
-      ZEROCODE_ANON_MAX_PER_WINDOW: ${ZEROCODE_ANON_MAX_PER_WINDOW:-10}
+      # `0` disables the anonymous submission quota entirely — fine for the
+      # local dev compose where the tower_governor layer already caps per-IP
+      # request volume. Set to a positive value (e.g. `10`) to reinstate the
+      # tight anon cap for prod-shaped testing.
+      ZEROCODE_ANON_MAX_PER_WINDOW: ${ZEROCODE_ANON_MAX_PER_WINDOW:-0}
       ZEROCODE_ANON_WINDOW_SECS: ${ZEROCODE_ANON_WINDOW_SECS:-60}
+      # tower_governor caps per-IP request volume for every authenticated
+      # route. The 100/100 prod default is fine for real users but trips
+      # quickly under dev hammering, so the dev compose cranks it up.
+      ZEROCODE_GOVERNOR_RPS: ${ZEROCODE_GOVERNOR_RPS:-10000}
+      ZEROCODE_GOVERNOR_BURST: ${ZEROCODE_GOVERNOR_BURST:-10000}
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:

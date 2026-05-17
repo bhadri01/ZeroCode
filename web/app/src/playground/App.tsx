@@ -15,9 +15,9 @@ import { LANGS, VERDICT_COLOR, VERDICT_LABEL, type Lang, type Verdict } from './
 import { getTheme, toggleTheme, type Theme } from '../shared/theme';
 import { LangIcon, langKeyFromId } from '../shared/lang-icons';
 import {
-  decode, encode, get as apiGet, getBase, getKey, getBaseSource,
-  health, idemKey, languages, poll, probe, resetProbe,
-  setBase as apiSetBase, setKey as apiSetKey, statusDetail as apiStatusDetail,
+  decode, encode, get as apiGet, getBaseSource,
+  idemKey, languages, poll, probe, resetProbe,
+  statusDetail as apiStatusDetail,
   statusKind as apiStatusKind, stream, submit,
   type LanguageSpec, type SubmissionView,
 } from '../shared/api';
@@ -308,9 +308,8 @@ interface WorkspaceBarProps {
   onRun: () => void; onRunDemo: () => void; onCancel: () => void; onReset: () => void; onFormat: () => void;
   limits: RunLimits; setLimits: (l: RunLimits) => void;
   ceilings: Ceilings | null;
-  apiOnline: boolean; apiAuthed: boolean;
+  apiOnline: boolean;
   onShare: () => void;
-  onOpenSettings: () => void;
 }
 function WorkspaceBar(p: WorkspaceBarProps) {
   const [showLimits, setShowLimits] = useState(false);
@@ -318,12 +317,7 @@ function WorkspaceBar(p: WorkspaceBarProps) {
   const isRunning = p.status === 'queued' || p.status === 'processing';
   const max: Ceilings = p.ceilings || { memoryMb: 2048, timeS: 60 };
   const handleShare = () => { p.onShare(); setCopied(true); setTimeout(() => setCopied(false), 1400); };
-  const liveLabel = p.apiOnline && p.apiAuthed ? 'live api' : p.apiOnline && !p.apiAuthed ? 'no auth' : 'offline';
-  const liveColor = p.apiOnline && p.apiAuthed ? 'var(--st-accepted)' : p.apiOnline && !p.apiAuthed ? 'var(--st-tle)' : 'var(--fg-3)';
-  const liveHint = p.apiOnline && p.apiAuthed ? 'Connected to a live ZeroCode API and authenticated.' :
-                   p.apiOnline ? 'API reachable but /v1/languages returned 401. Click to set a bearer key.' :
-                                 'No API reachable. Settings → connect to a server first.';
-  const runLabel = p.apiOnline && p.apiAuthed ? 'run · ⌘↵' : p.apiOnline ? 'set key' : 'connect api';
+  const runLabel = p.apiOnline ? 'run · ⌘↵' : 'connect api';
   return (
     <div className="pg-wbar">
       <style>{`
@@ -364,10 +358,6 @@ function WorkspaceBar(p: WorkspaceBarProps) {
         <span style={{ color: 'var(--accent)' }}>{p.lang.name}</span> · {p.lang.version} · id&nbsp;{p.lang.id}
       </span>
       <div className="pg-wbar-right">
-        <button className="pg-btn ghost" title={liveHint} onClick={p.onOpenSettings}>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: liveColor, boxShadow: p.apiOnline ? `0 0 6px ${liveColor}` : 'none' }}/>
-          {liveLabel}
-        </button>
         <button className="pg-btn ghost" onClick={() => setShowLimits(s => !s)}>
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6" cy="6" r="4.5"/><path d="M6 2v4l2.5 1.5"/></svg>
           {p.limits.memoryMb}mb · {p.limits.timeS}s
@@ -440,13 +430,13 @@ function StdinPanel({ stdin, setStdin }: { stdin: string; setStdin: (s: string) 
       `}</style>
       <div className="pg-stdin-hd">
         <span className="label">stdin</span>
-        <span className="meta">{stdin.length > 0 ? <><b>{stdin.length}</b> chars</> : 'empty — bytes piped to the runtime’s stdin'}</span>
+        <span className="meta">{stdin.length > 0 ? <><b>{stdin.length}</b> chars</> : 'empty'}</span>
         <button type="button" onClick={() => setStdin('')} disabled={!stdin.length}>clear</button>
       </div>
       <div className="pg-stdin-bd">
         <textarea value={stdin} onChange={e => setStdin(e.target.value)}
           spellCheck={false} autoComplete="off"
-          placeholder="type input here — every byte (including trailing newlines) is forwarded to the program's stdin" />
+          placeholder="input · piped to stdin" />
       </div>
     </section>
   );
@@ -543,12 +533,15 @@ function OutputPane(p: OutputPaneProps) {
 
   // Compile output appearing — switch immediately. Compile output is rare
   // (only on compile-then-run languages) and always blocks subsequent run
-  // output, so promoting it is unambiguous.
+  // output, so promoting it is unambiguous. When the next run clears
+  // compileOutput, also fall back off the now-hidden compile tab.
   useEffect(() => {
     const len = p.compileOutput.length;
     if (len > prevCompileLenRef.current) {
       if (!userPickedRef.current) setTab('compile');
       else if (tab !== 'compile') setUnseen(u => ({ ...u, compile: true }));
+    } else if (len === 0 && tab === 'compile') {
+      setTab('stdout');
     }
     prevCompileLenRef.current = len;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -603,10 +596,14 @@ function OutputPane(p: OutputPaneProps) {
     if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;
   }, [p.output, p.stderr, p.status, tab]);
 
+  // The `compile` tab is hidden until there's actually compile output — for
+  // interpreted languages and clean compiles it's just clutter. The
+  // auto-switch effect above promotes it to visible + active as soon as a
+  // compile error or compiler warning arrives.
   const tabs: { id: OutputTab; name: string; count: number }[] = [
     { id: 'stdout', name: 'stdout', count: p.output.length },
     { id: 'stderr', name: 'stderr', count: p.stderr.length },
-    { id: 'compile', name: 'compile', count: p.compileOutput ? 1 : 0 },
+    ...(p.compileOutput ? [{ id: 'compile' as OutputTab, name: 'compile', count: 1 }] : []),
     { id: 'meta', name: 'meta', count: 0 },
   ];
 
@@ -751,123 +748,6 @@ function StatusStrip({ status, statusDetail, metrics, apiOnline, cursor, themeMo
   );
 }
 
-/* ─── SettingsDialog ────────────────────────────────────────────── */
-function SettingsDialog({ open, onClose, onApplied }: {
-  open: boolean; onClose: () => void; onApplied: () => void;
-}) {
-  const [base, setBaseState] = useState('');
-  const [key, setKeyState] = useState('');
-  const [test, setTest] = useState<null | 'pending' | { ok: boolean; message: string }>(null);
-  const [showKey, setShowKey] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setBaseState(getBase() || '');
-    setKeyState(getKey() || '');
-    setTest(null);
-  }, [open]);
-
-  if (!open) return null;
-
-  async function runTest() {
-    apiSetBase(base.trim().replace(/\/$/, '') || null);
-    apiSetKey(key.trim() || null);
-    setTest('pending');
-    try {
-      const h = await health();
-      try {
-        const langs = await languages();
-        setTest({ ok: true, message: `connected · ${langs.length} languages · health=${h?.status || 'ok'}` });
-      } catch (e) {
-        setTest({ ok: false, message: `health OK but /v1/languages failed: ${(e as Error).message}` });
-      }
-    } catch (e) {
-      setTest({ ok: false, message: (e as Error).message });
-    }
-  }
-
-  function save() {
-    apiSetBase(base.trim().replace(/\/$/, '') || null);
-    apiSetKey(key.trim() || null);
-    resetProbe();
-    onApplied();
-    onClose();
-  }
-
-  function clear() {
-    apiSetBase(null);
-    apiSetKey(null);
-    setBaseState('');
-    setKeyState('');
-    setTest({ ok: true, message: 'cleared · will use ' + location.origin });
-  }
-
-  return (
-    <div className="pg-modal-bg" onClick={onClose}>
-      <style>{`
-        .pg-set { width: 560px; max-width: 92vw; }
-        .pg-set .row { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; }
-        .pg-set .row .lbl { font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.14em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
-        .pg-set .row .lbl .hint { color: var(--fg-4); text-transform: none; letter-spacing: 0; font-size: 11px; }
-        .pg-set .row input { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg); padding: 10px 12px; border-radius: 6px; font: 13px var(--f-mono); outline: none; }
-        .pg-set .row input:focus { border-color: var(--accent); }
-        .pg-set .row .with-action { display: flex; gap: 8px; }
-        .pg-set .row .with-action input { flex: 1; min-width: 0; }
-        .pg-set .row .toggle-btn { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-2); padding: 0 12px; border-radius: 6px; font: 11px var(--f-mono); cursor: pointer; white-space: nowrap; }
-        .pg-set .row .toggle-btn:hover { color: var(--fg); border-color: var(--line-strong); }
-        .pg-set .testbox { margin: 0 0 4px; padding: 10px 12px; border-radius: 6px; font-family: var(--f-mono); font-size: 11.5px; border: 1px dashed var(--line); color: var(--fg-2); }
-        .pg-set .testbox.pending { color: var(--st-queued); border-color: var(--st-queued); }
-        .pg-set .testbox.ok { color: var(--st-accepted); border-color: var(--st-accepted); background: color-mix(in oklab, var(--st-accepted) 6%, transparent); }
-        .pg-set .testbox.fail { color: var(--st-re); border-color: var(--st-re); background: color-mix(in oklab, var(--st-re) 6%, transparent); }
-        .pg-set .note { font-family: var(--f-mono); font-size: 11px; color: var(--fg-3); line-height: 1.55; margin-top: 6px; }
-        .pg-set .note code { background: var(--bg-2); padding: 1px 5px; border-radius: 3px; color: var(--fg-1); }
-        .pg-set-foot { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); }
-        .pg-set-foot button { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); padding: 7px 12px; border-radius: 6px; font: 12px var(--f-mono); cursor: pointer; }
-        .pg-set-foot button:hover { border-color: var(--line-strong); color: var(--fg); }
-        .pg-set-foot button.primary { background: var(--accent); color: #0a0a0a; border-color: var(--accent); font-weight: 500; }
-        .pg-set-foot button.primary:hover { filter: brightness(1.08); }
-        .pg-set-foot .spacer { flex: 1; }
-      `}</style>
-      <div className="pg-modal pg-set" onClick={e => e.stopPropagation()}>
-        <div className="pg-modal-hd">
-          <h3>API <span className="it">settings</span></h3>
-          <button className="x" onClick={onClose}>×</button>
-        </div>
-        <div className="pg-modal-bd">
-          <div className="row">
-            <span className="lbl">api base url <span className="hint">— where your ZeroCode service is listening</span></span>
-            <input type="url" value={base} onChange={e => setBaseState(e.target.value)}
-              placeholder={`leave empty to use ${location.origin}`} autoComplete="off" spellCheck={false} />
-          </div>
-          <div className="row">
-            <span className="lbl">bearer key <span className="hint">— Authorization: Bearer &lt;key&gt;</span></span>
-            <div className="with-action">
-              <input type={showKey ? 'text' : 'password'} value={key} onChange={e => setKeyState(e.target.value)}
-                placeholder="dev-only-replace-me · or your prod ZEROCODE_API_KEY" autoComplete="off" spellCheck={false} />
-              <button type="button" className="toggle-btn" onClick={() => setShowKey(v => !v)}>{showKey ? 'hide' : 'show'}</button>
-            </div>
-          </div>
-          {test === 'pending' && <div className="testbox pending">testing connection…</div>}
-          {test && test !== 'pending' && (
-            <div className={`testbox ${test.ok ? 'ok' : 'fail'}`}>{test.ok ? '✓ ' : '✗ '}{test.message}</div>
-          )}
-          <p className="note">
-            Stored in <code>localStorage</code> as <code>zerocode.api</code> / <code>zerocode.key</code>.
-            For a session-only override, append <code>?api=URL&amp;key=…</code> to the page URL.
-          </p>
-        </div>
-        <div className="pg-set-foot">
-          <button type="button" onClick={clear}>clear</button>
-          <button type="button" onClick={runTest}>test connection</button>
-          <div className="spacer"/>
-          <button type="button" onClick={onClose}>cancel</button>
-          <button type="button" className="primary" onClick={save}>save · reload api</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── App ────────────────────────────────────────────────────────── */
 function pickInitialLang(share: ShareHash | null, draft: Draft | null): Lang {
   if (share?.lang) {
@@ -901,13 +781,11 @@ export function App() {
   });
   const [token, setToken] = useState<string>(share?.token || ('zc_' + Math.random().toString(36).slice(2, 10)));
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
-  const [showSettings, setShowSettings] = useState(false);
   const [layout, setLayout] = useState<Layout>(() => loadLayout());
   useEffect(() => { saveLayout(layout); }, [layout]);
   const [error, setError] = useState<{ message: string; retry?: boolean } | null>(null);
 
   const [apiOnline, setApiOnline] = useState(false);
-  const [apiAuthed, setApiAuthed] = useState(false);
   const [apiLangs, setApiLangs] = useState<LanguageSpec[] | null>(null);
   const [apiCeilings, setApiCeilings] = useState<Ceilings | null>(null);
   void apiLangs; void getBaseSource;
@@ -932,7 +810,6 @@ export function App() {
   const probeApi = useCallback(async () => {
     const r = await probe();
     setApiOnline(!!r.ok);
-    setApiAuthed(!!r.authed);
     if (!r.ok) { setApiLangs(null); setApiCeilings(null); return; }
     try {
       const langs = await languages();
@@ -944,9 +821,7 @@ export function App() {
         tMax = Math.max(tMax, +(lim.wall_time ?? 0));
       }
       setApiCeilings({ memoryMb: mMax || 2048, timeS: tMax || 60 });
-    } catch {
-      setApiAuthed(false);
-    }
+    } catch { /* anonymous probe — listing languages may fail in that case */ }
   }, []);
   useEffect(() => { probeApi(); }, [probeApi]);
 
@@ -1171,8 +1046,7 @@ export function App() {
     await probeApi();
     const p = await probe();
     if (p.ok) { runOnApiRef.current(); return; }
-    setError({ message: `No ZeroCode API is reachable at ${getBase()}. Open settings to point the playground at a server.` });
-    setShowSettings(true);
+    setError({ message: 'No ZeroCode API is reachable. Make sure the service is running.' });
   }, [status, apiOnline, probeApi]);
 
   useEffect(() => {
@@ -1200,9 +1074,8 @@ export function App() {
         onFormat={() => editorRef.current?.format()}
         limits={limits} setLimits={setLimits}
         ceilings={apiCeilings}
-        apiOnline={apiOnline} apiAuthed={apiAuthed}
-        onShare={copyShareLink}
-        onOpenSettings={() => setShowSettings(true)} />
+        apiOnline={apiOnline}
+        onShare={copyShareLink} />
       {error && (
         <div className="pg-errbar">
           <style>{`
@@ -1213,7 +1086,6 @@ export function App() {
           `}</style>
           <span>✗ {error.message}</span>
           {error.retry && <button onClick={run}>retry</button>}
-          {!apiAuthed && apiOnline && <button onClick={() => setShowSettings(true)}>open settings</button>}
           <span className="x" onClick={() => setError(null)}>dismiss</span>
         </div>
       )}
@@ -1280,7 +1152,6 @@ export function App() {
       </main>
       <StatusStrip status={status} statusDetail={statusDetail} metrics={metrics}
         apiOnline={apiOnline} cursor={cursor} themeMode={themeMode} />
-      <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} onApplied={probeApi} />
     </>
   );
 }
