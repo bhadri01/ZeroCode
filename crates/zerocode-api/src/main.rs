@@ -60,6 +60,12 @@ struct Args {
 
     #[arg(long, env = "ZEROCODE_ANON_WINDOW_SECS", default_value_t = 60)]
     anon_window_secs: u64,
+
+    /// Directory to serve as static fallback (landing, playground, docs).
+    /// Set to an empty string to disable static serving. Built by the
+    /// `web/` workspace; assemble via `pnpm --dir web build`.
+    #[arg(long, env = "ZEROCODE_WEB_DIR", default_value = "web/dist")]
+    web_dir: String,
 }
 
 #[tokio::main]
@@ -97,6 +103,7 @@ async fn main() -> Result<()> {
         allow_anonymous: args.allow_anonymous,
         anon_max_per_window: args.anon_max_per_window,
         anon_window: std::time::Duration::from_secs(args.anon_window_secs),
+        web_dir: resolve_web_dir(&args.web_dir),
     };
 
     let languages = load_languages(&args.languages_file)?;
@@ -167,6 +174,24 @@ async fn main() -> Result<()> {
     tracing::info!("zerocode-api stopped cleanly");
     telemetry::shutdown(tracer_provider);
     Ok(())
+}
+
+/// Resolve the static-web directory at startup. An empty value disables the
+/// mount entirely; a non-empty value that doesn't exist on disk is logged and
+/// disabled so a misconfiguration doesn't block API startup.
+fn resolve_web_dir(raw: &str) -> Option<PathBuf> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        tracing::info!("static web dir disabled (ZEROCODE_WEB_DIR empty)");
+        return None;
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_dir() {
+        tracing::warn!(path = %path.display(), "ZEROCODE_WEB_DIR not found — static serving disabled");
+        return None;
+    }
+    tracing::info!(path = %path.display(), "serving static web fallback");
+    Some(path)
 }
 
 fn load_languages(path: &std::path::Path) -> Result<LanguageRegistry> {

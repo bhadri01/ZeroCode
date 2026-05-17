@@ -80,10 +80,12 @@ services:
     ports:
       - "8080:8080"
       - "9091:9091"
-    # Mount the local `web/` directory into the container during development
-    # so edits to the UI are served immediately without rebuilding the image.
-    volumes:
-      - ../web:/web:ro
+    # The image bakes the built `web/dist/` at /srv/web (see deploy/Dockerfile.service,
+    # which runs `pnpm build` in a node:20 stage). ZEROCODE_WEB_DIR is set to
+    # /srv/web by the Dockerfile, so the API picks it up automatically.
+    # For dev hot-reload of the UI, run `pnpm --filter @zerocode/app dev`
+    # separately at http://localhost:5173 and disable the embedded mount with
+    # ZEROCODE_WEB_DIR="" .
     read_only: true
     tmpfs:
       - /tmp

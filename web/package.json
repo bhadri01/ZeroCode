@@ -1,0 +1,26 @@
+{
+  "name": "@zerocode/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:app": "pnpm --filter @zerocode/app dev",
+    "dev:docs": "pnpm --filter @zerocode/docs dev",
+    "build:app": "pnpm --filter @zerocode/app build",
+    "build:docs": "pnpm --filter @zerocode/docs build",
+    "build": "pnpm -r build && node ./scripts/assemble-dist.mjs",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "rm -rf dist app/dist docs/dist"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  }
+}

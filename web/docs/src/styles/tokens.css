@@ -1,0 +1,20 @@
+/*
+ * ZeroCode docs theme tokens.
+ *
+ * Imported by web/docs/astro.config.mjs as a Starlight custom stylesheet.
+ * The full design-system tokens currently live in web/shared/tokens.css;
+ * we mirror only the accent colors here so Starlight's default theme picks
+ * up the brand identity without conflicting with its own CSS layers.
+ */
+
+:root {
+  --sl-color-accent: hsl(18, 86%, 55%);
+  --sl-color-accent-low: hsl(18, 86%, 18%);
+  --sl-color-accent-high: hsl(18, 86%, 78%);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent: hsl(18, 86%, 47%);
+  --sl-color-accent-low: hsl(18, 86%, 88%);
+  --sl-color-accent-high: hsl(18, 86%, 28%);
+}

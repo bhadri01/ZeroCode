@@ -1,0 +1,14 @@
+# Don't ship local dev state into image build contexts.
+target/
+.git/
+.github/
+node_modules/
+**/node_modules/
+**/dist/
+**/.astro/
+.vscode/
+.idea/
+**/*.log
+.env
+.env.local
+.DS_Store

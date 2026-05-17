@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use zerocode_core::ResourceLimits;
@@ -21,6 +22,9 @@ pub struct ApiConfig {
     /// inside `anon_window`. Only enforced when `allow_anonymous` is true.
     pub anon_max_per_window: u32,
     pub anon_window: Duration,
+    /// Directory served as the static fallback (landing page, playground, docs).
+    /// `None` disables static serving — `/` and unknown paths return 404 instead.
+    pub web_dir: Option<PathBuf>,
 }
 
 impl ApiConfig {

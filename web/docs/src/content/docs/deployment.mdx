@@ -1,0 +1,166 @@
+---
+title: Deployment
+description: Host preconditions, env vars, Docker Compose quickstart, TLS, cgroup delegation.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Host preflight
+
+ZeroCode runs on Linux only (the worker needs cgroup v2 and Linux-specific
+syscalls). The API binary is portable, but a full deploy must include a Linux
+worker.
+
+| Requirement | Check |
+|---|---|
+| Kernel ≥ 5.14 | `uname -r` |
+| cgroup v2 unified | `mount | grep cgroup2` |
+| User namespaces enabled | `sysctl kernel.unprivileged_userns_clone` (must be 1 on Debian/Ubuntu) |
+| Landlock available | `cat /proc/filesystems | grep landlock` |
+| `/sys/fs/cgroup/cgroup.subtree_control` writable | `ls -la /sys/fs/cgroup/cgroup.subtree_control` |
+
+<Aside type="caution">
+  Some hosters (cloud VMs with custom kernels, older Docker hosts) disable
+  user namespaces or restrict cgroup v2. Boot the kernel preflight with
+  `zerocode-worker --features native` — it fails loudly if a layer is missing.
+</Aside>
+
+## Environment variables
+
+### API (`zerocode-api`)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `ZEROCODE_API_BIND` | `0.0.0.0:8080` | REST listener |
+| `ZEROCODE_GRPC_BIND` | `0.0.0.0:9091` | gRPC listener; `off` disables |
+| `DATABASE_URL` | — | Postgres DSN (required) |
+| `ZEROCODE_API_KEY` | — | Bearer key (required; rotate via this env) |
+| `ZEROCODE_LANGUAGES_FILE` | `runners/languages.toml` | Language registry source |
+| `ZEROCODE_WEB_DIR` | `web/dist` | Static fallback dir (empty disables) |
+| `ZEROCODE_CORS_ORIGINS` | `""` | Comma-separated allowlist; `*` for any origin |
+| `ZEROCODE_ALLOW_ANONYMOUS` | `false` | Admit unauth requests, rate-limit per IP |
+| `ZEROCODE_ANON_MAX_PER_WINDOW` | `6` | Anon submissions per IP per window |
+| `ZEROCODE_ANON_WINDOW_SECS` | `60` | Anon rate-limit window |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Enable OTLP span export when set |
+
+### Worker (`zerocode-worker`)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `ZEROCODE_WORKER_PARALLELISM` | `num_cpus` | Concurrent sandboxes |
+| `ZEROCODE_RUNNER_ROOTFS` | `/srv/runner` | Extracted runner image filesystem |
+| `ZEROCODE_RETENTION_HOURS` | `24` | Row TTL |
+| `ZEROCODE_PAYLOAD_TTL_SECS` | `3600` | source\_code/stdin/stdout retention |
+| `ZEROCODE_SANDBOX_TIER` | `native` | `native` \| `wasm` \| `stub` |
+
+## Docker Compose quickstart
+
+```yaml title="deploy/docker-compose.yml (excerpt)"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: zerocode
+      POSTGRES_USER: zerocode
+      POSTGRES_PASSWORD: zerocode
+    volumes: ["pg:/var/lib/postgresql/data"]
+
+  migrate:
+    image: ghcr.io/yourorg/zerocode-service:latest
+    command: ["zerocode-migrate"]
+    depends_on: [postgres]
+    environment:
+      DATABASE_URL: postgres://zerocode:zerocode@postgres/zerocode
+
+  api:
+    image: ghcr.io/yourorg/zerocode-service:latest
+    ports: ["8080:8080", "9091:9091"]
+    environment:
+      DATABASE_URL: postgres://zerocode:zerocode@postgres/zerocode
+      ZEROCODE_API_KEY: ${ZEROCODE_API_KEY:?required}
+
+  worker:
+    image: ghcr.io/yourorg/zerocode-worker:latest
+    privileged: true   # cgroup delegation; see below
+    volumes:
+      - runner_rootfs:/srv/runner:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    environment:
+      DATABASE_URL: postgres://zerocode:zerocode@postgres/zerocode
+
+  runner-rootfs-init:
+    image: ghcr.io/yourorg/zerocode-runner:latest
+    command: ["sh", "-c", "cp -a / /srv/runner/"]
+    volumes: ["runner_rootfs:/srv/runner"]
+
+volumes: { pg:, runner_rootfs: }
+```
+
+## TLS termination
+
+ZeroCode listens plaintext by design — terminate TLS at a reverse proxy that
+speaks HTTP/2 to the upstream (for SSE multiplexing).
+
+### nginx 1.25+
+
+```nginx
+upstream zerocode { server 127.0.0.1:8080; keepalive 16; }
+
+server {
+  listen 443 ssl http2;
+  server_name api.example.com;
+  ssl_certificate     /etc/letsencrypt/live/api.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+
+  location / {
+    proxy_pass http://zerocode;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    # SSE long-poll needs these
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 24h;
+  }
+}
+```
+
+### Traefik
+
+Set the entry point to `:443/tls=true`, add a service pointing at
+`zerocode-api:8080`, and disable buffering on the SSE route — Traefik does
+this automatically for `text/event-stream`.
+
+## cgroup v2 delegation
+
+The worker needs write access to a per-instance subtree under
+`/sys/fs/cgroup`. Two options:
+
+### systemd unit
+
+```ini
+[Service]
+Delegate=memory cpu pids
+DelegateSubgroup=zerocode.slice
+```
+
+This carves out `/sys/fs/cgroup/system.slice/zerocode.slice/` and grants the
+service uid write access via `cgroup.subtree_control`.
+
+### Docker Compose
+
+The compose example above mounts `/sys/fs/cgroup` rw with `privileged: true`.
+For a smaller surface use `cap_add: [SYS_ADMIN]` and bind-mount only
+`/sys/fs/cgroup` (you still need `unshare(CLONE_NEWUSER)` from inside the
+container, which most distros allow).
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Worker boot fails with "kernel preflight failed: landlock" | Kernel < 5.13 or landlock disabled | Upgrade kernel; some distros need `lsm=landlock` on the kernel cmdline. |
+| All submissions stay `queued` forever | Worker can't `LISTEN` (auth, network) | Check worker logs; verify `DATABASE_URL` is reachable. |
+| `sandbox_failure: ENOSPC` | `/tmp` tmpfs sized too small | Raise `--tmp-size` (default 64 MB) or shrink test payloads. |
+| `sandbox_failure: EACCES on /sys/fs/cgroup` | cgroup delegation missing | See above. |
+| `401 Unauthorized` from `/v1/submissions` despite `Authorization: Bearer` | `ZEROCODE_API_KEY` mismatch or has stray whitespace | Compare with `printf '%s' "$ZEROCODE_API_KEY" | xxd | head`. |
+| Playground says "no auth" | Bearer key not stored locally | Open settings → paste the key → save. |

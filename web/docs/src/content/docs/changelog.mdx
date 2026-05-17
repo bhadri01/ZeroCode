@@ -1,0 +1,67 @@
+---
+title: Changelog
+description: Per-release notes and versioning policy.
+---
+
+## Unreleased
+
+- Web UI migrated from plain React 18 UMD + Babel-standalone to a pnpm
+  workspace with Vite + React + TypeScript (landing + playground) and Astro 5
+  + Starlight (docs). Editor swapped from Monaco-CDN to bundled CodeMirror 6
+  with `@codemirror/lang-*` per Core 7 language.
+- `zerocode-api` gained `ZEROCODE_WEB_DIR` to serve a configurable static
+  directory as the fallback route; the new `deploy/Dockerfile.service`
+  builds `web/dist/` in a node:20 stage and bundles it into the distroless
+  final image at `/srv/web`.
+
+## v0.1.4
+
+- v2 gRPC server (`zerocode.v2.ZeroCode`) on `:9091` alongside REST, with
+  reflection and `grpc.health.v1.Health` support.
+- Test-case batching: `POST /v1/submissions/batch` + `GET /v1/batches/{id}`.
+- OTLP tracing export (env-gated by `OTEL_EXPORTER_OTLP_ENDPOINT`); Jaeger
+  all-in-one wired into `deploy/docker-compose.dev.yml`.
+- OpenAPI 3.1 spec at `/v1/openapi.json` (utoipa-generated).
+- Per-language slim runner images via `runners/Dockerfile.slim`.
+- Multi-arch service image (amd64 + arm64) via musl static binary.
+- All 19 sqlx runtime queries converted to compile-time `query!` macros.
+
+## v0.1.3
+
+- Webhook callbacks: HTTP POST + HMAC-SHA256 signature in
+  `X-ZeroCode-Signature`; retry policy `0 → 1s → 5s → 30s` with ±20% jitter.
+- `?wait=true` long-poll via `LISTEN` (200 ms polling fallback).
+- `?base64_encoded=true` on both POST and GET.
+- Pagination on `GET /v1/submissions` (`?page`, `?per_page`, `?status`).
+- Rate limiting via `tower_governor` (100 RPS burst).
+- Graceful drain on SIGTERM.
+
+## v0.1.2
+
+- Phase 2 sandbox hardening: seccomp profile, landlock ABI v1, per-submission
+  `/tmp` + `/box` tmpfs, loopback `lo` brought up inside NET namespace,
+  user-namespace UID/GID mapping, `PR_SET_CHILD_SUBREAPER` + zombie reaper.
+- Phase 2.5: `pivot_root` into the read-only runner rootfs.
+- Phase 3: Node.js 22, Rust stable, Go 1.x, C/C++ (gcc-14), Java 21 LTS.
+
+## v0.1.1
+
+- LISTEN/NOTIFY worker dispatch with 2 s poll fallback.
+- Atomic claim via CTE + `FOR UPDATE SKIP LOCKED`.
+- SSRF callback URL validator (loopback / private IPv4+IPv6 / metadata hosts).
+- Body size limit (256 KB); idempotency key with blake3 body-hash dedup.
+- Bearer auth middleware (`subtle::ConstantTimeEq`).
+
+## v0.1.0
+
+- Initial Cargo workspace, 7 crates, Rust 1.85 / edition 2024.
+- Bare axum server with `/v1/health` and `/v1/about`.
+- `zerocode-migrate` + initial migration (languages, submissions, compile\_artifacts).
+- `docker-compose.yml` with Postgres.
+
+## Versioning
+
+ZeroCode follows [semver](https://semver.org). v0.x ⇒ breaking changes allowed
+within minor versions; once at v1.0, breaking changes only on major bumps.
+The wire protocol (REST + gRPC) is versioned with `/v1` (or `/v2`) prefixes;
+SDKs are regenerated per release.

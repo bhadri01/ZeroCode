@@ -1,0 +1,78 @@
+---
+title: gRPC API
+description: zerocode.v2.ZeroCode service — CreateSubmission, GetSubmission, ListLanguages, GetHealth.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+ZeroCode exposes the same submission API over gRPC alongside REST. Both share
+the same `AppState`, so idempotency, result cache, and rate-limit state stay
+consistent across protocols.
+
+- **Service:** `zerocode.v2.ZeroCode`
+- **Bind:** `ZEROCODE_GRPC_BIND` (default `0.0.0.0:9091`; set to `off` to disable)
+- **Auth:** bearer key in `authorization` metadata, constant-time compared
+- **Schema:** [`crates/zerocode-api/proto/zerocode.proto`](https://github.com/bhadri01/ZeroCode/blob/main/crates/zerocode-api/proto/zerocode.proto)
+- **Reflection:** enabled — `grpcurl localhost:9091 list` works without the proto file
+
+## RPCs
+
+```proto
+service ZeroCode {
+  rpc CreateSubmission (CreateSubmissionRequest) returns (Submission);
+  rpc GetSubmission    (GetSubmissionRequest)    returns (Submission);
+  rpc ListLanguages    (ListLanguagesRequest)    returns (ListLanguagesResponse);
+  rpc GetHealth        (HealthRequest)           returns (HealthResponse);
+}
+```
+
+`CreateSubmissionRequest` mirrors the REST POST body:
+
+```proto
+message CreateSubmissionRequest {
+  uint32  language_id      = 1;
+  string  source_code      = 2;  // utf-8 or base64 if base64_encoded=true
+  string  stdin            = 3;
+  uint32  cpu_time_limit   = 4;  // seconds
+  uint32  wall_time_limit  = 5;  // seconds
+  uint32  memory_limit_mb  = 6;
+  bool    base64_encoded   = 7;
+  string  callback_url     = 8;
+  string  idempotency_key  = 9;
+}
+```
+
+The `Submission` response carries `token`, the `Status` discriminated union
+(same kinds as REST), and captured `stdout` / `stderr` / `compile_output`.
+
+## Quickstart with `grpcurl`
+
+```bash
+# Discover via reflection (no .proto needed)
+grpcurl -plaintext localhost:9091 list
+# → zerocode.v2.ZeroCode
+# → grpc.reflection.v1.ServerReflection
+# → grpc.health.v1.Health
+
+grpcurl -plaintext \
+  -H "authorization: Bearer $ZEROCODE_API_KEY" \
+  -d '{"language_id":71,"source_code":"print(\"hello\")","wall_time_limit":5,"memory_limit_mb":256}' \
+  localhost:9091 zerocode.v2.ZeroCode/CreateSubmission
+```
+
+<Aside>
+  Streaming RPCs and batch operations are not exposed over gRPC — REST already
+  covers them via SSE and `POST /v1/submissions/batch`.
+</Aside>
+
+## Plaintext vs TLS
+
+The default `:9091` bind is plaintext (h2c). For production, terminate TLS at
+a reverse proxy (Envoy, Nginx 1.25+, Traefik) and let it forward HTTP/2 to
+ZeroCode. Disable plaintext in your firewall.
+
+## Auto-scaling consumers
+
+The gRPC server emits standard `grpc.health.v1.Health` checks via the
+reflection service — load balancers and service meshes (Istio, Linkerd) can
+use it directly for routing decisions.

@@ -1,0 +1,153 @@
+---
+title: REST API
+description: ZeroCode HTTP/JSON surface — endpoints, request/response shapes, errors.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+All endpoints live under `/v1`. Authentication is via `Authorization: Bearer <key>`
+unless explicitly noted. Errors return `{ "error": "..." }` with a 4xx/5xx status.
+
+The full OpenAPI 3.1 specification is served at
+[`GET /v1/openapi.json`](/v1/openapi.json). ZeroCode does **not** ship
+pre-built SDKs; the [Clients & SDKs](/docs/sdks) page covers the
+integration options (raw HTTP, generated client via the bundled
+`scripts/generate-sdks.sh`, or the playground's hand-written TS client).
+
+<Aside>
+  Set `?base64_encoded=true` on `POST` to send `source_code` / `stdin` as
+  base64 (handles binary safely). On `GET`, the same flag makes the response's
+  `stdout` / `stderr` / `compile_output` base64-encoded.
+</Aside>
+
+## Submissions
+
+### `POST /v1/submissions`
+
+Create a submission. Returns a token for polling, or — with `?wait=true` — the
+full result inline (up to 30 s server-side timeout).
+
+```json title="request body"
+{
+  "language_id": 71,
+  "source_code": "print('hello')",
+  "stdin": "",
+  "cpu_time_limit": 5,
+  "wall_time_limit": 5,
+  "memory_limit_mb": 256,
+  "callback_url": "https://example.com/webhook",
+  "base64_encoded": false
+}
+```
+
+Headers:
+
+- `Authorization: Bearer <key>` — required.
+- `Idempotency-Key: <opaque>` — optional; the server hashes the body (blake3) and
+  returns the same `token` for repeated keys within 5 minutes.
+
+Query params:
+
+- `wait=true` — block up to 30 s for terminal status (long-poll over `LISTEN`).
+- `base64_encoded=true` — decode `source_code` / `stdin` from base64.
+
+### `GET /v1/submissions/{token}`
+
+Fetch a submission row. Append `?base64_encoded=true` to round-trip outputs
+binary-safely.
+
+### `GET /v1/submissions/{token}/stream`
+
+Server-Sent Events stream of the submission's progress. Events:
+
+| event | payload |
+|---|---|
+| `processing` | (none) — worker started |
+| `stdout` | `{"data":"<utf-8 chunk>"}` |
+| `stderr` | `{"data":"<utf-8 chunk>"}` |
+| `finished` | `{"status":{"kind":"accepted","detail":null}}` |
+| `error` | error message text |
+
+The connection closes after `finished`. Browsers' `EventSource` can't send
+`Authorization`, so the playground uses `fetch` + a `ReadableStream` reader.
+
+### `GET /v1/submissions`
+
+List submissions. Query params: `page`, `per_page` (max 100), `status` filter.
+
+### `POST /v1/submissions/batch`
+
+Submit one program with 1–100 stdin test cases. Returns a `batch_id`; each
+test case becomes a normal submission row linked by the batch ID.
+
+### `GET /v1/batches/{batch_id}`
+
+Aggregated batch view + status summary (queued / processing / accepted / failed).
+
+## Languages
+
+### `GET /v1/languages`
+
+Returns the language registry as a JSON array. Each entry:
+
+```json
+{
+  "id": 71,
+  "name": "Python",
+  "version": "3.13",
+  "default_limits": { "memory_mb": 256, "cpu_time": 5, "wall_time": 5, "max_pids": 64 }
+}
+```
+
+The Core 7 IDs are Judge0-compatible: 71 Python, 63 Node, 73 Rust, 60 Go,
+48 C, 52 C++, 62 Java.
+
+## Health
+
+### `GET /v1/health`
+
+Liveness — unauthenticated. Returns `{"status":"ok"}` when the process is up.
+
+### `GET /v1/ready`
+
+Readiness — gates on a DB ping plus queue depth. Unauthenticated.
+
+### `GET /metrics`
+
+Prometheus exposition. Unauthenticated. Counters for submissions, cache
+hits/misses, webhook deliveries; gauges for queue depth and active sandboxes.
+
+## OpenAPI
+
+### `GET /v1/openapi.json`
+
+OpenAPI 3.1 spec generated from `utoipa` annotations. Feed it to
+[openapi-generator-cli](https://openapi-generator.tech/) to emit typed SDKs.
+
+## Status discriminated union
+
+The `status` field is `{ "kind": "...", "detail"?: ... }`:
+
+| kind | meaning |
+|---|---|
+| `queued` | accepted into DB, not yet picked up |
+| `processing` | worker has claimed the row |
+| `accepted` | program exited 0 inside the limits |
+| `time_limit_exceeded` | wall- or CPU-time limit hit; `detail` is `wall` or `cpu` |
+| `memory_limit_exceeded` | cgroup `memory.oom_kill` fired |
+| `output_limit_exceeded` | stdout or stderr exceeded the ring-buffer cap |
+| `compile_error` | sentinel exit 253 from the compile sub-child |
+| `runtime_error` | non-zero exit or fatal signal; `detail` carries signal name |
+| `non_zero_exit` | clean exit with a non-zero code |
+| `sandbox_failure` | the sandbox itself errored (not user code) |
+| `cancelled` | the row was cancelled before terminal status |
+| `expired` | retention window elapsed before terminal status |
+
+## Errors
+
+`401 Unauthorized` — missing or wrong `Authorization` header.
+`403 Forbidden` — anonymous tier hit its per-IP rate-limit.
+`413 Payload Too Large` — body exceeded 256 KB.
+`422 Unprocessable Entity` — JSON parsed but the request shape was invalid.
+`429 Too Many Requests` — global rate-limit (100 RPS burst).
+`500 Internal Server Error` — DB or sandbox-side bug; check logs.

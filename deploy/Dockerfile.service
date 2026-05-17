@@ -7,6 +7,15 @@
 # Build with:
 #   docker build -f deploy/Dockerfile.service -t zerocode-service:dev .
 
+FROM node:20-bookworm-slim AS web
+WORKDIR /web
+ENV CI=true
+RUN corepack enable
+COPY web ./
+RUN rm -rf node_modules app/node_modules docs/node_modules dist app/dist docs/dist .astro docs/.astro
+RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm build
+
 FROM rust:1-bookworm AS builder
 WORKDIR /src
 ARG TARGETARCH
@@ -42,8 +51,9 @@ COPY --from=builder /out/zerocode-api /usr/local/bin/zerocode-api
 COPY --from=builder /out/zerocode-migrate /usr/local/bin/zerocode-migrate
 COPY --from=builder /src/migrations /var/lib/zerocode/migrations
 COPY runners/languages.toml /runners/languages.toml
-COPY web /web
-ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
+COPY --from=web /web/dist /srv/web
+ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml \
+    ZEROCODE_WEB_DIR=/srv/web
 USER nonroot:nonroot
 EXPOSE 8080 9091
 ENTRYPOINT ["/usr/local/bin/zerocode-api"]

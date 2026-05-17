@@ -1,0 +1,103 @@
+---
+title: Observability
+description: Prometheus metrics, OTLP traces, structured logs, dashboards.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+ZeroCode emits three signal kinds: Prometheus metrics, OTLP traces, and
+structured JSON logs. Everything is opt-in via env vars; the default config is
+silent in production.
+
+## Prometheus metrics
+
+The API exposes `/metrics` on the main listener (no separate port). The
+worker exposes `/metrics` on `:9090`. Both use `metrics-process` for CPU /
+RSS / FD counts.
+
+### Core counters
+
+| Series | Type | Labels | Meaning |
+|---|---|---|---|
+| `zerocode_submissions_total` | counter | `language_id`, `verdict` | Terminal submissions by language + verdict |
+| `zerocode_submission_duration_seconds` | histogram | `language_id` | Wall time from claim → finish |
+| `zerocode_cache_hits_total` | counter | `kind` (`result` \| `compile`) | Moka cache hits |
+| `zerocode_cache_misses_total` | counter | `kind` | Moka cache misses |
+| `zerocode_webhook_attempts_total` | counter | `status` (`ok` \| `4xx` \| `5xx` \| `timeout`) | Per-attempt webhook outcomes |
+| `zerocode_pending_jobs` | gauge | — | `SELECT count(*) WHERE status='queued'` (sampled every 5 s) |
+| `zerocode_active_sandboxes` | gauge | — | Worker semaphore in-flight count |
+| `zerocode_worker_parallelism` | gauge | — | Worker semaphore capacity |
+
+`zerocode_pending_jobs / zerocode_worker_parallelism` is the signal for
+auto-scaling. Wire it into a HorizontalPodAutoscaler / KEDA / nomad autoscaler.
+
+### Sample Grafana panel
+
+```promql title="submissions per second by verdict"
+sum by (verdict) (rate(zerocode_submissions_total[1m]))
+```
+
+```promql title="p99 submission duration (s) by language"
+histogram_quantile(0.99,
+  sum by (language_id, le) (rate(zerocode_submission_duration_seconds_bucket[5m])))
+```
+
+## OTLP tracing
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` and ZeroCode (both API and worker) install
+a tonic-based batch span exporter. W3C TraceContext propagation is wired into
+the existing `TraceLayer`, so HTTP spans flow automatically.
+
+```bash title="docker-compose.yml fragment for Jaeger"
+jaeger:
+  image: jaegertracing/all-in-one:1.60
+  ports:
+    - "16686:16686"   # UI
+    - "4317:4317"     # OTLP gRPC
+  environment:
+    COLLECTOR_OTLP_ENABLED: "true"
+```
+
+Then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317` on the api + worker
+services. The Jaeger UI shows full submission traces — REST handler → DB
+INSERT → worker claim → sandbox spans.
+
+<Aside>
+  Spans include the bearer key prefix (first 8 chars) as an attribute by
+  default. Set `ZEROCODE_TRACE_REDACT_AUTH=true` to redact it entirely if your
+  trace collector is shared with other tenants.
+</Aside>
+
+## Structured logs
+
+Both binaries write JSON-lines to stdout via `tracing-subscriber`. Fields:
+
+```json
+{"timestamp":"2026-05-17T12:00:00.000Z","level":"INFO","target":"zerocode_api::routes::submissions",
+ "trace_id":"...", "span_id":"...",
+ "message":"submission created","token":"7c8e..a31","language_id":71}
+```
+
+The `Authorization` header is redacted from `http_request` spans via the
+custom `SanitizedMakeSpan`. Don't log source/stdin/stdout at INFO — the
+default config respects this.
+
+Pipe to Loki/Vector/Fluentbit by collecting stdout. With Docker:
+
+```yaml
+logging:
+  driver: json-file
+  options: { max-size: "100m", max-file: "5" }
+```
+
+## Recommended dashboard
+
+A starter Grafana dashboard JSON ships in `deploy/grafana/zerocode.json`. It
+includes:
+
+- Submission throughput by verdict (top-left, 6h window)
+- p50 / p95 / p99 latency per language
+- Queue depth + worker saturation (`pending_jobs / parallelism`)
+- Cache hit rates (result + compile)
+- Webhook delivery success rate
+- Worker FD / RSS / CPU

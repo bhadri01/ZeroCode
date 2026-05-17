@@ -371,15 +371,37 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
 
 ### Stack decisions (record once chosen)
 
-- [ ] Framework: Next.js (App Router) vs. SvelteKit vs. Astro + islands
-      *(initial scaffold is plain React 18 UMD + Babel-standalone — no build step)*
-- [ ] Hosting: served by `zerocode-api` as static assets vs. separate container
-      (lean: separate `zerocode-web` image, reverse-proxied so API stays headless)
-- [ ] Editor: Monaco vs. CodeMirror 6 (lean: CodeMirror for bundle size + 41-lang grammars)
-- [ ] Docs engine: Nextra vs. Astro Starlight vs. hand-rolled MDX
+- [x] **Framework**: Vite + React 18 + TypeScript for `web/app/` (landing +
+      playground), Astro 5 + Starlight 0.32 for `web/docs/`. Two sub-projects
+      under a pnpm workspace so each gets its native toolchain; both emit into
+      a unified `web/dist/` via `web/scripts/assemble-dist.mjs`.
+- [x] **Hosting**: Embedded in `zerocode-api` as static assets. The router
+      mounts `tower_http::services::ServeDir` as a fallback against
+      `ZEROCODE_WEB_DIR` (default `web/dist`); empty value or missing dir is
+      skipped gracefully so dev mode without a built web/ still boots.
+- [x] **Editor**: CodeMirror 6 integrated in the ported playground. Custom
+      **Monokai Pro** theme at `web/app/src/playground/monokai.ts` (palette +
+      HighlightStyle bound to `@lezer/highlight` tags). Extensions: line
+      numbers + fold gutter, active-line + gutter highlight, bracket matching
+      + close-brackets, search/replace panel (⌘F), selection-match highlight,
+      rectangular selection, indent-with-tab. Six `@codemirror/lang-*` packs
+      cover the Core 7 (C and C++ share `lang-cpp`).
+- [x] **Docs engine**: Astro Starlight on top of MDX in `web/docs/`. Sidebar
+      defined in `web/docs/astro.config.mjs`, content collections via
+      `src/content.config.ts`, base path `/docs/` so it serves at the
+      `/docs/*` subpath under the API.
 - [x] Shared design tokens between landing / docs / code space —
-      `web/shared/tokens.css` (dark/light, accents, status colors, type stack)
-- [ ] Typed API client: import generated TypeScript SDK from `scripts/generate-sdks.sh`
+      `web/shared/tokens.css` (dark/light, accents, status colors, type stack);
+      copied to `web/app/src/shared/tokens.css` and themed for Starlight via
+      `web/docs/src/styles/tokens.css`.
+- [x] **Package manager**: pnpm 10 (`web/pnpm-workspace.yaml`).
+- [x] **Language**: TypeScript end-to-end. `web/shared/{theme,api}.js` ported
+      to `web/app/src/shared/{theme,api}.ts`.
+- [~] Typed API client: **deferred**. `web/app/src/shared/api.ts` is the
+      typed surface today — hand-written TypeScript with full request /
+      response types per endpoint. SSE long-poll + idempotency-key handling
+      are bespoke (OpenAPI-generated clients don't carry these well).
+      Revisit once `/v1/openapi.json` covers every endpoint we hit.
 
 ### Landing page
 
@@ -451,6 +473,15 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
       maps each docs page to its source file in the repo (markdown for
       ported pages, the proto for gRPC, the JSX module for auto-generated
       pages).
+- [x] **Cross-app nav from docs** (2026-05-17) — without this, every
+      `/docs/*` page was a dead-end. Two paths home:
+      (1) `web/docs/src/components/HeaderLinks.astro` overrides Starlight's
+      `SocialIcons` to prepend `home` + `playground` text links to the
+      header (≥ 50 em only; mobile uses the menu).
+      (2) Top-of-sidebar `← Home` + `Playground` entries (always visible,
+      including mobile menu) — both carry `data-astro-reload` so the
+      Astro router does a full browser navigation instead of trying to
+      client-route into Vite's territory.
 - [ ] Replace hand-written REST reference with auto-generation from
       `/v1/openapi.json` at build time (currently hand-written content
       already covers every endpoint)
@@ -460,12 +491,35 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
 ### Code Space (in-browser playground)
 
 - [x] **Scaffolded** in `web/playground.html` — `playground/app.jsx` + `playground/data.jsx`
-- [x] Top nav with token chip + breadcrumb to home/docs
+- [x] Top nav with token chip + cross-app links to `/` and `/docs/` —
+      the orphan "code space · untitled" breadcrumb was removed (2026-05-17)
+      since the playground has no file-naming model to attach it to.
 - [x] Searchable language picker rail (41 langs) with Core 7 pinned + history (`playground/app.jsx`)
-- [x] Syntax-highlighted editor (custom tokenizer in `playground/app.jsx`)
-- [x] Stdin pane
-- [x] Workspace bar: language version chip, status pill, **⌘↵ to run**,
-      reset, memory/time/pids limit sliders, "Open in API" trigger
+- [x] Syntax-highlighted editor — **CodeMirror 6 with Monokai Pro** at
+      `web/app/src/playground/Editor.tsx`. Replaces the legacy custom
+      tokenizer. Fold gutter, bracket auto-close, search panel (⌘F),
+      selection-match highlighting, rectangular selection, indent-with-tab.
+      Six `@codemirror/lang-*` packs (python / javascript / rust / go /
+      cpp / java).
+- [x] **First-run-stale-result bug fixed** (2026-05-17). Root cause:
+      `run` was `useCallback`-memoized on `[status, apiOnline, probeApi]`;
+      it captured the first render's `runOnApi`, whose closure had stale
+      `code`/`lang`/`stdin`/`limits`. First click submitted the previous
+      source (idempotency cache hit → previous result); second click hit
+      a recreated `run` with current state. Fix at
+      `web/app/src/playground/App.tsx`: route `runOnApi` through a
+      `useRef` updated every render so memoized `run` always invokes the
+      latest closure.
+- [x] **Stdin as a separate persistent pane** (2026-05-17) — replaced the
+      collapse-to-toggle drawer with `StdinPanel` in its own resizable row
+      below the editor: header (`stdin · N chars · clear`) + full-height
+      textarea, always visible. Sits between editor and output in the
+      center column.
+- [x] **Workspace bar (slim)**: language version chip, status pill,
+      **⌘↵ to run**, reset, memory/time limit sliders, share. The legacy
+      `api` text button and the duplicate gear-icon settings button were
+      removed (2026-05-17); settings is still reachable via the
+      `live`/`offline`/`no auth` status pill on the left.
 - [x] Tabbed output pane (stdout · stderr · compile · meta) with simulated
       SSE streaming Queued → Processing → Accepted (`playground/app.jsx`)
 - [x] Status pill state machine (Queued / Processing / Accepted / TLE / MLE /
@@ -475,8 +529,12 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
       ceilings" / "client defaults" label flip in the popover. **pids
       slider dropped** — the REST API doesn't accept a client override
       for `max_pids` (resolved per-language on the server).
-- [x] "Open in API" modal showing curl + gRPC + Python SDK + TypeScript SDK
-      snippets generated from the current source/limits (`playground/app.jsx`)
+- [~] **"Open in API" modal removed** (2026-05-17). Originally implemented
+      with curl + gRPC snippets generated from the current source/limits;
+      removed at user request as redundant — the same snippets live in the
+      docs SDK page, and the in-playground modal duplicated state without
+      pulling its weight. If we resurrect it, prefer rendering server-side
+      from the OpenAPI spec rather than hand-templating in the bundle.
 - [x] Empty-state example snippets per language (41 entries in `playground/data.jsx`)
 - [x] Submission history rail — now backed by `localStorage` (20-entry cap)
       with verdict, token, and timestamp per row
@@ -520,21 +578,93 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
       stack at ≤ 880 px (rail on top with bounded height, editor in the
       middle, output below); workspace bar + status strip wrap; top nav
       reflows below ≤ 760 px (`playground/app.jsx` + `playground.html`
-      media queries)
+      media queries). Splitters auto-hide below 880 px since the layout
+      stacks vertically.
+- [x] **Resizable splits across the full layout** (2026-05-17) — three
+      drag handles in `App.tsx`: vertical between rail & center column,
+      horizontal between editor & stdin, horizontal between stdin &
+      output. Sizes persisted to `localStorage` under
+      `zerocode:pg:layout-v1` with sane clamps (rail 180–460 px,
+      editor ≥ 140 px, stdin ≥ 80 px). Hover handle → 4 px hit region
+      highlights in accent; drag locks the document cursor to
+      `col-resize`/`row-resize` and disables text selection until release.
+      Bundled as a generic `<Splitter direction="vertical|horizontal"
+      onDrag={delta=>...} />` component.
+- [x] **Stale-result on first run** fixed (see above under editor entry).
 - [ ] Anonymous play rate limit + signed-in higher quota + persistent history
-      backed by `GET /v1/submissions` (server-side; needs auth tier)
+      backed by `GET /v1/submissions` (server-side; needs auth tier). The
+      anon rate-limit half is wired today via `ZEROCODE_ALLOW_ANONYMOUS`
+      + `ZEROCODE_ANON_MAX_PER_WINDOW` env vars in `deploy/docker-compose.yml`;
+      the auth tier + persistent history are still open.
 
 ### Plumbing & integration
 
-- [ ] CORS allowlist on API (currently locked; needs config for hosted UI origin)
-- [ ] CSP + COOP/COEP headers from the static server
+- [~] CORS configurable on API via `ZEROCODE_CORS_ORIGINS` env
+      (dev compose sets `*`); a production allowlist + per-origin
+      `Access-Control-Allow-Credentials` policy is still open.
+- [x] **CSP + COOP + security-header stack** (2026-05-17) on the static
+      fallback in `crates/zerocode-api/src/routes/mod.rs`. Six headers
+      injected only on responses from `ServeDir` (not `/v1/*`):
+      `Content-Security-Policy` (`default-src 'self'`; `script-src` /
+      `style-src` allow `'unsafe-inline'` for Starlight theme bootstrap +
+      React `<style>` blocks; `frame-ancestors 'none'`), `Cross-Origin-Opener-Policy: same-origin`,
+      `Referrer-Policy: strict-origin-when-cross-origin`, `X-Content-Type-Options: nosniff`,
+      `Permissions-Policy` denying camera/mic/geolocation/payment, and
+      legacy `X-Frame-Options: DENY`. COEP intentionally omitted —
+      `require-corp` would break loading without SharedArrayBuffer payoff.
+      Tower-http `set-header` feature added to the workspace dep.
 - [ ] Auth tier for UI users (browser session → short-lived UI API key vs. server API keys)
-- [ ] Anonymous quota strategy (cookie/IP bucket via `tower_governor`)
+- [~] Anonymous quota wired via `tower_governor` with `ZEROCODE_ALLOW_ANONYMOUS`
+      + `ZEROCODE_ANON_MAX_PER_WINDOW` / `ZEROCODE_ANON_WINDOW_SECS` env vars;
+      cookie/IP bucket tuning is operator-side.
 - [ ] Decide SSE vs. WebSocket for live output behind reverse proxies
-- [ ] Frontend CI: lint, typecheck, build, smoke-test against running API
-- [ ] `deploy/Dockerfile.web` (or build step that injects bundle into `zerocode-service`)
+- [x] **Frontend CI**: `.github/workflows/web.yml` runs
+      pnpm install (frozen lockfile) → `pnpm -r typecheck` → `pnpm build`
+      (assembles `web/dist/` with both app + docs) → sanity-check key
+      output files → upload artifact. Triggers on `web/**` or workflow
+      changes. Live smoke-test against a running API is still open.
+- [x] **Build pipeline**: `deploy/Dockerfile.service` now has a `node:20` `web`
+      stage that runs `pnpm install && pnpm build`; the resulting `web/dist/`
+      is copied into `/srv/web` in the distroless final image with
+      `ZEROCODE_WEB_DIR=/srv/web` set. Service image is the single artifact —
+      no separate `Dockerfile.web` needed under this hosting model.
 - [ ] `docker-compose.yml` wires up `web` service alongside `api` / `worker`
-- [ ] README + docs note: "UI is optional; the API is the contract"
+      *(not needed under embedded hosting; revisit if model changes)*
+- [x] **README + docs note**: "UI is optional; the API is the contract" —
+      `README.md` Web UI section already carries the line and the env-var
+      table; extended (2026-05-17) with a callout describing the
+      security-header stack so operators know what's set automatically.
+
+### Content port (done)
+
+- [x] Migrated `web/landing/*.jsx` → `web/app/src/landing/*.tsx` (8 modules).
+- [x] Migrated `web/playground/*.jsx` → `web/app/src/playground/*.tsx` and
+      swapped the Monaco-CDN editor for bundled CodeMirror 6 with
+      `@codemirror/lang-python`, `-javascript`, `-rust`, `-go`, `-cpp`,
+      `-java`. **Premium Monokai Pro theme** at
+      `web/app/src/playground/monokai.ts` (palette + `HighlightStyle` bound
+      to `@lezer/highlight` tags) replaces `@codemirror/theme-one-dark`;
+      editor surface stays Monokai under both light and dark page themes.
+      Added fold gutter, bracket auto-close, search panel (`@codemirror/search`),
+      autocomplete shell, selection-match highlight, and rectangular
+      selection.
+- [x] Migrated `web/docs/content.jsx` content → MDX under
+      `web/docs/src/content/docs/` (11 pages: index, quickstart, api, grpc,
+      sdks, languages, architecture, deployment, observability, security,
+      changelog). Starlight handles sidebar, search (Pagefind), and the
+      "Edit on GitHub" link.
+- [x] Deleted root-level `web/{index.html,docs.html,playground.html}` plus
+      `web/{landing,docs/*.jsx,playground,shared}` — only `web/{app,docs,scripts}`
+      remain in the workspace.
+- [ ] Generate the TS SDK with `scripts/generate-sdks.sh --generators=typescript`
+      and wire it into `web/app/src/sdk/`. The hand-typed `shared/api.ts`
+      covers REST + SSE today; SDK codegen needs a running API instance.
+
+### CI
+
+- [x] `.github/workflows/web.yml` — pnpm install + typecheck + build +
+      `web/dist/` sanity check on every push/PR that touches `web/`. Uploads
+      the built bundle as a 7-day artifact.
 
 ---
 
@@ -557,4 +687,33 @@ still TBD — keep the JSX modular so the migration is a syntactic lift.
 
 ---
 
-_Last updated: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth, **web UI scoped**: landing + docs + in-browser code space planned as `web/` workspace consuming the public REST/gRPC API, **landing scaffolded**: `web/index.html` + 8 JSX modules ported from Claude Design handoff — hero with animated 8-layer concentric-ring diagram, trust strip, three-up, architecture SVG, 41-language matrix, playground teaser, Judge0 comparison, deploy tabs, footer; serves via plain `python3 -m http.server` for now, **playground + docs scaffolded**: `web/playground.html` (rail/editor/output IDE with simulated SSE streaming, 41-lang picker, limit sliders, "Open in API" modal with curl/gRPC/Python/TS snippets, ⌘↵ run) + `web/docs.html` (sidebar IA + scroll-spy + hash routing, Quickstart/API/Security pages written, Architecture/Deployment/SDKs/Observability/Changelog as placeholders, detailed 8-layer diagram reused on security page), **landing/docs/playground completion pass**: language search/filter on 41-chip matrix ✓, prefers-reduced-motion on 8-layer diagram ✓, Claude Design tweaks-panel replaced with production theme toggle (`web/shared/theme.js`) ✓ and orphan file deleted, all 5 placeholder docs pages fleshed out from `docs/*.md` ✓, new gRPC reference page auto-mirrored from `crates/zerocode-api/proto/zerocode.proto` ✓, ⌘K fuzzy-search palette across pages + TOC sections ✓, "Edit on GitHub" link per docs page ✓, playground wired to real `POST /v1/submissions` + SSE via `web/shared/api.js` with simulation fallback ✓, share link via URL hash with `localStorage` draft persistence ✓, submission history persisted to `localStorage` (20-entry cap) ✓, sliders wired to `/v1/languages` ceilings ✓, mobile-friendly responsive layout for playground + docs ≤880 px ✓)._
+_Last updated: 2026-05-17 — **web/ migration + deploy complete**. Stack locked:
+pnpm workspace at `web/`, Vite+React+TS for landing/playground (`web/app/`)
++ Astro+Starlight for docs (`web/docs/`), unified build assembled into
+`web/dist/` by `web/scripts/assemble-dist.mjs`, embedded in `zerocode-api`
+via `tower-http` `ServeDir` gated on `ZEROCODE_WEB_DIR` (default `/srv/web`),
+`deploy/Dockerfile.service` runs `pnpm install && pnpm build` in a node:20
+stage and copies `web/dist/` into the distroless final image. Content port
+done: landing TSX, playground TSX, 11 docs MDX pages. **Playground polish
+pass (2026-05-17)**: CodeMirror 6 with bespoke **Monokai Pro** theme
+(`web/app/src/playground/monokai.ts`), fold gutter, bracket auto-close, ⌘F
+search panel, selection-match highlight, rectangular selection;
+**first-run-stale-result bug fixed** — `useCallback` memoization captured
+old `runOnApi` closure with stale code, fix at `App.tsx` routes `runOnApi`
+through a `useRef` updated every render; vs-Judge0 comparison section
+removed from the landing. Stack now live at `http://localhost:8080/`
+(landing), `/playground.html` (CodeMirror+Monokai IDE), `/docs/` (Starlight).
+**Playground polish pass** (2026-05-17 cont'd): "code space · untitled"
+breadcrumb deleted; `api` text button + duplicate gear-icon settings
+button + the entire `ApiModal` component removed (settings still reachable
+via the live-status pill); stdin promoted from a collapse-to-toggle drawer
+to a `StdinPanel` separate persistent pane between editor and output;
+generic `<Splitter>` component plus three resizable handles (rail↔center,
+editor↔stdin, stdin↔output) with sizes persisted to
+`localStorage:zerocode:pg:layout-v1` and clamps to prevent collapse;
+splitters auto-hide on mobile (≤ 880 px). **Cross-app nav from docs**:
+Starlight `SocialIcons` overridden with `HeaderLinks.astro` to add
+`home` + `playground` text links in the header, plus `← Home` +
+`Playground` entries at the top of every sidebar — both via
+`data-astro-reload` so the browser does a full navigation back into
+the Vite-served pages instead of trying to client-route. Earlier note: 2026-05-13 (smoke test ✓, Prometheus metrics ✓, multi-arch Dockerfile ✓, ::metrics:: disambiguation fix, PostgreSQL 16 `binary` keyword fix, all 19 sqlx queries converted to compile-time `query!` macros with cached `.sqlx/` offline cache, compose project renamed `deploy` → `zerocode`, **v2 observability**: OTLP tracing export ✓ + Jaeger dev compose ✓, OpenAPI 3.1 spec at `/v1/openapi.json` ✓, **v2 continuation**: per-language slim runner images ✓ Core 7, auto-scaling pending-jobs gauge ✓, OpenAPI SDK generation script ✓, **v2 batching**: test-case batching ✓ POST `/v1/submissions/batch` + GET `/v1/batches/{id}` + pre-existing `tower_governor` "Unable To Extract Key!" bug fixed, **v2 gRPC**: `zerocode.v2.ZeroCode` service ✓ on `:9091` with CreateSubmission/GetSubmission/ListLanguages/GetHealth, **web UI scoped**: landing + docs + in-browser code space planned as `web/` workspace consuming the public REST/gRPC API, **landing scaffolded**: `web/index.html` + 8 JSX modules ported from Claude Design handoff — hero with animated 8-layer concentric-ring diagram, trust strip, three-up, architecture SVG, 41-language matrix, playground teaser, Judge0 comparison, deploy tabs, footer; serves via plain `python3 -m http.server` for now, **playground + docs scaffolded**: `web/playground.html` (rail/editor/output IDE with simulated SSE streaming, 41-lang picker, limit sliders, "Open in API" modal with curl/gRPC/Python/TS snippets, ⌘↵ run) + `web/docs.html` (sidebar IA + scroll-spy + hash routing, Quickstart/API/Security pages written, Architecture/Deployment/SDKs/Observability/Changelog as placeholders, detailed 8-layer diagram reused on security page), **landing/docs/playground completion pass**: language search/filter on 41-chip matrix ✓, prefers-reduced-motion on 8-layer diagram ✓, Claude Design tweaks-panel replaced with production theme toggle (`web/shared/theme.js`) ✓ and orphan file deleted, all 5 placeholder docs pages fleshed out from `docs/*.md` ✓, new gRPC reference page auto-mirrored from `crates/zerocode-api/proto/zerocode.proto` ✓, ⌘K fuzzy-search palette across pages + TOC sections ✓, "Edit on GitHub" link per docs page ✓, playground wired to real `POST /v1/submissions` + SSE via `web/shared/api.js` with simulation fallback ✓, share link via URL hash with `localStorage` draft persistence ✓, submission history persisted to `localStorage` (20-entry cap) ✓, sliders wired to `/v1/languages` ceilings ✓, mobile-friendly responsive layout for playground + docs ≤880 px ✓)._

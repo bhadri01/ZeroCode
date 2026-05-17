@@ -23,7 +23,7 @@ rust-version = "1.85"
 tokio = { version = "1.52", features = ["full"] }
 axum = { version = "0.8", features = ["macros", "http2"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "limit", "request-id", "timeout", "compression-gzip", "cors"] }
+tower-http = { version = "0.6", features = ["trace", "limit", "request-id", "timeout", "compression-gzip", "cors", "set-header"] }
 tower_governor = "0.8"
 hyper = "1.9"
 http = "1.3"

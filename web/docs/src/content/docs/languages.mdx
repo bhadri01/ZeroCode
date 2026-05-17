@@ -1,0 +1,82 @@
+---
+title: Language catalog
+description: The seven languages ZeroCode supports today — IDs, versions, and how to query the live registry.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+ZeroCode ships with seven languages — the "Core 7" — chosen because they
+cover the contest / interview / sandbox workloads that drive most adoption,
+and because their toolchains fit cleanly into the runner image and the
+sandbox compile/run model.
+
+| ID | Name | Version | Runtime kind |
+|---|---|---|---|
+| 48 | C | gcc-14 | compile-then-run |
+| 52 | C++ | g++-14 | compile-then-run |
+| 60 | Go | latest stable (1.23+) | compile-then-run |
+| 62 | Java | OpenJDK 21 (LTS) | javac → java |
+| 63 | Node.js | 22 (LTS) | interpreted (single file) |
+| 71 | Python | 3.13 | interpreted (single file) |
+| 73 | Rust | latest stable | compile-then-run (`-C panic=abort`) |
+
+IDs are Judge0-compatible where they overlap, so most Judge0 clients work
+against ZeroCode without remapping.
+
+<Aside>
+  The runner image bundles every toolchain; the API never invokes them
+  directly. The toolchain versions above track upstream stable channels and
+  are rebuilt nightly via CI — exact versions in a running cluster come from
+  `/v1/languages` (see below), not this table.
+</Aside>
+
+## Querying the live registry
+
+The authoritative source is the running API:
+
+```bash
+curl http://localhost:8080/v1/languages \
+  -H "authorization: Bearer $ZC_KEY" \
+  | jq '.[] | {id, name, version, default_limits}'
+```
+
+Each entry includes `default_limits` — the server's per-language ceilings
+for `memory_mb` / `cpu_time` / `wall_time` / `max_pids`. Submissions that
+omit limits get these defaults; submissions that exceed them are rejected at
+validation time.
+
+## Source of truth in the repo
+
+The registry config lives at [`runners/languages.toml`](https://github.com/bhadri01/ZeroCode/blob/main/runners/languages.toml).
+A typical entry:
+
+```toml
+[[language]]
+id = 71
+name = "Python"
+version = "3.13"
+extension = "py"
+program = "/usr/bin/python3"
+args = ["main.py"]
+
+[language.default_limits]
+memory_mb = 256
+cpu_time = 5
+wall_time = 5
+max_pids = 64
+```
+
+Adding a language is a `runners/languages.toml` entry + a runner image with
+the toolchain installed + (for compiled languages) a compile-phase spec
+that produces `/box/prog`. Compile errors surface via the dedicated
+`compile_output` pipe and the `compile_error` status kind.
+
+## Future languages
+
+Wider coverage (the Judge0 catalog has ~60 entries) is on the roadmap but
+not shipping today — each language adds runner image weight, toolchain
+attack surface, and a maintenance burden. Tracked in
+[`TODO.md`](https://github.com/bhadri01/ZeroCode/blob/main/TODO.md) under
+the v1.5 section. Open an issue if you have a specific language you'd like
+to see prioritized; PRs adding a language come with `tests/edge_cases/<lang>.rs`
+coverage so we don't regress.

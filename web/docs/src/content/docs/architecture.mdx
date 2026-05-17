@@ -1,0 +1,89 @@
+---
+title: Architecture
+description: System overview, crate map, submission lifecycle, sandbox execution model.
+---
+
+## System overview
+
+```
+┌──────────┐  POST  ┌─────────────┐  INSERT  ┌──────────┐  NOTIFY   ┌─────────────┐  clone()  ┌─────────────┐
+│  Client  │──────► │   API       │ ───────► │ Postgres │ ────────► │   Worker    │ ────────► │   Sandbox   │
+└──────────┘ ◄────  │ axum+tonic  │ ◄──────  │  queue   │           │ sqlx+moka   │ ◄──────── │  8 layers   │
+              SSE  └─────────────┘  fetch   └──────────┘           └─────────────┘  stdout   └─────────────┘
+                                                                                                      │
+                                                                                                      ▼
+                                                                                              ┌─────────────┐
+                                                                                              │   Runtime   │
+                                                                                              │  7 languages│
+                                                                                              └─────────────┘
+```
+
+Two binaries, one Postgres. The queue lives in the database — no broker needed.
+Workers wake on `LISTEN/NOTIFY` (sub-5 ms p99). Each submission's lifecycle is
+a state machine: `queued → processing → {accepted | tle | mle | ce | re | ...}`.
+
+## Crate map
+
+| Crate | Purpose |
+|---|---|
+| `zerocode-api` | axum (REST) + tonic (gRPC), shared `AppState`, auth, rate-limit, OpenAPI, metrics. |
+| `zerocode-worker` | LISTEN/NOTIFY claim loop, sandbox dispatch, retention sweeper, OTLP. |
+| `zerocode-sandbox` | `Sandbox` trait + `NativeSandbox` (Linux) + `WasmSandbox` (wasmtime) + `StubSandbox` (cross-platform tests). |
+| `zerocode-core` | `LanguageRegistry`, `ResourceLimits`, `SandboxJob` / `SandboxResult` types. |
+| `zerocode-cache` | Moka-backed result cache (5 min TTL) + compile-artifact cache. |
+| `zerocode-stream` | SSE event router + per-token `LISTEN` subscriptions. |
+| `zerocode-migrate` | Compiled sqlx migrations runner. |
+
+## Submission lifecycle (9 steps)
+
+1. `POST /v1/submissions` validates and decodes the body (≤ 256 KB).
+2. The handler computes a blake3 idempotency hash; cached hits short-circuit.
+3. An `INSERT` writes the row in `status = queued` and fires `pg_notify('zerocode.jobs', token)`.
+4. The API returns the token (or, with `?wait=true`, opens a per-token `LISTEN`).
+5. A worker's `LISTEN` channel wakes; an atomic CTE claim selects the row with `FOR UPDATE SKIP LOCKED`.
+6. The worker forks the sandbox via `unshare` + `clone3`, sets up cgroup v2 quotas, applies seccomp/landlock, drops capabilities.
+7. The child execs the language runtime; stdout/stderr stream back over pipes to a tokio task that publishes SSE events.
+8. The triage decision tree maps signals, OOM markers, and exit codes to the typed `Status` discriminated union.
+9. The worker writes the result + telemetry back via `UPDATE ... RETURNING`, which fires another `NOTIFY` so `?wait=true` returns.
+
+## Parent ↔ child handshake
+
+Forking inside a user namespace requires the parent to write `/proc/<pid>/uid_map`
+*after* the child has unshared. A 4th pipe pair (compile_rd / compile_wr) carries
+compiler stderr separately from runtime stderr so `compile_output` doesn't
+swallow user `eprintln!` calls. The sentinel exit code `253` signals "compile
+failed before the run phase started."
+
+## Sandbox execution model (8 layers)
+
+1. **User namespace** — `unshare(CLONE_NEWUSER)`. UID 0 inside, unprivileged outside.
+2. **PID/NET/IPC/UTS/MNT/NS** — every kernel namespace, no sharing with the host.
+3. **`pivot_root`** — read-only runner rootfs becomes `/`; the host `/` is `umount2`'d with `MNT_DETACH`.
+4. **Landlock LSM (ABI v1)** — `/usr`, `/lib`, `/bin`, `/etc` are RO; per-submission `/box` + `/tmp` tmpfs are RW.
+5. **Seccomp BPF** — Docker default minus `io_uring_*`, `bpf`, `ptrace`, `unshare`, `keyctl`, `mount`, `pivot_root`, kernel-module ops.
+6. **cgroup v2** — `memory.max`, `cpu.max`, `pids.max`, `cgroup.kill` for atomic teardown.
+7. **Capability drop** — `cap_set_proc(cap_init())` zeroes the bounding set across all 5 capsets.
+8. **`NO_NEW_PRIVS`** — `prctl(PR_SET_NO_NEW_PRIVS, 1)` neuters setuid binaries.
+
+## Performance architecture
+
+| Mechanism | Win |
+|---|---|
+| LISTEN/NOTIFY dispatch | < 5 ms p99 wake (no poll loop) |
+| Moka result cache (10k entries, 5 min TTL) | Skip the sandbox for identical submissions |
+| Compile-artifact cache (key = source + flags + arch) | Skip the compile phase on cache hit; binary bind-mounted into `/box/prog` |
+| HTTP/2 h2c (auto-negotiated by hyper) | Multiplexed SSE streams, no head-of-line blocking |
+| `cargo bench` suite | `core_ops` + `cache_key` benchmarks; regression-gate via CI |
+
+## Container image strategy
+
+| Image | Base | Built by | Contents |
+|---|---|---|---|
+| `zerocode-service` | distroless static | `deploy/Dockerfile.service` | API + migrate binaries (musl static) + built web bundle at `/srv/web` |
+| `zerocode-worker` | debian-trixie-slim (glibc) | `deploy/Dockerfile.worker` | Worker binary; needs glibc + libseccomp |
+| `zerocode-runner` | debian-trixie-slim | `runners/Dockerfile.core` | All Core 7 toolchains (Python 3.13, Node 22, Rust stable, Go 1.23+, gcc/g++ 14, OpenJDK 21) |
+
+Per-language slim runner variants and a multi-stage `Dockerfile.slim` exist
+in the repo as experimental targets — production deploys today use the
+single `Dockerfile.core` image. Build it once and bind-mount its filesystem
+into the worker via the `runner-rootfs-init` compose service.

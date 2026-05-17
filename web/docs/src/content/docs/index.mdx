@@ -1,0 +1,29 @@
+---
+title: ZeroCode docs
+description: Self-hosted, sandboxed code execution. Seven languages, eight isolation layers, sub-5 ms dispatch.
+---
+
+ZeroCode is an open-source code execution sandbox written in Rust. Eight
+kernel-enforced isolation layers, seven language runtimes (Python, Node,
+Rust, Go, C, C++, Java), sub-5 ms dispatch via Postgres LISTEN/NOTIFY, and
+a Judge0-compatible REST API plus gRPC.
+
+## Where to start
+
+- **[Quickstart](/docs/quickstart)** — clone, `docker compose up`, submit your first program in 60 seconds.
+- **[REST API reference](/docs/api)** — endpoints, request/response shapes, error semantics.
+- **[gRPC API reference](/docs/grpc)** — `zerocode.v2.ZeroCode` service on `:9091`, auto-mirrored from `proto/zerocode.proto`.
+- **[Architecture](/docs/architecture)** — system overview, submission lifecycle, sandbox execution model.
+- **[Deployment](/docs/deployment)** — host preconditions, env vars, Docker Compose, TLS, cgroup delegation.
+- **[Threat model](/docs/security)** — STRIDE pass, 8-layer defense-in-depth, Judge0 CVE comparison.
+
+## At a glance
+
+| | |
+|---|---|
+| **Isolation layers** | 8 (userns · ns · pivot\_root · landlock · seccomp BPF · cgroup v2 · capdrop · NO\_NEW\_PRIVS) |
+| **Language runtimes** | 7 (Python · Node.js · Rust · Go · C · C++ · Java) |
+| **Dispatch latency** | < 5 ms p99 (LISTEN/NOTIFY, no polling) |
+| **Streaming** | SSE for live stdout/stderr; gRPC unary (no streaming RPCs yet) |
+| **Known CVEs** | 0 |
+| **License** | MIT / Apache-2.0 dual |

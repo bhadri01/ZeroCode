@@ -95,27 +95,57 @@ curl -H 'Authorization: Bearer dev-only-replace-me' \
      http://localhost:8080/v1/languages
 ```
 
-### Browser playground (Code Space)
+### Web UI (landing + playground + docs)
 
-The bundled `web/playground.html` talks to a real API over REST + SSE when one
-is reachable. To run it against a local backend from a different origin (e.g.
-`python3 -m http.server 8000` for `web/`), enable CORS and — optionally — the
-anonymous tier so visitors can run snippets without provisioning a key:
+The `web/` directory is a pnpm workspace with two sub-projects:
+
+- **`web/app/`** — Vite + React 18 + TypeScript. Builds the landing page
+  (`/`) and the playground (`/playground.html`). The playground uses
+  CodeMirror 6 with `@codemirror/lang-*` per Core 7 language and talks to a
+  real API over REST + SSE.
+- **`web/docs/`** — Astro 5 + Starlight with MDX. Builds the docs site
+  served under `/docs/`.
+
+Both emit into a unified `web/dist/` that `zerocode-api` serves via
+`tower-http`'s `ServeDir` (configurable with `ZEROCODE_WEB_DIR`, default
+`web/dist`). When the directory is missing the mount is silently skipped, so
+the API still boots without a built UI.
+
+```sh
+# Develop
+cd web && pnpm install
+pnpm dev:app    # Vite dev server (proxies /v1 to localhost:8080)
+pnpm dev:docs   # Astro dev server
+
+# Build the production bundle (emits web/dist/)
+pnpm build
+```
+
+The bundled image (`deploy/Dockerfile.service`) runs `pnpm install && pnpm
+build` in a Node 20 stage and copies `web/dist/` into `/srv/web` in the
+distroless final image with `ZEROCODE_WEB_DIR=/srv/web` set — no separate
+web container needed.
+
+The API is the contract; the UI is optional. To expose the playground to a
+different origin (or for hosted anonymous play), enable CORS and — optionally
+— the anonymous tier:
 
 ```sh
 # .env
-ZEROCODE_CORS_ORIGINS=http://localhost:8000
+ZEROCODE_CORS_ORIGINS=https://your-frontend.example.com
 ZEROCODE_ALLOW_ANONYMOUS=true        # opt-in only; off by default
 ZEROCODE_ANON_MAX_PER_WINDOW=6       # per-IP cap for anonymous submissions
 ZEROCODE_ANON_WINDOW_SECS=60
 ```
 
-When opened directly from `file://`, the playground now defaults its API probe
-to `http://localhost:8080`. If no API is reachable, the main run action stays
-live-only and the demo stream is exposed as a separate explicit button.
-
-The anonymous tier is gated by a per-IP quota independent of the authed
-`tower_governor` bucket; callback URLs and batch jobs remain authed-only.
+Static responses (`/`, `/playground.html`, `/docs/*`) carry a default
+security-header stack: `Content-Security-Policy` (`default-src 'self'`,
+`script-src` / `style-src` allow `'unsafe-inline'` for Starlight's theme
+bootstrap and React `<style>` blocks), `Cross-Origin-Opener-Policy:
+same-origin`, `Referrer-Policy: strict-origin-when-cross-origin`,
+`X-Content-Type-Options: nosniff`, `Permissions-Policy` denying
+camera/microphone/geolocation/payment, and `X-Frame-Options: DENY` /
+`frame-ancestors 'none'`. JSON API responses under `/v1/*` are unaffected.
 
 For production deployment with Docker Compose, see [docs/DEPLOY.md](docs/DEPLOY.md).
 

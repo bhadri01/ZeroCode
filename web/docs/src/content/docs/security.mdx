@@ -1,0 +1,90 @@
+---
+title: Threat model
+description: STRIDE pass, 8-layer defense-in-depth, Judge0 CVE comparison.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+ZeroCode is designed under the assumption that *every submission is hostile*.
+The threat model is a STRIDE pass against this assumption. The goal is: an
+attacker who fully controls the runtime inside the sandbox should land in a
+*credential-less*, *code-less* environment with no path to the host.
+
+## Trust boundaries
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Host (kernel ≥ 5.14)                                             │
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐                              │
+│  │ zerocode-   │ ── │ Postgres    │   ◄── trust boundary 1       │
+│  │   api       │    │             │       (network · API key)    │
+│  └─────────────┘    └─────────────┘                              │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌─────────────┐                                                 │
+│  │ zerocode-   │   ◄── trust boundary 2                          │
+│  │   worker    │       (cgroup delegation · DB creds)            │
+│  └──────┬──────┘                                                 │
+│         │ clone(NEWUSER|NEWNS|...) + landlock + seccomp + nnp    │
+│         ▼                                                        │
+│  ┌─────────────────────────────────────────────────┐ ◄── trust   │
+│  │ Sandbox: 8 layers + tmpfs /box, /tmp            │     boundary │
+│  │   - no DB creds, no API key, no host paths      │     3        │
+│  │   - read-only runner rootfs                     │              │
+│  │   - empty network namespace                     │              │
+│  └─────────────────────────────────────────────────┘              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The three trust boundaries are crossed by, respectively:
+
+1. A bearer key (constant-time compared) and the `tower_governor` rate limit.
+2. Postgres credentials confined to the worker's environment + cgroup delegation that only grants control over its own subtree.
+3. The full 8-layer stack listed below.
+
+## Defense-in-depth layers
+
+| # | Layer | What it stops |
+|---|---|---|
+| 1 | **User namespace** (`unshare(CLONE_NEWUSER)`) | Code thinks it's root; outside the namespace it's an unprivileged uid. setuid binaries inert. |
+| 2 | **PID/NET/IPC/UTS/MNT namespaces** | No view of host processes, no network reachability, no shared IPC or hostname. |
+| 3 | **`pivot_root`** to read-only runner rootfs | No host `/etc/shadow`, no `/proc` host fields, no path traversal escapes. |
+| 4 | **Landlock LSM (ABI v1)** | Even with capabilities, fs writes are confined to `/box` + `/tmp`. |
+| 5 | **Seccomp BPF** (Docker default minus 14 syscalls) | `io_uring_*`, `bpf`, `ptrace`, `unshare`, `keyctl`, `mount`, `pivot_root`, kernel modules all blocked. ~310 syscalls denied. |
+| 6 | **cgroup v2** (`memory.max`, `cpu.max`, `pids.max`, `cgroup.kill`) | Hard memory/CPU caps; PID ceiling kills fork bombs; `cgroup.kill` atomic teardown. |
+| 7 | **Capability drop** (`cap_set_proc(cap_init())`, bounding set `∅`) | `CAP_SYS_ADMIN`, `CAP_NET_*`, all 38 caps removed across 5 capsets. |
+| 8 | **`NO_NEW_PRIVS`** (`prctl(PR_SET_NO_NEW_PRIVS)`) | setuid neutered, suid binaries inert, descendants can't gain privilege. |
+
+## STRIDE summary
+
+| Threat | Mitigation |
+|---|---|
+| **Spoofing** (impersonate a user) | Constant-time bearer compare; HMAC-SHA256 on webhook deliveries. |
+| **Tampering** (modify queue rows) | Postgres is the source of truth; row updates go through typed queries; `claimed_at` + `worker_id` for sweep recovery. |
+| **Repudiation** (deny submission) | Idempotency key (blake3 of body) + retention window with `expired` terminal state. |
+| **Information disclosure** (leak source, output, env) | Source/stdin/stdout never logged at INFO; 24h row TTL, 1h payload TTL; `Authorization` redacted from spans. |
+| **Denial of service** | Global rate limit (100 RPS burst), per-language limits, output ring-buffer with overflow marker, wall+CPU+memory+pids caps. |
+| **Elevation of privilege** (escape the sandbox) | 8-layer stack above; periodic zombie reaper; `PR_SET_CHILD_SUBREAPER` on worker boot. |
+
+## Known limitations
+
+- **Side-channels.** Spectre/Meltdown/L1TF mitigations rely on the host kernel — we don't apply IBPB ourselves. Pin to a kernel with up-to-date microcode and the relevant `mitigations=auto,nosmt` if you process untrusted user code.
+- **Resource fairness.** cgroup v2 weights are global; one tenant can saturate the worker pool. For multi-tenant deploys, run a worker pool per tenant.
+- **Network.** The submission's NET namespace is empty by default. Set `enable_network=true` on a language to bring up `lo`; for outbound access, run an egress firewall (v3 roadmap).
+- **Compile vs run limits.** Today both phases share the wall budget. Separate `compile_time_limit` / `compile_memory_limit` are roadmap (v1 followup).
+
+## Judge0 CVE comparison
+
+| CVE | Affects | ZeroCode status |
+|---|---|---|
+| [CVE-2023-28599](https://nvd.nist.gov/vuln/detail/CVE-2023-28599) | Judge0 — isolate sandbox escape via `/proc` symlink | Not applicable. ZeroCode uses `pivot_root` + landlock; host `/proc` is never reachable. |
+| [CVE-2024-28185](https://nvd.nist.gov/vuln/detail/CVE-2024-28185) | Judge0 — submission status manipulation via API | Not applicable. The status field is a typed discriminated union written only by the worker. |
+| [CVE-2024-28189](https://nvd.nist.gov/vuln/detail/CVE-2024-28189) | Judge0 — privilege escalation via misconfigured cgroup v1 | Not applicable. We require cgroup v2 unified; `cgroup.kill` is atomic. |
+
+ZeroCode CVE history: 0 known.
+
+<Aside>
+  Found a security issue? Please email security@... before opening a public
+  issue. We aim to acknowledge within 24 h and ship a fix within 7 days.
+</Aside>
