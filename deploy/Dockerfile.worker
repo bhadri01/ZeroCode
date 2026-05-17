@@ -19,17 +19,25 @@ COPY .sqlx ./.sqlx
 # Build the worker with the `native` sandbox feature enabled so the
 # worker can actually run submissions inside an OS-level sandbox.
 ENV SQLX_OFFLINE=true
-# Use an unsafe, naive sandbox for local development where kernel cgroup
-# features are unavailable (Docker for Mac). Do NOT use in production.
+# `unsafe-naive`: dev sandbox. NaiveSandbox chroots into the runner rootfs
+# before exec'ing the compile/run command so toolchains find /usr/include,
+# /usr/share, etc. inside the rootfs rather than the host's debian-slim base.
+# This avoids the cgroup-delegation requirement of NativeSandbox which Docker
+# Desktop's Linux VM on macOS does not satisfy out of the box.
 RUN cargo build --release -p zerocode-worker --features unsafe-naive
 
 FROM debian:trixie-slim AS worker
+# `mount` (from util-linux) is needed so NaiveSandbox can bind-mount /proc
+# and /dev into the runner rootfs before chroot. Already in this base, but
+# pin it explicitly so the dependency is obvious.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates libseccomp2 iproute2 && \
+        ca-certificates libseccomp2 iproute2 mount util-linux && \
     rm -rf /var/lib/apt/lists/*
-RUN groupadd --system zerocode && useradd --system --gid zerocode --uid 10001 --home /var/lib/zerocode --no-create-home zerocode
 COPY --from=builder /src/target/release/zerocode-worker /usr/local/bin/zerocode-worker
 COPY runners/languages.toml /runners/languages.toml
 ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
-USER zerocode
+# Run as root inside the container so the NativeSandbox can write to
+# /sys/fs/cgroup, unshare user namespaces, and pivot_root. The container
+# itself drops every capability except SYS_ADMIN (see compose), and the
+# sandbox per-submission drops everything before exec'ing user code.
 ENTRYPOINT ["/usr/local/bin/zerocode-worker"]

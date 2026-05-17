@@ -110,6 +110,10 @@ ZEROCODE_ANON_MAX_PER_WINDOW=6       # per-IP cap for anonymous submissions
 ZEROCODE_ANON_WINDOW_SECS=60
 ```
 
+When opened directly from `file://`, the playground now defaults its API probe
+to `http://localhost:8080`. If no API is reachable, the main run action stays
+live-only and the demo stream is exposed as a separate explicit button.
+
 The anonymous tier is gated by a per-IP quota independent of the authed
 `tower_governor` bucket; callback URLs and batch jobs remain authed-only.
 

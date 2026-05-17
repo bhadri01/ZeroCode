@@ -56,13 +56,11 @@ function TopNav({ token, status }) {
 function LanguagePicker({ selected, onSelect, history }) {
   const [q, setQ] = useState('');
   const filtered = LANGS.filter(l => l.name.toLowerCase().includes(q.toLowerCase()) || String(l.id).includes(q));
-  const core = filtered.filter(l => l.core);
-  const rest = filtered.filter(l => !l.core);
   return (
     <aside className="pg-rail">
       <style>{`
         .pg-rail {
-          width: 260px; flex-shrink: 0;
+          width: 240px; flex-shrink: 0;
           border-right: 1px solid var(--line);
           background: var(--bg);
           display: flex; flex-direction: column;
@@ -82,7 +80,12 @@ function LanguagePicker({ selected, onSelect, history }) {
           color: var(--fg-3); letter-spacing: 0.14em; text-transform: uppercase;
           display: flex; justify-content: space-between; align-items: center;
         }
-        .pg-rail-hd .count { color: var(--accent); }
+        .pg-rail-hd .count {
+          color: var(--accent);
+          background: color-mix(in oklab, var(--accent) 14%, transparent);
+          border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line));
+          padding: 1px 7px; border-radius: 99px; letter-spacing: 0.08em;
+        }
         .pg-rail-search {
           margin: 0 12px 8px; position: relative;
         }
@@ -98,25 +101,31 @@ function LanguagePicker({ selected, onSelect, history }) {
           position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
           color: var(--fg-3);
         }
-        .pg-rail-list { flex: 1; overflow-y: auto; padding: 4px 8px 16px; min-height: 0; }
         .pg-rail-section {
-          padding: 12px 8px 6px;
+          padding: 12px 16px 6px;
           font-family: var(--f-mono); font-size: 10px; color: var(--fg-3);
           letter-spacing: 0.16em; text-transform: uppercase;
-          display: flex; align-items: center; gap: 8px;
         }
-        .pg-rail-section::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+        .pg-rail-list { flex: 1; overflow-y: auto; padding: 0 8px 16px; min-height: 0; }
         .pg-row {
           appearance: none; border: 0; width: 100%; text-align: left;
-          padding: 8px 10px; border-radius: 6px;
+          padding: 9px 10px; border-radius: 6px;
           background: transparent;
           display: flex; align-items: center; gap: 10px;
           color: var(--fg-1); cursor: pointer;
-          transition: background .12s ease, color .12s ease;
+          transition: background .12s ease, color .12s ease, border-color .12s ease;
+          position: relative;
         }
         .pg-row:hover { background: var(--bg-1); }
-        .pg-row.active { background: color-mix(in oklab, var(--accent) 12%, var(--bg-1)); color: var(--fg); }
-        .pg-row.active .id { color: var(--accent); }
+        .pg-row.active {
+          background: color-mix(in oklab, var(--row-accent, var(--accent)) 14%, var(--bg-1));
+          color: var(--fg);
+        }
+        .pg-row.active::before {
+          content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px;
+          background: var(--row-accent, var(--accent)); border-radius: 0 2px 2px 0;
+        }
+        .pg-row.active .id { color: var(--row-accent, var(--accent)); }
         .pg-row .name { font-size: 13px; flex: 1; }
         .pg-row .v {
           font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.02em;
@@ -126,14 +135,20 @@ function LanguagePicker({ selected, onSelect, history }) {
           padding: 1px 4px; border-radius: 3px;
         }
         .pg-row .dot {
-          width: 8px; height: 8px; border-radius: 2px;
-          background: var(--accent-mark, var(--fg-3));
+          width: 9px; height: 9px; border-radius: 2px;
+          background: var(--row-accent, var(--fg-3));
+          box-shadow: 0 0 0 1px color-mix(in oklab, var(--row-accent, var(--fg-3)) 35%, transparent);
+        }
+        .pg-rail-empty {
+          padding: 16px; font: 11.5px var(--f-mono); color: var(--fg-3);
+          text-align: center;
         }
         .pg-rail-hist {
           border-top: 1px solid var(--line);
           padding: 12px 16px;
           font-family: var(--f-mono); font-size: 11px; color: var(--fg-2);
           flex-shrink: 0;
+          max-height: 38vh; overflow-y: auto;
         }
         .pg-rail-hist .h {
           font-size: 10px; color: var(--fg-3);
@@ -141,7 +156,7 @@ function LanguagePicker({ selected, onSelect, history }) {
           margin-bottom: 6px;
         }
         .pg-rail-hist .hr {
-          display: flex; justify-content: space-between;
+          display: flex; justify-content: space-between; gap: 10px;
           padding: 4px 0; color: var(--fg-1);
           border-top: 1px dashed var(--line);
         }
@@ -152,27 +167,25 @@ function LanguagePicker({ selected, onSelect, history }) {
         .pg-rail-hist .hr .re { color: var(--st-re); }
       `}</style>
       <div className="pg-rail-hd">
-        <span>languages</span>
+        <span>core languages</span>
         <span className="count">{LANGS.length}</span>
       </div>
       <div className="pg-rail-search">
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="5" cy="5" r="3.5"/><path d="M8 8l3 3"/></svg>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="search 41 langs · by name or id" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="search by name or id" />
       </div>
       <div className="pg-rail-list">
-        {core.length > 0 && <div className="pg-rail-section">core 7</div>}
-        {core.map(l => (
-          <button key={`c-${l.id}`} className={`pg-row ${selected.id === l.id ? 'active' : ''}`} onClick={() => onSelect(l)}>
-            <span className="dot" style={{ background: l.accent }}/>
-            <span className="name">{l.name}</span>
-            <span className="v">{l.version}</span>
-            <span className="id">{l.id}</span>
-          </button>
-        ))}
-        {rest.length > 0 && <div className="pg-rail-section">+ {rest.length} more</div>}
-        {rest.map(l => (
-          <button key={`r-${l.id}-${l.name}`} className={`pg-row ${selected.id === l.id && selected.name === l.name ? 'active' : ''}`} onClick={() => onSelect(l)}>
-            <span className="dot" style={{ background: 'var(--fg-4)' }}/>
+        {filtered.length === 0 && (
+          <div className="pg-rail-empty">no match · try clearing the search</div>
+        )}
+        {filtered.map(l => (
+          <button
+            key={l.id}
+            className={`pg-row ${selected.id === l.id ? 'active' : ''}`}
+            onClick={() => onSelect(l)}
+            style={{ '--row-accent': l.accent }}
+          >
+            <span className="dot"/>
             <span className="name">{l.name}</span>
             <span className="v">{l.version}</span>
             <span className="id">{l.id}</span>
@@ -185,7 +198,9 @@ function LanguagePicker({ selected, onSelect, history }) {
         {history.map((h, i) => (
           <div key={i} className="hr">
             <span>{h.name}</span>
-            <span className={h.verdict === 'accepted' ? 'ok' : h.verdict === 'tle' ? 'tle' : 're'}>{h.verdict} · {h.time.toFixed(3)}s</span>
+            <span className={h.verdict === 'accepted' ? 'ok' : h.verdict === 'tle' ? 'tle' : 're'}>
+              {h.verdict} · {typeof h.time === 'number' ? `${h.time.toFixed(3)}s` : 'pending'}
+            </span>
           </div>
         ))}
       </div>
@@ -194,7 +209,7 @@ function LanguagePicker({ selected, onSelect, history }) {
 }
 
 /* ─── Workspace bar (file tabs + run + limits + share) ─────────────── */
-function WorkspaceBar({ lang, status, statusDetail, onRun, onCancel, onReset, limits, setLimits, ceilings, apiOnline, apiAuthed, onShare, onOpenSettings, showApi, setShowApi }) {
+function WorkspaceBar({ lang, status, statusDetail, onRun, onRunDemo, onCancel, onReset, limits, setLimits, ceilings, apiOnline, apiAuthed, onShare, onOpenSettings, showApi, setShowApi }) {
   const [showLimits, setShowLimits] = useState(false);
   const [copied, setCopied] = useState(false);
   const isRunning = status === 'queued' || status === 'processing';
@@ -208,7 +223,7 @@ function WorkspaceBar({ lang, status, statusDetail, onRun, onCancel, onReset, li
   const liveLabel =
     apiOnline && apiAuthed ? 'live api' :
     apiOnline && !apiAuthed ? 'no auth' :
-    'demo';
+    'offline';
   const liveColor =
     apiOnline && apiAuthed ? 'var(--st-accepted)' :
     apiOnline && !apiAuthed ? 'var(--st-tle)' :
@@ -216,7 +231,15 @@ function WorkspaceBar({ lang, status, statusDetail, onRun, onCancel, onReset, li
   const liveHint =
     apiOnline && apiAuthed ? 'Connected to a live ZeroCode API and authenticated — runs hit the real backend.' :
     apiOnline && !apiAuthed ? 'API reachable but /v1/languages returned 401. Click here to set a bearer key.' :
-    'No API reachable. Runs are simulated locally. Click here to point at a server.';
+    'No API reachable. The main run action will not submit until you point the playground at a server.';
+  const runLabel =
+    apiOnline && apiAuthed ? 'run · ⌘↵' :
+    apiOnline && !apiAuthed ? 'set key' :
+    'connect api';
+  const runTitle =
+    apiOnline && apiAuthed ? 'Submit to the live ZeroCode API (⌘↵)' :
+    apiOnline && !apiAuthed ? 'API is reachable, but submissions need a bearer key.' :
+    'Connect this playground to a ZeroCode API before submitting.';
 
   return (
     <div className="pg-wbar">
@@ -360,10 +383,17 @@ function WorkspaceBar({ lang, status, statusDetail, onRun, onCancel, onReset, li
             cancel
           </button>
         ) : (
-          <button className="pg-btn primary" onClick={onRun}>
+          <>
+            {!apiOnline && (
+              <button className="pg-btn ghost" onClick={onRunDemo} title="Run the built-in sample stream without calling the API">
+                demo run
+              </button>
+            )}
+            <button className="pg-btn primary" onClick={onRun} title={runTitle}>
             <svg width="9" height="9" viewBox="0 0 8 8" fill="currentColor"><path d="M1 0 L7 4 L1 8 Z"/></svg>
-            run · ⌘↵
-          </button>
+              {runLabel}
+            </button>
+          </>
         )}
       </div>
       {showLimits && (
@@ -767,9 +797,9 @@ function StatusStrip({ status, statusDetail, metrics, lang, token, apiOnline }) 
         <span>exit · <b>{metrics.exitCode != null ? metrics.exitCode : (status === 'accepted' ? '0' : '—')}</b></span>
       </div>
       <div className="right">
-        <span title={apiOnline ? 'Connected to a live ZeroCode API.' : 'No API reachable — simulated.'}>
-          mode · <b style={{ color: apiOnline ? 'var(--st-accepted)' : 'var(--fg-2)', fontWeight: 500 }}>
-            {apiOnline ? 'live' : 'demo'}
+        <span title={apiOnline ? 'Connected to a live ZeroCode API.' : 'No API reachable. Demo runs are explicit only.'}>
+          mode · <b style={{ color: apiOnline ? 'var(--st-accepted)' : 'var(--st-re)', fontWeight: 500 }}>
+            {apiOnline ? 'live' : 'offline'}
           </b>
         </span>
         <span>endpoint · <b style={{color:'var(--fg-1)',fontWeight:500}}>POST /v1/submissions</b></span>
@@ -792,18 +822,26 @@ function StatusStrip({ status, statusDetail, metrics, lang, token, apiOnline }) 
 /* ─── "Open in API" modal ─────────────────────────────────────────── */
 function ApiModal({ open, onClose, lang, code, limits, token }) {
   const [mode, setMode] = useState('curl');
+  const [copied, setCopied] = useState(false);
   if (!open) return null;
+  const api = typeof window !== 'undefined' ? window.ZeroCodeAPI : null;
+  const base = api?.base || location.origin;
   const escape = (s) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-  const json = `{"language_id":${lang.id},"source_code":"${escape(code)}","cpu_time_limit":${limits.timeS},"memory_limit":${limits.memoryMb * 1024},"max_processes_and_or_threads":${limits.pids}}`;
+  const json = `{"language_id":${lang.id},"source_code":"${escape(code)}","wall_time_limit":${limits.timeS},"cpu_time_limit":${limits.timeS},"memory_limit_mb":${limits.memoryMb}}`;
   const blocks = {
-    curl: `curl -X POST 'https://api.zerocode.run/v1/submissions?wait=true' \\
-  -H 'authorization: bearer $ZC_KEY' \\
+    curl: `curl -X POST '${base}/v1/submissions?wait=true' \\
+  -H 'authorization: Bearer $ZC_KEY' \\
   -H 'content-type: application/json' \\
   -d '${json}'`,
     grpc: `grpcurl -plaintext \\
-  -d '{"language_id":${lang.id},"source_code":"<...>","limits":{"time_s":${limits.timeS},"memory_mb":${limits.memoryMb},"pids":${limits.pids}}}' \\
-  api.zerocode.run:50051 zerocode.v2.ZeroCode/Create`,
+  -H 'authorization: Bearer $ZC_KEY' \\
+  -d '{"language_id":${lang.id},"source_code":"<...>","wall_time_limit":${limits.timeS},"memory_limit_mb":${limits.memoryMb}}' \\
+  ${(new URL(base)).hostname}:9091 zerocode.v2.ZeroCode/CreateSubmission`,
   };
+  function copy() {
+    try { navigator.clipboard?.writeText(blocks[mode]); setCopied(true); setTimeout(() => setCopied(false), 1200); }
+    catch {}
+  }
 
   return (
     <div className="pg-modal-bg" onClick={onClose}>
@@ -892,7 +930,7 @@ function ApiModal({ open, onClose, lang, code, limits, token }) {
           <span>token · <b>{token}</b></span>
           <span>·</span>
           <span>{Object.keys(blocks).length} transports · same state machine</span>
-          <button>copy</button>
+          <button onClick={copy}>{copied ? 'copied!' : 'copy'}</button>
         </div>
       </div>
     </div>
@@ -1217,15 +1255,48 @@ function App() {
   const [apiAuthed, setApiAuthed] = useState(false);
   const [apiLangs, setApiLangs] = useState(null);            // server-fetched LanguageView[]
   const [apiCeilings, setApiCeilings] = useState(null);      // { memoryMb, timeS } from server defaults
+  const [apiHint, setApiHint] = useState(null);
   const cancelStreamRef = useRef(null);
   const runCtlRef = useRef(null);                            // AbortController for the active run
 
   async function probeApi() {
-    const api = window.ZeroCodeAPI;
-    if (!api) return;
-    const { ok, authed } = await api.probe();
+    let api = window.ZeroCodeAPI;
+    if (!api) {
+      // api.js didn't install. Try to recover by re-fetching it with a fresh
+      // cache-bust and evaluating it inline — handles stale browser cache,
+      // CSP eval issues, or any other one-off where the <script> failed.
+      const inlineErr = window.__zcApiLoadError;
+      try {
+        const src = await fetch(`shared/api.js?retry=${Date.now()}`).then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        });
+        // eslint-disable-next-line no-new-func
+        new Function(src)();
+        api = window.ZeroCodeAPI;
+      } catch (e) {
+        setApiOnline(false); setApiAuthed(false);
+        setApiHint(
+          inlineErr
+            ? `shared/api.js errored: ${inlineErr}`
+            : `shared/api.js could not be loaded · ${e.message || e}`
+        );
+        return;
+      }
+      if (!api) {
+        setApiOnline(false); setApiAuthed(false);
+        setApiHint(
+          inlineErr
+            ? `shared/api.js errored: ${inlineErr}`
+            : 'shared/api.js ran but did not install window.ZeroCodeAPI'
+        );
+        return;
+      }
+    }
+    const { ok, authed, hint, error, base } = await api.probe();
     setApiOnline(!!ok);
     setApiAuthed(!!authed);
+    setApiHint(ok ? (hint || null) : `${base} → ${error || 'unreachable'}`);
     if (!ok) { setApiLangs(null); setApiCeilings(null); return; }
     try {
       const langs = await api.languages();
@@ -1450,7 +1521,7 @@ function App() {
   function runSimulated() {
     clearResults();
     setStatus('queued');
-    setToken('zc_' + Math.random().toString(36).slice(2, 10));
+    setToken('demo_' + Math.random().toString(36).slice(2, 10));
     setTimeout(() => setStatus('processing'), 280);
   }
 
@@ -1474,10 +1545,32 @@ function App() {
     return () => clearInterval(id);
   }, [status, lang, apiOnline]);
 
-  function run() {
+  async function run() {
     if (status === 'queued' || status === 'processing') return;
-    if (apiOnline) runOnApi();
-    else runSimulated();
+    // When the API is reachable, submit — even without a bearer key. The
+    // server admits anonymous traffic when ZEROCODE_ALLOW_ANONYMOUS=true and
+    // rate-limits it per IP; if the server actually requires a key it'll come
+    // back as 401 and the catch in runOnApi() surfaces a clear error with an
+    // "open settings" button. Don't preemptively block here.
+    if (apiOnline) {
+      runOnApi();
+      return;
+    }
+    // Offline state may be stale (cached api.js failed once, or the server
+    // just came up). Force a fresh probe before giving up.
+    const api = window.ZeroCodeAPI;
+    if (api?.resetProbe) {
+      api.resetProbe();
+      await probeApi();
+      // probeApi() updates state asynchronously; check the result inline.
+      const p = await api.probe();
+      if (p.ok) { runOnApi(); return; }
+    }
+    const base = api?.base || 'the configured API';
+    setError({
+      message: `No ZeroCode API is reachable at ${base}.${apiHint ? ` ${apiHint}` : ''}. Open settings to point the playground at a server.`,
+    });
+    setShowSettings(true);
   }
 
   // ⌘/Ctrl + Enter → run · ⌘/Ctrl + . → cancel
@@ -1504,7 +1597,7 @@ function App() {
     <>
       <TopNav token={token} status={status} />
       <WorkspaceBar lang={langWithServerVersion} status={status} statusDetail={statusDetail}
-                    onRun={run} onCancel={() => { cancelRun(); if (isRunning) setStatus('cancelled'); }}
+                    onRun={run} onRunDemo={runSimulated} onCancel={() => { cancelRun(); if (isRunning) setStatus('cancelled'); }}
                     onReset={reset}
                     limits={limits} setLimits={setLimits}
                     ceilings={apiCeilings}

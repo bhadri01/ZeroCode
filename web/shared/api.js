@@ -19,16 +19,33 @@
 
   let _base = null;
   let _key = null;
+  let _baseSource = 'default';
+  // Declared up here so `readConfig()` can clear it during the initial IIFE
+  // run — `let` declared later would put it in the TDZ and crash the module
+  // before `window.ZeroCodeAPI` ever gets assigned.
+  let probeCache = null;
+
+  function inferDefaultBase() {
+    if (location.protocol === 'file:') return 'http://localhost:8080';
+    return location.origin;
+  }
 
   function readConfig() {
     const fromQuery = qs.get('api');
     const fromStorage = (() => { try { return localStorage.getItem('zerocode.api'); } catch { return null; } })();
-    _base = (
-      (fromQuery && fromQuery.replace(/\/$/, '')) ||
-      (META && META.replace(/\/$/, '')) ||
-      (fromStorage && fromStorage.replace(/\/$/, '')) ||
-      location.origin
-    );
+    if (fromQuery) {
+      _base = fromQuery.replace(/\/$/, '');
+      _baseSource = 'query';
+    } else if (META) {
+      _base = META.replace(/\/$/, '');
+      _baseSource = 'meta';
+    } else if (fromStorage) {
+      _base = fromStorage.replace(/\/$/, '');
+      _baseSource = 'storage';
+    } else {
+      _base = inferDefaultBase().replace(/\/$/, '');
+      _baseSource = 'default';
+    }
     _key =
       qs.get('key') ||
       (() => { try { return localStorage.getItem('zerocode.key'); } catch { return null; } })();
@@ -242,9 +259,16 @@
   }
 
   // Probe the API once; returns { ok, base, hint? } for UI feedback.
-  let probeCache = null;
+  // `probeCache` is declared at the top of the IIFE so `readConfig()` can clear it.
   async function probe() {
     if (probeCache) return probeCache;
+    const fallbackBase = (() => {
+      if (_baseSource !== 'default') return null;
+      const host = location.hostname;
+      if (!host || !['localhost', '127.0.0.1'].includes(host)) return null;
+      const candidate = `http://${host}:8080`;
+      return candidate === _base ? null : candidate;
+    })();
     try {
       await jsonFetch('/v1/health');
       // Also try /v1/languages so a bearer-key mistake is caught up-front.
@@ -252,6 +276,24 @@
       try { await languages(); authed = true; } catch (e) { /* unauthenticated probe is fine, just not authed */ }
       probeCache = { ok: true, base: _base, authed };
     } catch (e) {
+      if (fallbackBase) {
+        const prevBase = _base;
+        try {
+          _base = fallbackBase;
+          await jsonFetch('/v1/health');
+          let authed = false;
+          try { await languages(); authed = true; } catch (inner) { /* same behavior */ }
+          probeCache = {
+            ok: true,
+            base: _base,
+            authed,
+            hint: `defaulted to ${_base} after ${prevBase} did not respond`,
+          };
+          return probeCache;
+        } catch (inner) {
+          _base = prevBase;
+        }
+      }
       probeCache = { ok: false, base: _base, error: String(e?.message || e) };
     }
     return probeCache;
@@ -266,13 +308,19 @@
     return `zc-ui-${h.toString(36)}-${Date.now().toString(36)}`;
   }
 
+  // Clear the in-memory probe cache so the next probe() actually hits the
+  // network. Useful when the UI wants to retry a failed connection without
+  // mutating localStorage via setBase()/setKey().
+  function resetProbe() { probeCache = null; }
+
   window.ZeroCodeAPI = {
     get base()   { return _base; },
     get key()    { return _key; },
+    get baseSource() { return _baseSource; },
     setBase, setKey,
     health, ready, languages, submit, get, stream, poll,
     statusKind, statusLabel, statusDetail,
     decode: b64dec, encode: b64enc,
-    probe, idemKey,
+    probe, resetProbe, idemKey,
   };
 })();

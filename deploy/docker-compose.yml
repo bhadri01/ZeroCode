@@ -105,12 +105,17 @@ services:
       runner-rootfs-init:
         condition: service_completed_successfully
     volumes:
-      - runner-rootfs:/var/lib/zerocode/runner-rootfs:ro
+      # Read-write in dev mode so NaiveSandbox can create per-job workdirs at
+      # <rootfs>/box/<token> before chroot()-ing into the rootfs. In a
+      # NativeSandbox deployment this should go back to :ro.
+      - runner-rootfs:/var/lib/zerocode/runner-rootfs:rw
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
     cap_drop: ["ALL"]
     cap_add:
       # Needed inside the worker's own user namespace for unshare/mount/pivot_root.
       - SYS_ADMIN
+      # Needed by NaiveSandbox to chroot() into the runner rootfs.
+      - SYS_CHROOT
     security_opt:
       - no-new-privileges:true
     cgroup: private

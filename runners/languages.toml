@@ -96,7 +96,14 @@ id = 73
 name = "Rust"
 version = "1.x-latest"
 source_file = "main.rs"
-compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "main.rs", "-o", "prog"]
+compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
 run_cmd = ["./prog"]
-env = []
+env = [
+    # rustup needs a toolchain selection — there's no `rustup default` baked
+    # into the runner rootfs. Naming `stable` lets rustup pick whichever
+    # stable-* toolchain is installed (matches the host arch).
+    ["RUSTUP_TOOLCHAIN", "stable"],
+    ["RUSTUP_HOME", "/usr/local/rustup"],
+    ["CARGO_HOME", "/usr/local/cargo"],
+]
 is_archived = false
