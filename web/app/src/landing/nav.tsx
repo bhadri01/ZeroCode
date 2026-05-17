@@ -131,18 +131,15 @@ export function Nav() {
         }
         .zc-mark:hover { opacity: .85; }
         .zc-mark-glyph {
-          width: 18px; height: 18px;
-          position: relative;
-          transition: transform .3s ease;
+          width: 22px; height: 22px;
+          display: inline-flex; align-items: center; justify-content: center;
+          color: var(--fg);
+          transition: transform .35s cubic-bezier(.22,.61,.36,1);
         }
-        .zc-mark:hover .zc-mark-glyph { transform: rotate(-10deg); }
-        .zc-mark-glyph::before, .zc-mark-glyph::after {
-          content: ''; position: absolute; inset: 0;
-          border: 1.5px solid currentColor;
-        }
-        .zc-mark-glyph::before { transform: rotate(0deg); opacity: .35; }
-        .zc-mark-glyph::after  { transform: rotate(20deg) scale(.7); color: var(--accent); }
-        .zc-mark-glyph { color: var(--fg); }
+        .zc-mark:hover .zc-mark-glyph { transform: rotate(-22.5deg); }
+        .zc-mark-glyph svg { width: 100%; height: 100%; display: block; }
+        .zc-mark-glyph .frame { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+        .zc-mark-glyph .core  { fill: var(--accent); transition: fill .25s ease; }
         .zc-mark b { font-weight: 500; }
         .zc-nav-links {
           display: flex; align-items: center; gap: 22px;
@@ -241,8 +238,13 @@ export function Nav() {
         .zc-cta-primary:active { transform: translateY(1px); }
       `}</style>
       <div className="zc-nav-inner">
-        <a className="zc-mark" href="/">
-          <span className="zc-mark-glyph" />
+        <a className="zc-mark" href="/" aria-label="ZeroCode home">
+          <span className="zc-mark-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img">
+              <path className="frame" d="M9 3 H15 L21 9 V15 L15 21 H9 L3 15 V9 Z"/>
+              <circle className="core" cx="12" cy="12" r="2.4"/>
+            </svg>
+          </span>
           <b>zerocode</b>
         </a>
         <div className="zc-nav-links">

@@ -178,11 +178,16 @@ function TopNav({ token }: { token: string }) {
     <nav className="pg-nav">
       <style>{`
         .pg-nav { display: flex; align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex-shrink: 0; }
-        .pg-mark { display: flex; align-items: center; gap: 10px; font-family: var(--f-mono); font-size: 13px; font-weight: 500; color: var(--fg); }
-        .pg-mark .g { width: 16px; height: 16px; position: relative; }
-        .pg-mark .g::before, .pg-mark .g::after { content: ''; position: absolute; inset: 0; border: 1.5px solid currentColor; }
-        .pg-mark .g::before { opacity: .35; }
-        .pg-mark .g::after { transform: rotate(20deg) scale(.7); color: var(--accent); }
+        .pg-mark { display: flex; align-items: center; gap: 10px; font-family: var(--f-mono); font-size: 13px; font-weight: 500; color: var(--fg); transition: opacity .15s ease; }
+        .pg-mark:hover { opacity: .85; }
+        .pg-mark .g {
+          width: 20px; height: 20px; display: inline-flex;
+          transition: transform .35s cubic-bezier(.22,.61,.36,1);
+        }
+        .pg-mark:hover .g { transform: rotate(-22.5deg); }
+        .pg-mark .g svg { width: 100%; height: 100%; display: block; }
+        .pg-mark .g .frame { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+        .pg-mark .g .core  { fill: var(--accent); }
         .pg-nav-right { margin-left: auto; display: flex; gap: 12px; align-items: center; font-family: var(--f-mono); font-size: 11.5px; color: var(--fg-3); }
         .pg-nav-right a { color: var(--fg-2); }
         .pg-nav-right a:hover { color: var(--fg); }
@@ -193,7 +198,15 @@ function TopNav({ token }: { token: string }) {
           .pg-nav-right { width: 100%; margin-left: 0; }
         }
       `}</style>
-      <a className="pg-mark" href="/"><span className="g"/>zerocode</a>
+      <a className="pg-mark" href="/" aria-label="ZeroCode home">
+        <span className="g" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path className="frame" d="M9 3 H15 L21 9 V15 L15 21 H9 L3 15 V9 Z"/>
+            <circle className="core" cx="12" cy="12" r="2.4"/>
+          </svg>
+        </span>
+        zerocode
+      </a>
       <div className="pg-nav-right">
         <a href="/">home</a>
         <span>·</span>

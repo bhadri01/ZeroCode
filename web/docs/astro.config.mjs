@@ -12,6 +12,12 @@ export default defineConfig({
     starlight({
       title: 'ZeroCode',
       description: 'Self-hosted, sandboxed code execution for 41 languages.',
+      logo: {
+        src: './src/assets/logo.svg',
+        replacesTitle: false,
+        alt: 'ZeroCode',
+      },
+      favicon: '/favicon.svg',
       social: {
         github: 'https://github.com/bhadri01/ZeroCode',
       },

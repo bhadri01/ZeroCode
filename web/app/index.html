@@ -9,9 +9,60 @@
       name="description"
       content="ZeroCode is an open-source, self-hostable code execution sandbox supporting 41 languages with 8 layers of defense-in-depth security."
     />
+    <style>
+      /* Branded first-paint loader. Lives inside #root and is replaced
+         the moment React mounts — no JS cleanup needed. */
+      .zc-boot {
+        position: fixed; inset: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px;
+        background: #161616; color: #F2F2F2;
+        font-family: ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+      }
+      [data-theme="light"] .zc-boot { background: #FAFAFA; color: #1A1A1A; }
+      .zc-boot-mark { width: 56px; height: 56px; display: block; }
+      .zc-boot-mark .frame {
+        stroke: currentColor; fill: none; stroke-width: 1.8;
+        stroke-linejoin: round; stroke-linecap: round;
+      }
+      .zc-boot-mark .core  {
+        fill: #D17B49; transform-origin: 32px 32px;
+        animation: zc-boot-core 1.8s cubic-bezier(.4,0,.6,1) infinite;
+      }
+      .zc-boot-mark .pulse {
+        fill: none; stroke: #D17B49; stroke-width: 1.6;
+        transform-origin: 32px 32px;
+        animation: zc-boot-pulse 1.8s cubic-bezier(.22,.61,.36,1) infinite;
+      }
+      @keyframes zc-boot-core  {
+        0%, 100% { transform: scale(1);   }
+        50%      { transform: scale(0.78);}
+      }
+      @keyframes zc-boot-pulse {
+        0%   { transform: scale(1);   opacity: 0.55; }
+        75%, 100% { transform: scale(2.2); opacity: 0; }
+      }
+      .zc-boot-label {
+        font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase;
+        color: color-mix(in oklab, currentColor 55%, transparent);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .zc-boot-mark .core  { animation: none; }
+        .zc-boot-mark .pulse { display: none; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="zc-boot" aria-hidden="true">
+        <svg class="zc-boot-mark" viewBox="0 0 64 64" role="img" aria-label="ZeroCode">
+          <circle class="pulse" cx="32" cy="32" r="6" />
+          <path  class="frame" d="M24 8 H40 L56 24 V40 L40 56 H24 L8 40 V24 Z" />
+          <circle class="core"  cx="32" cy="32" r="3.6" />
+        </svg>
+        <span class="zc-boot-label">zerocode</span>
+      </div>
+    </div>
     <script type="module" src="/src/landing/main.tsx"></script>
   </body>
 </html>
