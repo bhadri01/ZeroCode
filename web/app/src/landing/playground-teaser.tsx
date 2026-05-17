@@ -85,18 +85,79 @@ export function PlaygroundTeaser() {
         .zc-teaser .shell { padding-bottom: 96px; }
         .zc-teaser-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) 1fr; gap: 36px; align-items: start; }
         @media (max-width: 1020px) { .zc-teaser-grid { grid-template-columns: 1fr; } }
-        .zc-ide { border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; background: var(--bg-1); font-family: var(--f-mono); box-shadow: 0 30px 80px -30px rgba(0,0,0,0.6); }
-        .zc-ide-hd { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-        .zc-ide-hd .dots { display: flex; gap: 6px; }
-        .zc-ide-hd .dots span { width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--line-2); }
-        .zc-ide-hd .lang { font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 4px; letter-spacing: 0.04em; margin-left: 8px; }
-        .zc-ide-hd .lang b { color: var(--accent); font-weight: 500; }
-        .zc-ide-hd .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-        .zc-ide-hd .status { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--fg-2); }
+        .zc-ide {
+          border: 1px solid var(--line-2); border-radius: 11px; overflow: hidden;
+          background: var(--bg-1); font-family: var(--f-mono);
+          box-shadow:
+            0 1px 0 rgba(255,255,255,0.04) inset,
+            0 30px 80px -30px rgba(0,0,0,0.6),
+            0 12px 32px -12px rgba(0,0,0,0.45);
+        }
+        /* Title bar — three-column grid: traffic lights · centered title · trailing controls. */
+        .zc-ide-hd {
+          display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+          padding: 9px 12px; border-bottom: 1px solid var(--line);
+          background:
+            linear-gradient(180deg,
+              color-mix(in oklab, var(--bg-2) 85%, transparent) 0%,
+              color-mix(in oklab, var(--bg-2) 55%, transparent) 60%,
+              color-mix(in oklab, var(--bg-1) 70%, transparent) 100%);
+          position: relative;
+        }
+        .zc-ide-hd::after {
+          content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+          background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--line-strong) 50%, transparent), transparent);
+          pointer-events: none;
+        }
+        .zc-ide-hd .dots {
+          display: flex; gap: 8px; justify-self: start; align-items: center;
+        }
+        .zc-ide-hd .dots .tl {
+          position: relative;
+          width: 12px; height: 12px; border-radius: 50%; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+          box-shadow:
+            inset 0 0 0 0.5px rgba(0,0,0,0.4),
+            inset 0 1px 0 rgba(255,255,255,0.18),
+            0 0 0 0.5px rgba(0,0,0,0.25);
+          transition: filter .15s ease, transform .15s ease;
+        }
+        .zc-ide-hd .dots .tl:hover { filter: brightness(1.08); transform: scale(1.04); }
+        .zc-ide-hd .dots .tl.close { background: radial-gradient(circle at 35% 30%, #ff8a82 0%, #ff5f57 60%, #e54339 100%); }
+        .zc-ide-hd .dots .tl.min   { background: radial-gradient(circle at 35% 30%, #ffd57e 0%, #febc2e 60%, #d99b18 100%); }
+        .zc-ide-hd .dots .tl.max   { background: radial-gradient(circle at 35% 30%, #6fdd86 0%, #28c840 60%, #1aac32 100%); }
+        .zc-ide-hd .dots .tl svg {
+          opacity: 0;
+          transition: opacity .15s ease;
+          width: 7px; height: 7px;
+          color: rgba(0,0,0,0.7);
+        }
+        .zc-ide:hover .zc-ide-hd .dots .tl svg { opacity: 0.95; }
+        .zc-ide-hd .title {
+          justify-self: center;
+          display: inline-flex; align-items: baseline; gap: 8px;
+          font-family: var(--f-mono);
+          color: var(--fg-2);
+          font-size: 12px;
+          letter-spacing: 0.02em;
+          max-width: 100%;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .zc-ide-hd .title .file { color: var(--fg-1); font-weight: 500; }
+        .zc-ide-hd .title .sep  { color: var(--fg-4); }
+        .zc-ide-hd .title .lang-tag { color: var(--accent); }
+        .zc-ide-hd .right { justify-self: end; display: flex; align-items: center; gap: 8px; }
+        .zc-ide-hd .status { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--fg-2); }
         .zc-ide-hd .status .pulse { width: 6px; height: 6px; border-radius: 50%; }
-        .zc-ide-hd .run-btn { appearance: none; border: 0; background: var(--accent); color: #0a0a0a; padding: 6px 12px; border-radius: 6px; font-family: var(--f-mono); font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: filter .15s ease; }
-        .zc-ide-hd .run-btn:hover { filter: brightness(1.08); }
-        .zc-ide-hd .run-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .zc-ide-hd .run-btn { appearance: none; border: 0; background: var(--accent); color: #0a0a0a; padding: 6px 12px; border-radius: 6px; font-family: var(--f-mono); font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: filter .15s ease, transform .15s ease; }
+        .zc-ide-hd .run-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        .zc-ide-hd .run-btn:active { transform: translateY(0); }
+        .zc-ide-hd .run-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+        /* Mobile: hide centered title to save space. */
+        @media (max-width: 640px) {
+          .zc-ide-hd { grid-template-columns: auto 1fr; }
+          .zc-ide-hd .title { display: none; }
+        }
         .zc-ide-body { display: grid; grid-template-columns: 1.2fr 1fr; min-height: 360px; }
         @media (max-width: 700px) { .zc-ide-body { grid-template-columns: 1fr; } }
         .zc-ide-editor { border-right: 1px solid var(--line); padding: 14px 16px; font-size: 12.5px; line-height: 1.75; color: var(--fg-1); background: linear-gradient(180deg, rgba(255,255,255,0.012), transparent 30%), var(--bg-1); }
@@ -138,9 +199,30 @@ export function PlaygroundTeaser() {
         <div className="zc-teaser-grid">
           <div className="zc-ide">
             <div className="zc-ide-hd">
-              <div className="dots"><span/><span/><span/></div>
-              <span className="lang">lang · <b>rust 1.85</b></span>
-              <span className="lang">id · 73</span>
+              <div className="dots" aria-hidden="true">
+                <span className="tl close">
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                    <path d="M2.5 2.5L7.5 7.5M7.5 2.5L2.5 7.5"/>
+                  </svg>
+                </span>
+                <span className="tl min">
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                    <path d="M2 5h6"/>
+                  </svg>
+                </span>
+                <span className="tl max">
+                  <svg viewBox="0 0 10 10" fill="currentColor">
+                    <path d="M2.2 3.4 L2.2 7.4 L6.2 7.4 Z M7.8 6.6 L7.8 2.6 L3.8 2.6 Z"/>
+                  </svg>
+                </span>
+              </div>
+              <span className="title">
+                <span className="file">fibonacci.rs</span>
+                <span className="sep">·</span>
+                <span className="lang-tag">rust 1.85</span>
+                <span className="sep">·</span>
+                <span>id 73</span>
+              </span>
               <div className="right">
                 <span className="status" style={{ color: statusColor[phase], borderColor: statusColor[phase] }}>
                   <span className="pulse" style={{ background: statusColor[phase], boxShadow: phase !== 'idle' ? `0 0 8px ${statusColor[phase]}` : 'none' }} />

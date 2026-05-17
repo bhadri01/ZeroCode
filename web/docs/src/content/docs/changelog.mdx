@@ -5,23 +5,94 @@ description: Per-release notes and versioning policy.
 
 ## Unreleased
 
-- **Removed gRPC API tier.** `zerocode.v2.ZeroCode` service + tonic reflection
-  are gone; REST + SSE is the sole protocol surface. Dropped `tonic`,
-  `prost`, `tonic-reflection`, and `tonic-build` from the workspace.
-  Compose no longer exposes `:9091`; Dockerfile.service no longer installs
-  `protoc`.
-- **Removed OTLP tracing.** The gRPC-based OTLP exporter went with tonic.
-  Observability is now Prometheus metrics + structured stdout logs.
-  Re-add via `opentelemetry-otlp` with the `http-proto` exporter if needed.
-- **Removed Open-in-API modal** from the playground (already in v0.1.4 docs;
-  formalized here).
+### Sandbox
+
+- **NaiveSandbox now reports peak memory.** Background sampler polls
+  `/proc/<pid>/status` (`VmHWM`) every 5 ms while the run child is alive.
+  Needed because the dev build runs under `--features unsafe-naive`
+  (Docker Desktop on macOS doesn't allow cgroup-v2 delegation, so
+  `memory.peak` isn't readable). Real `NativeSandbox` on Linux is
+  unchanged — it still reads cgroup `memory.peak` directly.
+- **Wall / CPU time exclude compile phase.** `wall_time` and `cpu_time`
+  on the result now reflect *user-code execution only* — a Rust
+  hello-world no longer looks like a 2-second program because of rustc
+  startup. Compile-failure and compile-timeout paths report `0` for
+  both (user code never ran).
+
+### Languages
+
+- **Rust toolchain paths fixed** in `runners/languages.toml`:
+  `compile_cmd[0]` is now `/usr/bin/rustc` (symlink that lives in the
+  runner rootfs); `RUSTUP_HOME` / `CARGO_HOME` point under `/root` to
+  match how `Dockerfile.core` installs rustup. Previously rustc spawns
+  failed with `No such file or directory`.
+- **Java JVM flags moved** from `JAVA_TOOL_OPTIONS` to `run_cmd` args.
+  The JVM always prints `Picked up JAVA_TOOL_OPTIONS: …` to stderr when
+  that env var is set, and the JDK has no flag to silence it — it was
+  leaking into the user-visible output.
+
+### API limits
+
+- **Anonymous quota: `ZEROCODE_ANON_MAX_PER_WINDOW=0` disables the
+  quota entirely.** Convention added in `anon_quota.rs`; the dev
+  `docker-compose.yml` now defaults to `0` so a developer hammering the
+  playground doesn't trip the cap. Set to a positive value to reinstate.
+- **`tower_governor` RPS / burst are env-configurable.** New
+  `ZEROCODE_GOVERNOR_RPS` and `ZEROCODE_GOVERNOR_BURST` knobs (default
+  `100` each, matching the previous hardcoded values). Dev compose
+  bumps both to `10000` so iterative testing doesn't hit `HTTP 429`.
+
+### Playground UI
+
+- **API key is now clearly optional.** Anonymous submissions are the
+  default tier for the embedded playground (`ZEROCODE_ALLOW_ANONYMOUS`
+  is on). The "no auth" status pill is gone; the live indicator simply
+  reads `live` when the API is reachable.
+- **`live api` pill + API settings dialog removed** from the playground.
+  The pill clicked through to a settings modal that asked for a bearer
+  key — confusing UX in the embedded mode. Bottom status strip still
+  shows non-clickable `live` / `offline`.
+- **Memory metric formats by unit.** `formatMem` helper in `App.tsx`
+  picks `B` / `KB` / `MB` based on magnitude — sub-1 KiB programs show
+  e.g. `512 B` instead of `0.0 MB`.
+- **Node.js syntax highlighting fixed.** The editor maps the `javascript`
+  CmLang to Monaco's `javascript` grammar (was `typescript`); the TS
+  grammar sets `defaultToken: "invalid"` so JS-only syntax (BigInt `0n`,
+  template literals) got marked invalid and the Monokai theme rendered
+  it red/underlined, looking untheme'd.
+- **Python and Java icons are the official two-color logos** (`#0277BD`
+  + `#FFC107` for Python's two snakes; `#F44336` + `#1565C0` for Java's
+  Duke + cup). Simple-icons ships single-path silhouettes; the
+  diagonal-gradient trick used previously didn't reliably map color to
+  snake on Python and looked weak at small sizes.
+- **Language picker sorted alphabetically** (C → C++ → Go → Java →
+  Node.js → Python → Rust).
+- **`compile` output tab hidden when empty.** Auto-reappears (and
+  auto-focuses) on compile errors. Stops the tab from looking like
+  dead UI for interpreted languages and successful builds.
+- **`stdin` panel copy shortened** to `empty` (header empty-state) and
+  `input · piped to stdin` (textarea placeholder).
+
+### Carried over from v0.1.4 cleanup
+
+- **Removed gRPC API tier.** `zerocode.v2.ZeroCode` service + tonic
+  reflection are gone; REST + SSE is the sole protocol surface.
+  Dropped `tonic`, `prost`, `tonic-reflection`, and `tonic-build` from
+  the workspace. Compose no longer exposes `:9091`; Dockerfile.service
+  no longer installs `protoc`.
+- **Removed OTLP tracing.** The gRPC-based OTLP exporter went with
+  tonic. Observability is now Prometheus metrics + structured stdout
+  logs. Re-add via `opentelemetry-otlp` with the `http-proto` exporter
+  if needed.
+- **Removed Open-in-API modal** from the playground.
 - Web UI migrated from plain React 18 UMD + Babel-standalone to a pnpm
-  workspace with Vite + React + TypeScript (landing + playground) and Astro 5
-  + Starlight (docs). Editor is **Monaco** with a custom Monokai Pro theme.
-- `zerocode-api` gained `ZEROCODE_WEB_DIR` to serve a configurable static
-  directory as the fallback route; the new `deploy/Dockerfile.service`
-  builds `web/dist/` in a node:20 stage and bundles it into the distroless
-  final image at `/srv/web`.
+  workspace with Vite + React + TypeScript (landing + playground) and
+  Astro 5 + Starlight (docs). Editor is **Monaco** with a custom
+  Monokai Pro theme.
+- `zerocode-api` gained `ZEROCODE_WEB_DIR` to serve a configurable
+  static directory as the fallback route; the new
+  `deploy/Dockerfile.service` builds `web/dist/` in a node:20 stage
+  and bundles it into the distroless final image at `/srv/web`.
 - Static-fallback security headers: CSP, COOP, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy, X-Frame-Options.
 

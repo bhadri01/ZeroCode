@@ -144,11 +144,6 @@ export function Nav() {
         .zc-mark-glyph::after  { transform: rotate(20deg) scale(.7); color: var(--accent); }
         .zc-mark-glyph { color: var(--fg); }
         .zc-mark b { font-weight: 500; }
-        .zc-mark .ver {
-          font-size: 10.5px; color: var(--fg-3);
-          padding: 2px 6px; border: 1px solid var(--line-2);
-          border-radius: 3px; letter-spacing: 0.08em;
-        }
         .zc-nav-links {
           display: flex; align-items: center; gap: 22px;
           margin-left: 8px;
@@ -160,7 +155,6 @@ export function Nav() {
         @media (max-width: 480px) {
           .zc-star span:not(.sep):not(.count) { display: none; }
           .zc-cta-primary span.cta-label { display: none; }
-          .zc-mark .ver { display: none; }
         }
 
         /* Mobile menu toggle — shown only when the inline links hide. */
@@ -250,7 +244,6 @@ export function Nav() {
         <a className="zc-mark" href="/">
           <span className="zc-mark-glyph" />
           <b>zerocode</b>
-          <span className="ver">v0.1.4</span>
         </a>
         <div className="zc-nav-links">
           <a href="#isolation">isolation</a>

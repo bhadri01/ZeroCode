@@ -79,19 +79,6 @@ export function Hero() {
         }
         .zc-hero-inner { max-width: 1180px; margin: 0 auto; }
 
-        .zc-hero-kicker {
-          display: inline-flex; align-items: center; gap: 10px;
-          font: 500 11.5px var(--f-mono);
-          color: var(--fg-2); letter-spacing: 0.14em; text-transform: uppercase;
-          padding: 5px 12px; border: 1px solid var(--line-2); border-radius: 99px;
-          background: color-mix(in oklab, var(--bg-1) 80%, transparent);
-          margin-bottom: clamp(20px, 4vw, 32px);
-        }
-        .zc-hero-kicker .dot {
-          width: 6px; height: 6px; border-radius: 50%; background: var(--st-accepted);
-          box-shadow: 0 0 0 3px color-mix(in oklab, var(--st-accepted) 25%, transparent);
-        }
-
         .zc-hero h1 {
           margin: 0;
           font-family: var(--f-display); font-weight: 400;
@@ -200,11 +187,6 @@ export function Hero() {
         }
       `}</style>
       <div className="zc-hero-inner">
-        <div className="zc-hero-kicker">
-          <span className="dot" />
-          <span>v0.1.4 · MIT / Apache 2.0 · zero CVEs</span>
-        </div>
-
         <h1>
           Run untrusted code.<br />
           <span className="it">Without the prayer.</span>

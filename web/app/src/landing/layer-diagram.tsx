@@ -76,7 +76,7 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
     function loop(now: number) {
       if (!pausedRef.current) {
         const elapsed = (now - startRef.current) / 1000;
-        const cycleS = 4.2;
+        const cycleS = 5.2;
         const cycleT = (elapsed % cycleS) / cycleS;
         setT(cycleT);
         const v = Math.min(18, Math.floor(cycleT * 28 * 100) / 100);
@@ -93,37 +93,69 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
     pausedRef.current = hoverIdx !== null;
   }, [hoverIdx]);
 
+  // smoothstep — eases linear progress into a soft S-curve.
+  function smooth(x: number) {
+    const c = Math.max(0, Math.min(1, x));
+    return c * c * (3 - 2 * c);
+  }
+
+  // Phase windows on the [0,1) cycle:
+  //   [0.00, 0.06)  intro      — packet fades in above the outer ring
+  //   [0.06, 0.54)  rings 0..7 — 6% of the cycle per ring, eased per segment
+  //   [0.54, 0.72)  kernel hit — kernel pulses, packet fades into the core
+  //   [0.72, 1.00)  rest       — rings ease back to neutral, then loop
+  const RING_START = 0.06;
+  const RING_STEP  = 0.06;
+  const RING_END   = RING_START + RING_STEP * 8;     // 0.54
+  const KERNEL_END = 0.72;
+
   function activeFromT(t: number): HoverKind {
     if (hoverIdx !== null) return hoverIdx;
-    if (t < 0.04) return null;
-    if (t < 0.52) return Math.min(7, Math.floor((t - 0.04) / 0.06));
-    return 'kernel';
+    if (t < RING_START) return null;
+    if (t < RING_END)   return Math.min(7, Math.floor((t - RING_START) / RING_STEP));
+    if (t < KERNEL_END) return 'kernel';
+    return null;
   }
   function packetY(t: number): number {
-    if (t < 0.04) {
-      const localT = t / 0.04;
+    if (t < RING_START) {
+      const localT = smooth(t / RING_START);
       return G.cy - G.radii[0] - 50 + localT * 50;
     }
-    if (t < 0.52) {
-      const idx = Math.min(7, Math.floor((t - 0.04) / 0.06));
-      const local = ((t - 0.04) / 0.06) - idx;
+    if (t < RING_END) {
+      const idx = Math.min(7, Math.floor((t - RING_START) / RING_STEP));
+      const local = smooth(((t - RING_START) / RING_STEP) - idx);
       const yStart = G.cy - G.radii[idx];
       const yEnd = idx < 7 ? G.cy - G.radii[idx + 1] : G.cy - G.kernelR - 6;
       return yStart + (yEnd - yStart) * local;
     }
-    if (t < 0.65) {
-      const local = (t - 0.52) / 0.13;
+    if (t < KERNEL_END) {
+      const local = smooth((t - RING_END) / (KERNEL_END - RING_END));
       const yStart = G.cy - G.kernelR - 6;
       const yEnd = G.cy;
       return yStart + (yEnd - yStart) * local;
     }
     return G.cy;
   }
+  function packetOpacity(t: number): number {
+    if (hoverIdx !== null) return 0;
+    if (t < RING_START) return smooth(t / RING_START);
+    if (t < RING_END + 0.04) return 1;
+    if (t < KERNEL_END) return 1 - smooth((t - RING_END - 0.04) / (KERNEL_END - RING_END - 0.04));
+    return 0;
+  }
+  function kernelGlow(t: number): number {
+    if (hoverIdx === 'kernel') return 1;
+    if (t < RING_END - 0.02) return 0;
+    if (t < KERNEL_END) return smooth((t - (RING_END - 0.02)) / (KERNEL_END - (RING_END - 0.02)));
+    if (t < KERNEL_END + 0.10) return 1 - smooth((t - KERNEL_END) / 0.10);
+    return 0;
+  }
 
   const active = activeFromT(t);
   const pY = packetY(t);
-  const kernelActive = active === 'kernel';
-  const showPacket = t < 0.65 && hoverIdx === null;
+  const pOpacity = packetOpacity(t);
+  const kGlow = kernelGlow(t);
+  const showPacket = pOpacity > 0.01 && hoverIdx === null;
 
   const labelStartX = isDetail ? 480 : 405;
   const labelStartY = isDetail ? 70 : 50;
@@ -139,7 +171,10 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
 
         .ldiag .ring {
           fill: none; stroke: var(--line-2); stroke-width: 1;
-          transition: stroke .35s cubic-bezier(.4,0,.2,1), stroke-width .35s ease, opacity .25s ease;
+          transition:
+            stroke 480ms cubic-bezier(.22,.61,.36,1),
+            stroke-width 480ms cubic-bezier(.22,.61,.36,1),
+            opacity 320ms ease;
         }
         .ldiag .ring.active {
           stroke: var(--accent); stroke-width: 2.2;
@@ -149,24 +184,25 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
         .ldiag .ring.passed { stroke: color-mix(in oklab, var(--accent) 45%, var(--line-2)); stroke-width: 1.2; }
         .ldiag .ring.dim    { stroke: var(--line); opacity: .45; }
 
-        .ldiag .ring-fill { fill: url(#zc-ring-active); opacity: 0; transition: opacity .35s ease; }
+        .ldiag .ring-fill { fill: url(#zc-ring-active); opacity: 0; transition: opacity 480ms cubic-bezier(.22,.61,.36,1); }
         .ldiag .ring-fill.on { opacity: 1; }
 
         .ldiag .kernel {
           fill: var(--bg-2); stroke: var(--accent); stroke-width: 1;
-          transition: filter .25s ease, stroke-width .25s ease;
+          transition: filter 280ms cubic-bezier(.22,.61,.36,1), stroke-width 280ms ease;
         }
-        .ldiag .kernel.hot { stroke-width: 2; filter: drop-shadow(0 0 14px color-mix(in oklab, var(--accent) 80%, transparent)); }
         .ldiag .kernel-label { font: 500 9.5px/1 var(--f-mono); fill: var(--accent); letter-spacing: 0.16em; text-transform: uppercase; }
+        .ldiag .kernel-pulse { fill: var(--accent); opacity: 0; pointer-events: none; }
 
+        .ldiag .packet-grp { pointer-events: none; will-change: opacity, transform; }
         .ldiag .packet {
           fill: var(--accent); stroke: var(--accent); stroke-width: 1;
           filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 90%, transparent))
                   drop-shadow(0 0 12px color-mix(in oklab, var(--accent) 50%, transparent));
         }
-        .ldiag .packet-core { fill: #fff; opacity: .35; }
+        .ldiag .packet-core { fill: #fff; opacity: .55; }
         .ldiag .packet-trail {
-          stroke: var(--accent); stroke-width: 1.4; opacity: .6;
+          stroke: var(--accent); stroke-width: 1.4;
           stroke-dasharray: 2 4;
           filter: drop-shadow(0 0 3px color-mix(in oklab, var(--accent) 60%, transparent));
         }
@@ -188,9 +224,45 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
         .ldiag .lbl-grp.dim    .lbl-call { opacity: .35; }
         .ldiag .lbl-grp:hover  .lbl-name { fill: var(--fg); }
 
-        .ldiag .xray-bg { fill: color-mix(in oklab, var(--bg) 92%, transparent); stroke: var(--accent); stroke-width: 1; }
-        .ldiag .xray-t { font: 500 10px/1 var(--f-mono); fill: var(--accent); letter-spacing: 0.14em; }
-        .ldiag .xray-v { font: 400 11.5px/1.4 var(--f-mono); fill: var(--fg); }
+        .ldiag .xray {
+          box-sizing: border-box;
+          background: color-mix(in oklab, var(--bg) 94%, transparent);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--line-2));
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-family: var(--f-mono);
+          color: var(--fg);
+          box-shadow: 0 8px 24px -12px rgba(0,0,0,0.6);
+          animation: ldiag-xray-in 220ms cubic-bezier(.22,.61,.36,1);
+        }
+        @keyframes ldiag-xray-in {
+          from { opacity: 0; transform: translateY(2px); }
+          to   { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ldiag .xray { animation: none; }
+        }
+        .ldiag .xray .t {
+          display: block;
+          font: 500 9.5px/1.2 var(--f-mono);
+          color: var(--accent); letter-spacing: 0.14em;
+          margin-bottom: 4px;
+          overflow-wrap: anywhere;
+        }
+        .ldiag .xray .v {
+          display: block;
+          font: 400 11px/1.4 var(--f-mono);
+          color: var(--fg);
+          word-break: break-word; overflow-wrap: anywhere;
+        }
+        .ldiag .xray .v.note {
+          margin-top: 4px;
+          font-size: 10px;
+          color: var(--fg-3);
+          font-style: italic;
+        }
 
         .ldiag .hit { fill: transparent; cursor: pointer; }
       `}</style>
@@ -243,26 +315,40 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
         })}
 
         <g>
+          {/* Soft outer pulse — eases in as the packet approaches the core. */}
           <circle
-            className={`kernel ${kernelActive ? 'hot' : ''}`}
+            className="kernel-pulse"
+            cx={G.cx} cy={G.cy}
+            r={G.kernelR + 6 + kGlow * 18}
+            opacity={kGlow * 0.22}
+          />
+          <circle
+            className="kernel"
             cx={G.cx} cy={G.cy} r={G.kernelR}
+            strokeWidth={1 + kGlow * 1.4}
+            style={{
+              filter: kGlow > 0
+                ? `drop-shadow(0 0 ${4 + kGlow * 12}px color-mix(in oklab, var(--accent) ${50 + kGlow * 40}%, transparent))`
+                : undefined,
+              cursor: 'pointer',
+            }}
             onMouseEnter={() => setHoverIdx('kernel')}
             onMouseLeave={() => setHoverIdx(null)}
-            style={{ cursor: 'pointer' }}
           />
           <text className="kernel-label" x={G.cx} y={G.cy + 2} textAnchor="middle" dominantBaseline="middle">exec</text>
         </g>
 
         {showPacket && (
-          <>
+          <g className="packet-grp" opacity={pOpacity}>
             <line
               className="packet-trail"
               x1={G.cx} y1={Math.max(G.cy - G.radii[0] - 60, pY - 80)}
               x2={G.cx} y2={pY - 6}
+              opacity={0.6 * pOpacity}
             />
             <rect className="packet" x={G.cx - 5} y={pY - 5} width={10} height={10} transform={`rotate(45 ${G.cx} ${pY})`}/>
             <rect className="packet-core" x={G.cx - 2} y={pY - 2} width={4} height={4} transform={`rotate(45 ${G.cx} ${pY})`}/>
-          </>
+          </g>
         )}
 
         {LAYERS.map((L, i) => {
@@ -296,33 +382,26 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
           );
         })}
 
-        {hoverIdx !== null && hoverIdx !== 'kernel' && (() => {
-          const L = LAYERS[hoverIdx as number];
-          const callX = isDetail ? 50 : 20;
-          const callY = isDetail ? H - 60 : 12 + 50;
+        {hoverIdx !== null && (() => {
+          const xrayW = isDetail ? 320 : 240;
+          const xrayH = isDetail ? 92 : 88;
+          const xrayX = isDetail ? 40 : 14;
+          const xrayY = isDetail ? H - xrayH - 16 : H - xrayH - 12;
+          const isKernel = hoverIdx === 'kernel';
+          const L = !isKernel ? LAYERS[hoverIdx as number] : null;
+          const heading = isKernel ? 'EXECUTION KERNEL' : `${String(L!.n).padStart(2, '0')} · ${L!.short.toUpperCase()}`;
+          const call = isKernel ? 'execve(language_runtime, argv, envp)' : L!.call;
+          const note = isKernel ? 'your code runs here, surrounded by 8 walls' : L!.note;
           return (
-            <g transform={`translate(${callX}, ${callY})`}>
-              <rect className="xray-bg" x={0} y={0} width={isDetail ? 360 : 230} height={56} rx={4}/>
-              <text className="xray-t" x={12} y={18}>
-                {String(L.n).padStart(2, '0')} · {L.short.toUpperCase()}
-              </text>
-              <text className="xray-v" x={12} y={36}>
-                {L.call.length > (isDetail ? 50 : 30) ? L.call.slice(0, isDetail ? 48 : 28) + '…' : L.call}
-              </text>
-              <text className="xray-v" x={12} y={50} style={{ fill: 'var(--fg-3)', fontSize: 10 }}>— {L.note}</text>
-            </g>
+            <foreignObject x={xrayX} y={xrayY} width={xrayW} height={xrayH}>
+              <div className="xray" style={{ maxWidth: xrayW, width: '100%' }}>
+                <span className="t">{heading}</span>
+                <span className="v">{call}</span>
+                <span className="v note">— {note}</span>
+              </div>
+            </foreignObject>
           );
         })()}
-        {hoverIdx === 'kernel' && (
-          <g transform={`translate(${isDetail ? 50 : 20}, ${isDetail ? H - 60 : 62})`}>
-            <rect className="xray-bg" x={0} y={0} width={isDetail ? 360 : 230} height={56} rx={4}/>
-            <text className="xray-t" x={12} y={18}>EXECUTION KERNEL</text>
-            <text className="xray-v" x={12} y={36}>execve(language_runtime, argv, envp)</text>
-            <text className="xray-v" x={12} y={50} style={{ fill: 'var(--fg-3)', fontSize: 10 }}>
-              — your code runs here, surrounded by 8 walls
-            </text>
-          </g>
-        )}
 
         <rect x={0} y={0} width={W} height={H} filter="url(#zc-grain)" pointerEvents="none" />
       </svg>

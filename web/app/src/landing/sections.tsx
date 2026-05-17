@@ -96,44 +96,93 @@ export function IsolationSection() {
           display: flex; flex-direction: column; gap: 18px;
         }
         .zc-iso-info .layer-card {
-          padding: 22px 24px;
+          position: relative;
+          padding: 24px 26px;
           border: 1px solid var(--line-2);
-          border-radius: 12px;
-          background: var(--bg-1);
+          border-radius: 14px;
+          background:
+            linear-gradient(180deg, color-mix(in oklab, var(--accent) 4%, transparent), transparent 60%),
+            var(--bg-1);
+          overflow: hidden;
+          transition: border-color 280ms ease;
+        }
+        .zc-iso-info .layer-card::before {
+          content: '';
+          position: absolute; inset: 0 auto 0 0; width: 2px;
+          background: linear-gradient(180deg,
+            color-mix(in oklab, var(--accent) 80%, transparent),
+            color-mix(in oklab, var(--accent) 20%, transparent));
+        }
+        .zc-iso-info .layer-card-inner {
+          animation: zc-card-fade 320ms cubic-bezier(.22,.61,.36,1);
+        }
+        @keyframes zc-card-fade {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .zc-iso-info .layer-card-inner { animation: none; }
         }
         .zc-iso-info .layer-card .num {
           font: 500 11.5px var(--f-mono); color: var(--accent);
           letter-spacing: 0.16em; text-transform: uppercase;
-          margin-bottom: 8px; display: block;
+          margin-bottom: 10px; display: block;
         }
         .zc-iso-info .layer-card .name {
           font-family: var(--f-display); font-weight: 400;
           font-size: clamp(22px, 2.6vw, 28px); line-height: 1.15;
-          color: var(--fg); margin: 0 0 8px;
+          color: var(--fg); margin: 0 0 10px;
         }
         .zc-iso-info .layer-card .desc {
           font-size: 14.5px; line-height: 1.6; color: var(--fg-1);
-          margin: 0;
+          margin: 0 0 14px;
         }
+        .zc-iso-info .layer-card .call {
+          display: block;
+          padding: 10px 12px;
+          font: 400 11.5px/1.5 var(--f-mono);
+          color: var(--fg-1);
+          background: var(--bg-2);
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+        .zc-iso-info .layer-card .call .tok { color: var(--accent); }
         .zc-iso-info .layer-list {
           display: flex; flex-wrap: wrap; gap: 8px;
         }
         .zc-iso-info .layer-list button {
           appearance: none;
+          position: relative;
           border: 1px solid var(--line-2);
           background: transparent;
           color: var(--fg-2);
-          padding: 7px 11px; border-radius: 6px;
+          padding: 7px 12px; border-radius: 999px;
           font: 11.5px var(--f-mono); letter-spacing: 0.04em;
           cursor: pointer;
-          transition: border-color .15s ease, color .15s ease, background .15s ease;
+          transition:
+            border-color 200ms ease,
+            color 200ms ease,
+            background 200ms ease,
+            transform 200ms cubic-bezier(.22,.61,.36,1);
           min-height: 32px;
+          display: inline-flex; align-items: center; gap: 6px;
         }
-        .zc-iso-info .layer-list button:hover { color: var(--fg); border-color: var(--line-strong); }
+        .zc-iso-info .layer-list button::before {
+          content: ''; width: 5px; height: 5px; border-radius: 50%;
+          background: var(--line-strong);
+          transition: background 200ms ease, box-shadow 200ms ease;
+        }
+        .zc-iso-info .layer-list button:hover { color: var(--fg); border-color: var(--line-strong); transform: translateY(-1px); }
         .zc-iso-info .layer-list button.active {
           color: var(--accent);
-          border-color: var(--accent);
+          border-color: color-mix(in oklab, var(--accent) 70%, var(--line-2));
           background: color-mix(in oklab, var(--accent) 10%, transparent);
+        }
+        .zc-iso-info .layer-list button.active::before {
+          background: var(--accent);
+          box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 80%, transparent);
         }
         @media (max-width: 880px) {
           .zc-iso-grid { grid-template-columns: 1fr; gap: 40px; }
@@ -153,9 +202,14 @@ export function IsolationSection() {
           </div>
           <div className="zc-iso-info">
             <div className="layer-card">
-              <span className="num">layer {String(active + 1).padStart(2, '0')}</span>
-              <h3 className="name">{layer.name}</h3>
-              <p className="desc">{layer.note}</p>
+              <div className="layer-card-inner" key={active}>
+                <span className="num">layer {String(active + 1).padStart(2, '0')}</span>
+                <h3 className="name">{layer.name}</h3>
+                <p className="desc">{layer.note}</p>
+                <code className="call">
+                  <span className="tok">syscall</span> · {layer.call}
+                </code>
+              </div>
             </div>
             <div className="layer-list">
               {LAYERS.map((l, i) => (
@@ -558,7 +612,7 @@ export function Footer() {
       </div>
       <div className="zc-foot-bottom">
         <span>© 2026 ZeroCode contributors</span>
-        <span>v0.1.4 · rust 1.85 · kernel ≥ 5.14</span>
+        <span>rust 1.85 · kernel ≥ 5.14</span>
       </div>
     </footer>
   );
