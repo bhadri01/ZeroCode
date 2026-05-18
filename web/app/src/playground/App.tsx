@@ -193,9 +193,14 @@ function TopNav({ token }: { token: string }) {
         .pg-nav-right a:hover { color: var(--fg); }
         .pg-tok { padding: 3px 8px; border: 1px solid var(--line-2); border-radius: 4px; color: var(--fg-1); letter-spacing: 0.04em; white-space: nowrap; }
         .pg-nav-right > * { white-space: nowrap; }
-        @media (max-width: 760px) {
-          .pg-nav { flex-wrap: wrap; row-gap: 6px; padding: 10px 12px; }
-          .pg-nav-right { width: 100%; margin-left: 0; }
+        @media (max-width: 880px) {
+          /* Single-line nav on mobile: brand left, theme toggle + compact token right.
+             Drop the inline "home · docs" links — those move into the language drawer
+             header instead so the nav strip stays tight on a 360px viewport. */
+          .pg-nav { padding: 10px 12px; gap: 10px; }
+          .pg-nav-right { gap: 8px; }
+          .pg-nav-right .pg-nav-link, .pg-nav-right .pg-nav-sep { display: none; }
+          .pg-tok { font-size: 10.5px; padding: 3px 7px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
         }
       `}</style>
       <a className="pg-mark" href="/" aria-label="ZeroCode home">
@@ -208,11 +213,11 @@ function TopNav({ token }: { token: string }) {
         zerocode
       </a>
       <div className="pg-nav-right">
-        <a href="/">home</a>
-        <span>·</span>
-        <a href="/docs/">docs</a>
-        <span>·</span>
-        <span className="pg-tok">token · {token}</span>
+        <a className="pg-nav-link" href="/">home</a>
+        <span className="pg-nav-sep">·</span>
+        <a className="pg-nav-link" href="/docs/">docs</a>
+        <span className="pg-nav-sep">·</span>
+        <span className="pg-tok" title={`token · ${token}`}>token · {token}</span>
         <ThemeToggle />
       </div>
     </nav>
@@ -220,18 +225,46 @@ function TopNav({ token }: { token: string }) {
 }
 
 /* ─── LanguagePicker ─────────────────────────────────────────────── */
-function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory }: {
+function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory, mobileOpen, onClose }: {
   selected: Lang; onSelect: (l: Lang) => void; history: HistoryEntry[];
   historyH: number; onResizeHistory: (deltaPx: number) => void;
+  mobileOpen: boolean; onClose: () => void;
 }) {
   const [q, setQ] = useState('');
   const filtered = LANGS.filter(l => l.name.toLowerCase().includes(q.toLowerCase()) || String(l.id).includes(q));
+  // Close-on-Escape and lock body scroll while the drawer is open. Both apply
+  // only on mobile where the rail is overlay-positioned; on desktop the rail
+  // is always inline and these handlers are no-ops because `mobileOpen` is true.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); };
+  }, [mobileOpen, onClose]);
+  function selectAndClose(l: Lang) { onSelect(l); onClose(); }
   return (
-    <aside className="pg-rail">
+    <aside className={`pg-rail ${mobileOpen ? 'is-open' : ''}`}>
       <style>{`
         .pg-rail { width: 100%; flex: 1; border-right: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; min-height: 0; }
-        @media (max-width: 880px) { .pg-rail { width: 100%; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); } }
-        .pg-rail-hd { padding: 14px 16px 8px; font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.14em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+        @media (max-width: 880px) {
+          /* On mobile the rail becomes a slide-in drawer from the left.
+             Outside the flow so the editor below gets full viewport height,
+             and reachable from the workspace bar's language chip. */
+          .pg-rail {
+            position: fixed; top: 0; bottom: 0; left: 0;
+            width: min(86vw, 360px); max-width: none; max-height: none;
+            z-index: 60;
+            border-right: 1px solid var(--line); border-bottom: 0;
+            transform: translateX(-100%);
+            transition: transform .22s cubic-bezier(.22,.61,.36,1);
+            box-shadow: 8px 0 32px -16px rgba(0,0,0,0.5);
+          }
+          .pg-rail.is-open { transform: translateX(0); }
+          .pg-rail-close { display: inline-flex !important; }
+        }
+        .pg-rail-close { display: none; appearance: none; background: transparent; border: 1px solid var(--line-2); color: var(--fg-2); width: 28px; height: 28px; border-radius: 6px; align-items: center; justify-content: center; cursor: pointer; }
+        .pg-rail-close:hover { color: var(--fg); border-color: var(--line-strong); }
+        .pg-rail-hd { padding: 14px 16px 8px; font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.14em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
         .pg-rail-hd .count { color: var(--accent); background: color-mix(in oklab, var(--accent) 14%, transparent); border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line)); padding: 1px 7px; border-radius: 99px; letter-spacing: 0.08em; }
         .pg-rail-search { margin: 0 12px 8px; position: relative; }
         .pg-rail-search input { width: 100%; appearance: none; border: 1px solid var(--line-2); background: var(--bg-1); color: var(--fg); padding: 7px 10px 7px 28px; border-radius: 6px; font: 12.5px var(--f-mono); outline: none; }
@@ -268,7 +301,14 @@ function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory
       `}</style>
       <div className="pg-rail-hd">
         <span>core languages</span>
-        <span className="count">{LANGS.length}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="count">{LANGS.length}</span>
+          <button type="button" className="pg-rail-close" aria-label="Close languages" onClick={onClose}>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M3 3l6 6M9 3l-6 6"/>
+            </svg>
+          </button>
+        </span>
       </div>
       <div className="pg-rail-search">
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
@@ -283,7 +323,7 @@ function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory
           return (
             <button key={l.id}
               className={`pg-row ${selected.id === l.id ? 'active' : ''}`}
-              onClick={() => onSelect(l)}
+              onClick={() => selectAndClose(l)}
               style={{ '--row-accent': l.accent } as CSSProperties}>
               {lk
                 ? <LangIcon lang={lk} size={16} className="lico" />
@@ -323,6 +363,7 @@ interface WorkspaceBarProps {
   ceilings: Ceilings | null;
   apiOnline: boolean;
   onShare: () => void;
+  onOpenPicker: () => void;
 }
 function WorkspaceBar(p: WorkspaceBarProps) {
   const [showLimits, setShowLimits] = useState(false);
@@ -331,18 +372,11 @@ function WorkspaceBar(p: WorkspaceBarProps) {
   const max: Ceilings = p.ceilings || { memoryMb: 2048, timeS: 60 };
   const handleShare = () => { p.onShare(); setCopied(true); setTimeout(() => setCopied(false), 1400); };
   const runLabel = p.apiOnline ? 'run · ⌘↵' : 'connect api';
+  const langKey = langKeyFromId(p.lang.id);
   return (
     <div className="pg-wbar">
       <style>{`
         .pg-wbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg-1); font-family: var(--f-mono); flex-shrink: 0; position: relative; overflow: hidden; min-width: 0; }
-        @media (max-width: 760px) { .pg-wbar { flex-wrap: wrap; padding: 8px 12px; row-gap: 6px; overflow: visible; } .pg-wbar .pg-wbar-right { width: 100%; justify-content: flex-end; flex-wrap: wrap; } }
-        .pg-wbar-right { flex-shrink: 0; }
-        .pg-tabs { display: flex; align-items: center; gap: 4px; }
-        .pg-tab { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px 6px 0 0; font-size: 12px; color: var(--fg-1); background: var(--bg); border: 1px solid var(--line); border-bottom: 0; margin-bottom: -9px; }
-        .pg-tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-        .pg-tab .x { color: var(--fg-3); cursor: pointer; padding: 0 2px; }
-        .pg-tab .x:hover { color: var(--fg); }
-        .pg-wbar .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
         .pg-wbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
         .pg-btn { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); padding: 6px 10px; border-radius: 6px; font: 12px var(--f-mono); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: border-color .12s ease, color .12s ease, background .12s ease; }
         .pg-btn:hover { border-color: var(--line-strong); color: var(--fg); }
@@ -353,23 +387,61 @@ function WorkspaceBar(p: WorkspaceBarProps) {
         .pg-btn.cancel:hover { border-color: var(--st-re); filter: brightness(1.05); }
         .pg-btn:disabled { opacity: .5; cursor: not-allowed; }
         .pg-btn.ghost { background: transparent; }
+
+        /* Language chip: shown on both desktop and mobile now that the file tab and
+           lang-text spans are gone. Tap to focus/open the language drawer (on mobile)
+           or to re-confirm the active language (desktop — drawer is in-flow there). */
+        .pg-wbar-lang { display: inline-flex; align-items: center; gap: 8px; appearance: none; cursor: pointer; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); font: 12.5px var(--f-mono); white-space: nowrap; min-height: 36px; }
+        .pg-wbar-lang:hover { border-color: var(--line-strong); }
+        .pg-wbar-lang .name { color: var(--fg); }
+        .pg-wbar-lang .id { color: var(--fg-3); font-size: 11px; }
+        .pg-wbar-lang .chev { color: var(--fg-3); }
+
+        @media (max-width: 880px) {
+          /* Mobile: chip stays on the first row, controls wrap onto a second row.
+             Pushes the primary "run" button to fill its row for a fat-finger target. */
+          .pg-wbar { flex-wrap: wrap; padding: 8px 12px; row-gap: 8px; overflow: visible; }
+          .pg-wbar .pg-wbar-right { width: 100%; margin-left: 0; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+          .pg-wbar .pg-btn { padding: 9px 12px; min-height: 36px; }
+          .pg-wbar .pg-btn.primary { padding: 10px 14px; flex: 1 1 auto; justify-content: center; }
+          .pg-wbar .pg-btn-format, .pg-wbar .pg-btn-reset { padding: 9px 10px; }
+        }
+
+        /* Limits popover: desktop anchors top-right of the bar, mobile lifts to a
+           bottom sheet so the slider has room and isn't clipped off-screen. */
         .pg-limits-popover { position: absolute; right: 14px; top: calc(100% + 8px); z-index: 30; width: 280px; border: 1px solid var(--line-2); background: var(--bg-1); border-radius: 8px; padding: 14px; box-shadow: 0 30px 80px -30px rgba(0,0,0,0.65); }
-        .pg-limits-popover h4 { font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 12px; }
+        .pg-limits-popover h4 { font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .pg-limits-popover .x-close { appearance: none; background: transparent; border: 1px solid var(--line-2); color: var(--fg-2); width: 24px; height: 24px; border-radius: 5px; display: none; align-items: center; justify-content: center; cursor: pointer; }
         .pg-lim-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
         .pg-lim-row:last-child { margin-bottom: 0; }
         .pg-lim-row .lbl { display: flex; justify-content: space-between; font-family: var(--f-mono); font-size: 11px; color: var(--fg-2); }
         .pg-lim-row .v { color: var(--accent); }
-        .pg-lim-row input[type="range"] { appearance: none; -webkit-appearance: none; height: 3px; background: var(--line-2); border-radius: 999px; outline: none; }
-        .pg-lim-row input[type="range"]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; background: var(--accent); border: 0; border-radius: 50%; cursor: pointer; }
-        .pg-lim-row input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; background: var(--accent); border: 0; border-radius: 50%; cursor: pointer; }
+        .pg-lim-row input[type="range"] { appearance: none; -webkit-appearance: none; height: 6px; background: var(--line-2); border-radius: 999px; outline: none; }
+        .pg-lim-row input[type="range"]::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; background: var(--accent); border: 0; border-radius: 50%; cursor: pointer; }
+        .pg-lim-row input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; background: var(--accent); border: 0; border-radius: 50%; cursor: pointer; }
+        @media (max-width: 760px) {
+          .pg-limits-popover {
+            position: fixed; right: 0; left: 0; bottom: 0; top: auto;
+            width: auto; border-radius: 14px 14px 0 0;
+            padding: 18px 18px 24px;
+            border: 1px solid var(--line-2); border-bottom: 0;
+            animation: pg-sheet-up .22s cubic-bezier(.22,.61,.36,1);
+          }
+          .pg-limits-popover .x-close { display: inline-flex; }
+          /* Grab handle suggests it can be dismissed. */
+          .pg-limits-popover::before { content: ''; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; border-radius: 999px; background: var(--line-2); }
+        }
+        @keyframes pg-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .pg-sheet-backdrop { display: none; position: fixed; inset: 0; background: color-mix(in oklab, #000 55%, transparent); z-index: 29; animation: pg-fade-in .18s ease; }
+        @keyframes pg-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @media (max-width: 760px) { .pg-sheet-backdrop.is-on { display: block; } }
       `}</style>
-      <div className="pg-tabs">
-        <div className="pg-tab"><span className="dot"/>main.{p.lang.ext}<span className="x">×</span></div>
-      </div>
-      <div className="sep"/>
-      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--fg-2)' }}>
-        <span style={{ color: 'var(--accent)' }}>{p.lang.name}</span> · {p.lang.version} · id&nbsp;{p.lang.id}
-      </span>
+      <button type="button" className="pg-wbar-lang" onClick={p.onOpenPicker} aria-label="Choose language">
+        {langKey ? <LangIcon lang={langKey} size={16} /> : <span style={{ width: 9, height: 9, borderRadius: 2, background: p.lang.accent }} />}
+        <span className="name">{p.lang.name}</span>
+        <span className="id">· {p.lang.version}</span>
+        <svg className="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 4l3 3 3-3"/></svg>
+      </button>
       <div className="pg-wbar-right">
         <button className="pg-btn ghost" onClick={() => setShowLimits(s => !s)}>
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6" cy="6" r="4.5"/><path d="M6 2v4l2.5 1.5"/></svg>
@@ -379,10 +451,10 @@ function WorkspaceBar(p: WorkspaceBarProps) {
           <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="3.5" cy="7" r="1.6"/><circle cx="10.5" cy="3.6" r="1.6"/><circle cx="10.5" cy="10.4" r="1.6"/><path d="m5 6.3 4-2M5 7.7l4 2"/></svg>
           {copied ? 'copied!' : 'share'}
         </button>
-        <button className="pg-btn ghost" onClick={p.onFormat} disabled={isRunning} title="Format selection (⇧⌥F)">
+        <button className="pg-btn ghost pg-btn-format" onClick={p.onFormat} disabled={isRunning} title="Format selection (⇧⌥F)">
           format
         </button>
-        <button className="pg-btn ghost" onClick={p.onReset} disabled={isRunning}>reset</button>
+        <button className="pg-btn ghost pg-btn-reset" onClick={p.onReset} disabled={isRunning}>reset</button>
         {isRunning ? (
           <button className="pg-btn cancel" onClick={p.onCancel} title="Cancel run (⌘.)">cancel</button>
         ) : (
@@ -396,21 +468,29 @@ function WorkspaceBar(p: WorkspaceBarProps) {
         )}
       </div>
       {showLimits && (
-        <div className="pg-limits-popover" onMouseLeave={() => setShowLimits(false)}>
-          <h4>execution limits {p.apiOnline && p.ceilings ? '· server ceilings' : '· client defaults'}</h4>
-          <div className="pg-lim-row">
-            <div className="lbl"><span>memory</span><span className="v">{p.limits.memoryMb} MB</span></div>
-            <input type="range" min={16} max={max.memoryMb} step={16}
-              value={Math.min(p.limits.memoryMb, max.memoryMb)}
-              onChange={e => p.setLimits({ ...p.limits, memoryMb: +e.target.value })} />
+        <>
+          <div className={`pg-sheet-backdrop is-on`} onClick={() => setShowLimits(false)} />
+          <div className="pg-limits-popover" onMouseLeave={() => setShowLimits(false)}>
+            <h4>
+              <span>execution limits {p.apiOnline && p.ceilings ? '· server ceilings' : '· client defaults'}</span>
+              <button type="button" className="x-close" aria-label="Close limits" onClick={() => setShowLimits(false)}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+              </button>
+            </h4>
+            <div className="pg-lim-row">
+              <div className="lbl"><span>memory</span><span className="v">{p.limits.memoryMb} MB</span></div>
+              <input type="range" min={16} max={max.memoryMb} step={16}
+                value={Math.min(p.limits.memoryMb, max.memoryMb)}
+                onChange={e => p.setLimits({ ...p.limits, memoryMb: +e.target.value })} />
+            </div>
+            <div className="pg-lim-row">
+              <div className="lbl"><span>wall time</span><span className="v">{p.limits.timeS} s</span></div>
+              <input type="range" min={1} max={max.timeS} step={1}
+                value={Math.min(p.limits.timeS, max.timeS)}
+                onChange={e => p.setLimits({ ...p.limits, timeS: +e.target.value })} />
+            </div>
           </div>
-          <div className="pg-lim-row">
-            <div className="lbl"><span>wall time</span><span className="v">{p.limits.timeS} s</span></div>
-            <input type="range" min={1} max={max.timeS} step={1}
-              value={Math.min(p.limits.timeS, max.timeS)}
-              onChange={e => p.setLimits({ ...p.limits, timeS: +e.target.value })} />
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -716,7 +796,19 @@ function StatusStrip({ status, statusDetail, metrics, apiOnline, cursor, themeMo
     <footer className="pg-strip">
       <style>{`
         .pg-strip { display: flex; align-items: center; gap: 18px; padding: 8px 18px; border-top: 1px solid var(--line); background: var(--bg-1); font-family: var(--f-mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.04em; flex-shrink: 0; }
-        @media (max-width: 760px) { .pg-strip { flex-wrap: wrap; row-gap: 6px; padding: 8px 12px; } .pg-strip .right { margin-left: 0; } }
+        @media (max-width: 880px) {
+          /* Compact strip: keep the run flow + verdict prominent, drop noise like
+             cursor coords, theme indicator, and the duplicated "live/offline" tag
+             (the verdict pill already implies the connection state at a glance). */
+          .pg-strip { flex-wrap: wrap; row-gap: 6px; padding: 8px 12px; gap: 10px; }
+          .pg-strip .right { margin-left: auto; gap: 10px; }
+          .pg-strip .metrics { gap: 10px; flex-wrap: wrap; }
+          .pg-strip .strip-cursor, .pg-strip .strip-theme, .pg-strip .strip-net { display: none; }
+        }
+        @media (max-width: 420px) {
+          /* On the narrowest phones, exit code is rarely interesting next to the verdict pill. */
+          .pg-strip .strip-exit { display: none; }
+        }
         .pg-flow { display: flex; align-items: center; gap: 8px; }
         .pg-flow .step { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-4); background: var(--bg); letter-spacing: 0.12em; text-transform: uppercase; font-size: 10px; }
         .pg-flow .step.done { color: var(--fg-2); border-color: var(--line-2); }
@@ -742,12 +834,12 @@ function StatusStrip({ status, statusDetail, metrics, apiOnline, cursor, themeMo
       <div className="metrics">
         <span>wall · <b>{metrics.time != null ? metrics.time.toFixed(3) + 's' : '—'}</b></span>
         <span>mem · <b>{formatMem(metrics.memory)}</b></span>
-        <span>exit · <b>{metrics.exitCode != null ? metrics.exitCode : (status === 'accepted' ? '0' : '—')}</b></span>
-        <span>Ln <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.line}</b>, Col <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.col}</b></span>
+        <span className="strip-exit">exit · <b>{metrics.exitCode != null ? metrics.exitCode : (status === 'accepted' ? '0' : '—')}</b></span>
+        <span className="strip-cursor">Ln <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.line}</b>, Col <b style={{color:'var(--fg-1)',fontWeight:500}}>{cursor.col}</b></span>
       </div>
       <div className="right">
-        <span>theme · <b style={{color:'var(--fg-1)',fontWeight:500}}>{themeMode}</b></span>
-        <span><b style={{ color: apiOnline ? 'var(--st-accepted)' : 'var(--st-re)', fontWeight: 500 }}>{apiOnline ? 'live' : 'offline'}</b></span>
+        <span className="strip-theme">theme · <b style={{color:'var(--fg-1)',fontWeight:500}}>{themeMode}</b></span>
+        <span className="strip-net"><b style={{ color: apiOnline ? 'var(--st-accepted)' : 'var(--st-re)', fontWeight: 500 }}>{apiOnline ? 'live' : 'offline'}</b></span>
         <span className="verdict" style={{
           color: verdictColor,
           borderColor: status === 'idle' ? 'var(--line)' : verdictColor,
@@ -797,6 +889,19 @@ export function App() {
   const [layout, setLayout] = useState<Layout>(() => loadLayout());
   useEffect(() => { saveLayout(layout); }, [layout]);
   const [error, setError] = useState<{ message: string; retry?: boolean } | null>(null);
+  // Language drawer state — mobile only. The drawer's CSS keeps it hidden on
+  // desktop (transform/positioning short-circuits via the same `.is-open` class
+  // which is a no-op there since the rail is in-flow above 880px).
+  const [pickerOpen, setPickerOpen] = useState(false);
+  useEffect(() => {
+    // Lock body scroll while the drawer is open so background content doesn't
+    // jitter under a touch-drag. The mobile media query already opts the body
+    // into natural scrolling; we just want it paused while the sheet is up.
+    if (!pickerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [pickerOpen]);
 
   const [apiOnline, setApiOnline] = useState(false);
   const [apiLangs, setApiLangs] = useState<LanguageSpec[] | null>(null);
@@ -1088,7 +1193,8 @@ export function App() {
         limits={limits} setLimits={setLimits}
         ceilings={apiCeilings}
         apiOnline={apiOnline}
-        onShare={copyShareLink} />
+        onShare={copyShareLink}
+        onOpenPicker={() => setPickerOpen(true)} />
       {error && (
         <div className="pg-errbar">
           <style>{`
@@ -1119,25 +1225,76 @@ export function App() {
           .pg-output-col .pg-output { border-top: 0; border-left: 1px solid var(--line); }
 
           @media (max-width: 880px) {
-            .pg-main { flex-direction: column; }
-            .pg-io-row { flex-direction: column; }
-            .pg-rail-col,
-            .pg-editor-wrap,
-            .pg-stdin-col,
-            .pg-output-col { flex: 0 0 auto !important; width: 100% !important; height: auto !important; }
-            .pg-editor-wrap { min-height: 360px; }
-            .pg-stdin-col   { min-height: 160px; }
-            .pg-output-col  { min-height: 320px; }
-            .pg-stdin-col .pg-stdin { border-right: 0; border-bottom: 1px solid var(--line); }
-            .pg-output-col .pg-output { border-left: 0; border-top: 1px solid var(--line); }
+            /* Natural document flow on mobile: each section has an explicit height,
+               and the user scrolls the PAGE down to reach the next one. Block layout
+               (not flex) is the safe choice here — flex's "fill remaining space"
+               semantics break down when there's no fixed parent height. */
+            .pg-main, .pg-center, .pg-io-row {
+              display: block !important;
+              flex: none !important;
+              height: auto !important;
+              min-height: 0 !important;
+              width: 100% !important;
+            }
+
+            /* Rail-col still needs to render — the drawer (.pg-rail) is its child
+               with position:fixed and must stay in the DOM tree for the slide-in to
+               work. Collapse the in-flow box to zero size with visible overflow so
+               the fixed drawer escapes and covers the viewport when open. */
+            .pg-rail-col {
+              display: block !important;
+              width: 0 !important;
+              height: 0 !important;
+              overflow: visible !important;
+              flex: none !important;
+              padding: 0 !important;
+            }
+
+            /* Editor: 60vh (or at least 360 px on tiny phones) of dedicated code area.
+               .pg-editor-wrap is still display:flex column from the desktop rule, which
+               combined with an explicit height lets Monaco's absolute-positioned host
+               fill the wrap correctly. */
+            .pg-editor-wrap {
+              width: 100% !important;
+              height: 60vh !important;
+              min-height: 360px !important;
+              flex: none !important;
+              position: relative;
+            }
+
+            /* Stdin: tall enough to type a few lines without cramping (180 px). */
+            .pg-stdin-col { width: 100% !important; height: auto !important; }
+            .pg-stdin-col .pg-stdin {
+              height: 200px !important;
+              flex: none !important;
+              border-right: 0;
+              border-bottom: 1px solid var(--line);
+            }
+
+            /* Output: roomy 380 px block — long stdout still scrolls internally. */
+            .pg-output-col { width: 100% !important; height: auto !important; }
+            .pg-output-col .pg-output {
+              height: 380px !important;
+              flex: none !important;
+              border-left: 0;
+              border-top: 1px solid var(--line);
+            }
           }
-          @media (max-width: 760px) { html, body { overflow: auto !important; height: auto !important; } }
+
+          /* Drawer backdrop — only visible while pickerOpen on mobile. Tap to close.
+             Desktop hides this entirely since the rail is always in-flow there. */
+          .pg-rail-backdrop { display: none; position: fixed; inset: 0; z-index: 55; background: color-mix(in oklab, #000 55%, transparent); animation: pg-fade-in .18s ease; }
+          @media (max-width: 880px) { .pg-rail-backdrop.is-on { display: block; } }
         `}</style>
+
+        {pickerOpen && <div className="pg-rail-backdrop is-on" onClick={() => setPickerOpen(false)} />}
 
         <div className="pg-rail-col" style={{ width: layout.rail }}>
           <LanguagePicker selected={lang} onSelect={selectLang} history={history}
             historyH={layout.historyH}
-            onResizeHistory={(d) => setLayout(l => ({ ...l, historyH: clamp(l.historyH + d, 60, window.innerHeight - 280) }))} />
+            onResizeHistory={(d) => setLayout(l => ({ ...l, historyH: clamp(l.historyH + d, 60, window.innerHeight - 280) }))}
+            mobileOpen={pickerOpen}
+            onClose={() => setPickerOpen(false)} />
         </div>
         <Splitter direction="vertical" onDrag={(d) =>
           setLayout(l => ({ ...l, rail: clamp(l.rail + d, 180, 460) }))} />

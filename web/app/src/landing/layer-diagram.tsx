@@ -165,8 +165,10 @@ export function LayerDiagram({ variant = 'hero' }: { variant?: Variant }) {
     <div className={`ldiag ldiag-${variant}`}>
       <style>{`
         .ldiag { position: relative; user-select: none; font-family: var(--f-mono); }
-        .ldiag-hero    { width: ${W}px; height: ${H}px; }
-        .ldiag-detailed{ width: 100%; max-width: ${W}px; height: ${H}px; margin: 0 auto; }
+        /* Hero variant: fluid up to its design size, then keeps proportions via aspect-ratio so
+           it never overflows narrow viewports. The detailed variant follows the same pattern. */
+        .ldiag-hero     { width: 100%; max-width: ${W}px; aspect-ratio: ${W} / ${H}; height: auto; margin: 0 auto; }
+        .ldiag-detailed { width: 100%; max-width: ${W}px; aspect-ratio: ${W} / ${H}; height: auto; margin: 0 auto; }
         .ldiag svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
         .ldiag .ring {

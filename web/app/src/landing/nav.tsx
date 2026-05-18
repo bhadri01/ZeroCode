@@ -284,18 +284,23 @@ export function Nav() {
           </button>
         </div>
       </div>
-      {menuOpen && (
-        <div className="zc-nav-mobile-sheet" role="menu">
-          <a href="#isolation" onClick={() => setMenuOpen(false)}>isolation<span className="arrow">→</span></a>
-          <a href="#how" onClick={() => setMenuOpen(false)}>how it works<span className="arrow">→</span></a>
-          <a href="#languages" onClick={() => setMenuOpen(false)}>languages<span className="arrow">→</span></a>
-          <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>
-          <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
-          <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>
-          <a className="cta" href="/docs/quickstart" onClick={() => setMenuOpen(false)}>get started →</a>
-        </div>
-      )}
     </nav>
+    {/* The sheet MUST live outside <nav>: the nav has backdrop-filter, which
+        per CSS spec makes it the containing block for fixed-position
+        descendants. Inside the nav, `inset: 56px 0 0 0` was being measured
+        against the ~56px-tall nav itself, collapsing the sheet to zero height
+        — it was "open" in state but invisible on screen. */}
+    {menuOpen && (
+      <div className="zc-nav-mobile-sheet" role="menu">
+        <a href="#isolation" onClick={() => setMenuOpen(false)}>isolation<span className="arrow">→</span></a>
+        <a href="#how" onClick={() => setMenuOpen(false)}>how it works<span className="arrow">→</span></a>
+        <a href="#languages" onClick={() => setMenuOpen(false)}>languages<span className="arrow">→</span></a>
+        <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>
+        <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
+        <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>
+        <a className="cta" href="/docs/quickstart" onClick={() => setMenuOpen(false)}>get started →</a>
+      </div>
+    )}
     </>
   );
 }

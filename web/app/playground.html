@@ -11,6 +11,32 @@
       body { display: flex; flex-direction: column; overflow: hidden; }
       #root { display: flex; flex-direction: column; min-height: 0; }
 
+      /* Desktop sizing — `dvh` ignores the iOS address bar so the playground
+         fits the visible viewport, not the larger one behind the chrome.
+         `-webkit-fill-available` is the older iOS Safari fallback. */
+      @supports (height: 100dvh) {
+        html, body, #root { height: 100dvh; }
+      }
+      @supports (-webkit-touch-callout: none) {
+        html, body, #root { height: -webkit-fill-available; }
+      }
+
+      /* Mobile: switch from viewport-bound layout to natural document flow so
+         each panel can have an explicit height and the user scrolls down to
+         reach the next section (editor → stdin → output → status). The
+         desktop "everything fits in one window" model crowds touch targets
+         on a 400 px screen — scrolling is the native mobile pattern. */
+      @media (max-width: 880px) {
+        html, body { height: auto !important; min-height: 100vh; overflow: visible !important; }
+        body { display: block !important; overflow-x: hidden !important; }
+        #root { display: block !important; height: auto !important; min-height: auto !important; }
+      }
+      @supports (min-height: 100dvh) {
+        @media (max-width: 880px) {
+          html, body { min-height: 100dvh; }
+        }
+      }
+
       /* Branded first-paint loader. Lives inside #root and is replaced
          the moment React mounts — no JS cleanup needed. */
       .zc-boot {

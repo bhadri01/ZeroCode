@@ -464,7 +464,12 @@ export function GetStartedSection() {
           background: var(--bg-2);
           border: 1px solid var(--line);
           border-radius: 12px;
-          padding: 0; overflow: hidden;
+          padding: 0;
+          /* Whole block scrolls together horizontally on narrow screens so the
+             user reads the commands as one flow, not seven independent rails. */
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
           box-shadow: 0 20px 60px -30px rgba(0,0,0,0.45);
         }
         .zc-gs-cmds .row {
@@ -473,8 +478,8 @@ export function GetStartedSection() {
           border-bottom: 1px solid var(--line);
           font: 13px var(--f-mono); color: var(--fg-1);
           line-height: 1.5;
-          overflow-x: auto;
           white-space: nowrap;
+          min-width: max-content;
         }
         .zc-gs-cmds .row:last-child { border-bottom: 0; }
         .zc-gs-cmds .pr { color: var(--accent); user-select: none; flex-shrink: 0; }

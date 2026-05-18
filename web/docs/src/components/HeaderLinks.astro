@@ -55,4 +55,13 @@ import Default from '@astrojs/starlight/components/SocialIcons.astro';
     .zc-header-out { gap: 10px; padding-right: 8px; }
     .zc-link { font-size: 11.5px; }
   }
+  /* On the narrowest phones (≤ 22.5em ≈ 360px), the Starlight mobile header
+     gets very crowded — title, hamburger, GitHub icon, theme toggle, and
+     our two back-out links all compete on a single row. Hide "home" there
+     (the logo already links home) and keep "playground" as the high-value
+     back-out so docs readers still have a one-tap path into the app. */
+  @media (max-width: 22.5em) {
+    .zc-header-out .zc-link[href="/"] { display: none; }
+    .zc-header-out { padding-right: 6px; gap: 8px; }
+  }
 </style>
