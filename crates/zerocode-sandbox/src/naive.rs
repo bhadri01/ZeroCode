@@ -55,43 +55,66 @@ pub struct NaiveSandbox;
 /// rustc's working-dir probe, the JVM's `libjli.so` resolver) fail without
 /// `/proc/self/exe`; others (anything that writes to stdout/stderr) need
 /// `/dev/null`. Run once per worker process.
-fn init_rootfs_binds(rootfs: &str) {
+///
+/// Fails fast on any error. The previous "warn-and-continue" behaviour
+/// silently produced broken submissions for Go ("GOROOT not set"), Java
+/// ("libjli.so cannot be opened"), and Rust ("could not read sysroot")
+/// because all three rely on `/proc/self/exe` to locate their install root.
+fn init_rootfs_binds(rootfs: &str) -> Result<(), SandboxError> {
     static ONCE: Once = Once::new();
+    static RESULT: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+
     ONCE.call_once(|| {
-        for sub in ["proc", "dev"] {
-            let target = format!("{rootfs}/{sub}");
-            if !Path::new(&target).exists() {
-                if let Err(e) = std::fs::create_dir_all(&target) {
-                    tracing::warn!(
-                        target = %target,
-                        error = %e,
-                        "could not create rootfs mount point — chroot'd processes may fail"
-                    );
+        let outcome = (|| -> Result<(), String> {
+            for sub in ["proc", "dev"] {
+                let target = format!("{rootfs}/{sub}");
+                if !Path::new(&target).exists() {
+                    std::fs::create_dir_all(&target).map_err(|e| {
+                        format!("create rootfs mount point {target}: {e}")
+                    })?;
+                }
+                // Skip if already mounted (the worker may have been restarted
+                // while the bind-mount survived in a parent namespace).
+                let already = std::fs::read_to_string("/proc/self/mountinfo")
+                    .map(|s| s.lines().any(|l| l.contains(&target)))
+                    .unwrap_or(false);
+                if already {
+                    tracing::info!(target = %target, "rootfs bind-mount already present");
                     continue;
                 }
-            }
-            // Skip if already mounted (the worker may have been restarted).
-            let already = std::fs::read_to_string("/proc/self/mountinfo")
-                .map(|s| s.lines().any(|l| l.contains(&target)))
-                .unwrap_or(false);
-            if already {
-                continue;
-            }
-            // `mount --bind --rbind` via the `mount` binary; we can shell out
-            // here because this is one-time setup. The worker container has
-            // CAP_SYS_ADMIN so the mount syscall is permitted.
-            let status = std::process::Command::new("/bin/mount")
-                .args(["--rbind", &format!("/{sub}"), &target])
-                .status();
-            match status {
-                Ok(s) if s.success() => {
-                    tracing::info!(target = %target, "bind-mounted into runner rootfs");
+                // `mount --rbind` via the `mount` binary; we can shell out
+                // here because this is one-time setup. The worker container
+                // needs CAP_SYS_ADMIN for the mount syscall.
+                let output = std::process::Command::new("/bin/mount")
+                    .args(["--rbind", &format!("/{sub}"), &target])
+                    .output()
+                    .map_err(|e| format!("spawn /bin/mount for {target}: {e}"))?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!(
+                        "bind-mount /{sub} -> {target} failed (code={:?}): {}. \
+                         Worker needs CAP_SYS_ADMIN and a writable runner-rootfs \
+                         volume; see docs/DEPLOY.md.",
+                        output.status.code(),
+                        stderr.trim()
+                    ));
                 }
-                Ok(s) => tracing::warn!(target = %target, code = ?s.code(), "bind-mount failed"),
-                Err(e) => tracing::warn!(target = %target, error = %e, "bind-mount spawn failed"),
+                tracing::info!(target = %target, "bind-mounted into runner rootfs");
             }
-        }
+            Ok(())
+        })();
+        let _ = RESULT.set(outcome);
     });
+
+    match RESULT.get() {
+        Some(Ok(())) => Ok(()),
+        Some(Err(msg)) => Err(SandboxError::Internal(msg.clone())),
+        // Unreachable: ONCE.call_once always populates RESULT, but treat a
+        // missing value defensively rather than unwrapping.
+        None => Err(SandboxError::Internal(
+            "init_rootfs_binds: result not initialised".into(),
+        )),
+    }
 }
 
 /// Mirror of `native::exec::substitute_limits`. Cheap string replace —
@@ -153,7 +176,7 @@ impl Sandbox for NaiveSandbox {
 
         let rootfs = std::env::var("ZEROCODE_RUNNER_ROOTFS")
             .unwrap_or_else(|_| DEFAULT_RUNNER_ROOTFS.to_string());
-        init_rootfs_binds(&rootfs);
+        init_rootfs_binds(&rootfs)?;
         let token_str = job.token.to_string();
         let inside_dir = inside_workdir(&token_str);
         let host_workdir = format!("{rootfs}/box/{token_str}");
