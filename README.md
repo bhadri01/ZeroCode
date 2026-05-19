@@ -70,14 +70,14 @@ GET    /v1/ready                          Readiness (DB + queue depth)
 GET    /v1/about                          Version info
 ```
 
-Auth: `Authorization: Bearer <key>` on everything except
-`/v1/health`, `/v1/ready`, and `/v1/about`.
+ZeroCode runs as an open, unauthenticated backend — restrict access at the
+network layer (private subnet, firewall, reverse proxy with auth in front).
+A per-IP rate limit (`tower_governor`) caps client volume.
 
 ### Submit and wait
 
 ```bash
 curl -X POST 'http://localhost:8080/v1/submissions?wait=true' \
-     -H 'Authorization: Bearer dev-only-replace-me' \
      -H 'Content-Type: application/json' \
      -d '{"language_id": 71, "source_code": "print(\"hello world\")"}'
 ```
@@ -85,8 +85,7 @@ curl -X POST 'http://localhost:8080/v1/submissions?wait=true' \
 ### Stream output
 
 ```bash
-curl -N -H 'Authorization: Bearer dev-only-replace-me' \
-     http://localhost:8080/v1/submissions/$TOKEN/stream
+curl -N http://localhost:8080/v1/submissions/$TOKEN/stream
 ```
 
 ---
@@ -111,8 +110,7 @@ docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 docker compose -f deploy/docker-compose.yml up -d
 
 # Verify
-curl -H 'Authorization: Bearer dev-only-replace-me' \
-     http://localhost:8080/v1/languages
+curl http://localhost:8080/v1/languages
 ```
 
 Web playground at <http://localhost:8080/playground.html>.

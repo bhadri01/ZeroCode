@@ -29,18 +29,20 @@ worker.
 
 ### API (`zerocode-api`)
 
+ZeroCode runs as an open, unauthenticated backend — every `/v1/*` route is
+reachable by anyone who can connect to the API port. A per-IP
+`tower_governor` rate limit is the only in-app client-volume guard;
+network-layer protection (private subnet, firewall, reverse proxy with
+auth) is the operator's responsibility.
+
 | Var | Default | Purpose |
 |---|---|---|
 | `ZEROCODE_API_BIND` | `0.0.0.0:8080` | REST + SSE listener |
 | `DATABASE_URL` | — | Postgres DSN (required) |
-| `ZEROCODE_API_KEY` | — | Bearer key (required; rotate via this env) |
 | `ZEROCODE_LANGUAGES_FILE` | `runners/languages.toml` | Language registry source |
 | `ZEROCODE_WEB_DIR` | `web/dist` | Static fallback dir (empty disables) |
-| `ZEROCODE_CORS_ORIGINS` | `""` | Comma-separated allowlist; `*` for any origin |
-| `ZEROCODE_ALLOW_ANONYMOUS` | `false` | Admit unauth requests, rate-limit per IP |
-| `ZEROCODE_ANON_MAX_PER_WINDOW` | `6` | Anon submissions per IP per window |
-| `ZEROCODE_ANON_WINDOW_SECS` | `60` | Anon rate-limit window |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Enable OTLP span export when set |
+| `ZEROCODE_GOVERNOR_RPS` | `100` | Per-IP request refill rate |
+| `ZEROCODE_GOVERNOR_BURST` | `100` | Per-IP burst capacity |
 
 ### Worker (`zerocode-worker`)
 
@@ -73,10 +75,9 @@ services:
 
   api:
     image: ghcr.io/yourorg/zerocode-service:latest
-    ports: ["8080:8080", "9091:9091"]
+    ports: ["8080:8080"]
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres/zerocode
-      ZEROCODE_API_KEY: ${ZEROCODE_API_KEY:?required}
 
   worker:
     image: ghcr.io/yourorg/zerocode-worker:latest
@@ -161,5 +162,4 @@ container, which most distros allow).
 | All submissions stay `queued` forever | Worker can't `LISTEN` (auth, network) | Check worker logs; verify `DATABASE_URL` is reachable. |
 | `sandbox_failure: ENOSPC` | `/tmp` tmpfs sized too small | Raise `--tmp-size` (default 64 MB) or shrink test payloads. |
 | `sandbox_failure: EACCES on /sys/fs/cgroup` | cgroup delegation missing | See above. |
-| `401 Unauthorized` from `/v1/submissions` despite `Authorization: Bearer` | `ZEROCODE_API_KEY` mismatch or has stray whitespace | Compare with `printf '%s' "$ZEROCODE_API_KEY" | xxd | head`. |
-| Playground says "no auth" | Bearer key not stored locally | Open settings → paste the key → save. |
+| `429 Too Many Requests` | Per-IP `tower_governor` rate limit exceeded | Tune `ZEROCODE_GOVERNOR_RPS` / `ZEROCODE_GOVERNOR_BURST`, or back off. |

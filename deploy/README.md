@@ -45,8 +45,7 @@ docker compose -f deploy/docker-compose.yml up -d
 Then:
 
 ```bash
-curl -H 'Authorization: Bearer dev-only-replace-me' \
-     http://localhost:8080/v1/languages
+curl http://localhost:8080/v1/languages
 ```
 
 ### Bring up just Postgres + Jaeger for `cargo run` development
@@ -71,12 +70,14 @@ docker compose -f deploy/docker-compose.yml down -v   # also drops volumes
 
 ## Production deployment
 
-`docker-compose.yml` here is **dev-shaped**, not production. Defaults like
-`ZEROCODE_API_KEY: dev-only-replace-me` and the wide-open CORS allowlist
-are unsafe to run as-is on a public host.
+`docker-compose.yml` here is **dev-shaped**, not production. ZeroCode runs
+as an open, unauthenticated backend — protect access at the network layer
+(private subnet, firewall, reverse proxy with its own auth) before
+exposing this anywhere.
 
-For production, copy `docker-compose.prod.example.yml`, populate secrets,
-and read [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for:
+For production, copy `docker-compose.prod.example.yml`, populate the
+Postgres password placeholder, and read
+[`../docs/DEPLOY.md`](../docs/DEPLOY.md) for:
 
 - host kernel + cgroup v2 prerequisites
 - which Linux capabilities the worker needs (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`)

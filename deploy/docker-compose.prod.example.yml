@@ -1,14 +1,16 @@
 # Production-shaped Docker Compose example for ZeroCode.
 #
-# This file is a STARTING POINT — copy it, rename it, and edit it. Do not run
-# this verbatim on a public host. Specifically you must:
+# This file is a STARTING POINT — copy it, rename it, and edit it. Specifically:
 #
-#   1. Replace every `__CHANGE_ME__` placeholder with a real secret.
+#   1. Replace every `__CHANGE_ME__` placeholder (Postgres password) with a
+#      real secret. ZeroCode itself is an unauthenticated backend; restrict
+#      who can reach :8080 via the network layer (private subnet, firewall,
+#      reverse proxy with auth in front, VPN, etc.).
 #   2. Pin image tags (`:v0.1.0`) instead of `:latest`; rebuild deliberately.
 #   3. Decide where Postgres lives — managed (RDS/Cloud SQL) is recommended
 #      over running it in the same compose for prod.
-#   4. Front the API with a TLS-terminating reverse proxy (Caddy, nginx,
-#      Traefik). See ../docs/DEPLOY.md §5.
+#   4. Front the API with a TLS-terminating reverse proxy if you expose it
+#      beyond a private network. See ../docs/DEPLOY.md §5.
 #   5. Confirm host prereqs: kernel >= 5.14, cgroup v2 unified, unprivileged
 #      user namespaces enabled. See ../docs/DEPLOY.md §1.
 #
@@ -79,13 +81,11 @@ services:
     environment:
       DATABASE_URL: postgres://zerocode:__CHANGE_ME__@postgres:5432/zerocode
       ZEROCODE_API_BIND: 0.0.0.0:8080
-      ZEROCODE_API_KEY: __CHANGE_ME__
-      # Prod default: deny anonymous, narrow CORS, tighter rate limits.
-      ZEROCODE_ALLOW_ANONYMOUS: "false"
-      ZEROCODE_CORS_ORIGINS: "https://zerocode.example.com"
+      # Per-IP rate limit. ZeroCode runs as an unauthenticated internal
+      # backend — the governor is the only client-volume guard. Tune for
+      # your traffic shape.
       ZEROCODE_GOVERNOR_RPS: "100"
       ZEROCODE_GOVERNOR_BURST: "100"
-      ZEROCODE_WEBHOOK_SECRET: __CHANGE_ME__
       RUST_LOG: info
     depends_on:
       migrate:
@@ -108,7 +108,6 @@ services:
       DATABASE_URL: postgres://zerocode:__CHANGE_ME__@postgres:5432/zerocode
       ZEROCODE_WORKER_ID: worker-1
       ZEROCODE_RUNNER_ROOTFS: /var/lib/zerocode/runner-rootfs
-      ZEROCODE_WEBHOOK_SECRET: __CHANGE_ME__
       RUST_LOG: info
     depends_on:
       migrate:

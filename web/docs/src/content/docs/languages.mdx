@@ -36,7 +36,6 @@ The authoritative source is the running API:
 
 ```bash
 curl http://localhost:8080/v1/languages \
-  -H "authorization: Bearer $ZC_KEY" \
   | jq '.[] | {id, name, version, default_limits}'
 ```
 

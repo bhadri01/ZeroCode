@@ -11,10 +11,8 @@
 //! - `POST /v1/submissions/batch` — create N submissions (1–100 test cases)
 //! - `GET  /v1/batches/{batch_id}` — fetch aggregated batch view + summary
 
-use std::net::SocketAddr;
-
 use axum::Json;
-use axum::extract::{ConnectInfo, Extension, Path, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -22,7 +20,6 @@ use ulid::Ulid;
 use zerocode_core::{LanguageId, Payload, Token, status::TimeLimitKind};
 use zerocode_core::{Status, Submission};
 
-use crate::auth::AuthTier;
 use crate::db::{self, NewSubmission};
 use crate::error::{ApiError, ApiResult};
 use crate::routes::submissions::SubmissionView;
@@ -87,19 +84,8 @@ pub struct BatchView {
 
 pub async fn create(
     State(state): State<AppState>,
-    Extension(tier): Extension<AuthTier>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(mut req): Json<BatchRequest>,
 ) -> ApiResult<Response> {
-    // Anonymous callers cannot batch — even a 100-case batch with the anon
-    // quota set to 1/min would let a visitor burn 100 sandbox invocations in
-    // one POST. Require a real API key for batch jobs.
-    if tier == AuthTier::Anonymous {
-        return Err(ApiError::Unauthorized);
-    }
-    // Lightly tag the IP for symmetry with the single-shot endpoint (no rate
-    // limiting needed since the authed tier is already governed).
-    let _ = peer;
     // Decode base64 payloads (Judge0-compat).
     if req.base64_encoded {
         let raw = req.source_code.as_utf8().map_err(|_| {

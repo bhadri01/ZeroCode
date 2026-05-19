@@ -25,8 +25,9 @@ cd ZeroCode
 cp .env.example .env
 ```
 
-Edit `.env` and set a strong `ZEROCODE_API_KEY`. The default value is a
-development sentinel and is rejected in production builds.
+ZeroCode runs as an open, unauthenticated backend — no API key to
+configure. Restrict who can reach the API port at the network layer
+(private subnet, firewall, reverse proxy with its own auth, VPN).
 
 ## 2. Bring up the stack
 
@@ -58,7 +59,6 @@ curl http://localhost:8080/v1/ready
   <TabItem label="curl">
     ```bash
     curl -X POST 'http://localhost:8080/v1/submissions?wait=true' \
-      -H "authorization: Bearer $ZEROCODE_API_KEY" \
       -H 'content-type: application/json' \
       -d '{
         "language_id": 71,
@@ -68,11 +68,10 @@ curl http://localhost:8080/v1/ready
   </TabItem>
   <TabItem label="Python">
     ```python
-    import requests, os
+    import requests
 
     r = requests.post(
         "http://localhost:8080/v1/submissions?wait=true",
-        headers={"Authorization": f"Bearer {os.environ['ZEROCODE_API_KEY']}"},
         json={"language_id": 71, "source_code": "print('hello, zerocode')"},
     )
     print(r.json()["stdout"])
@@ -82,10 +81,7 @@ curl http://localhost:8080/v1/ready
     ```ts
     const r = await fetch("http://localhost:8080/v1/submissions?wait=true", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.ZEROCODE_API_KEY}`,
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ language_id: 71, source_code: "print('hello, zerocode')" }),
     });
     console.log((await r.json()).stdout);

@@ -11,9 +11,6 @@ pub enum ApiError {
     #[error("validation: {0}")]
     Validation(String),
 
-    #[error("unauthorized")]
-    Unauthorized,
-
     #[error("not found")]
     NotFound,
 
@@ -46,7 +43,6 @@ impl ApiError {
     fn http_status(&self) -> StatusCode {
         match self {
             ApiError::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Gone => StatusCode::GONE,
             ApiError::IdempotencyConflict { .. } => StatusCode::CONFLICT,
@@ -89,14 +85,7 @@ impl IntoResponse for ApiError {
             _ => json!({ "error": self.to_string() }),
         };
 
-        let mut response = (status, Json(body)).into_response();
-        if matches!(self, ApiError::Unauthorized) {
-            response.headers_mut().insert(
-                axum::http::header::WWW_AUTHENTICATE,
-                "Bearer".parse().unwrap(),
-            );
-        }
-        response
+        (status, Json(body)).into_response()
     }
 }
 

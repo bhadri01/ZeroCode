@@ -34,13 +34,6 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the version-by-version log.
 - **[~] Auto-scaling worker pool** — pending-jobs and active-sandbox
   gauges are exported. The scaler/operator that consumes them (HPA,
   KEDA, custom) is intentionally out-of-tree.
-- **[~] CORS production allowlist** — `ZEROCODE_CORS_ORIGINS` is
-  configurable today. Per-origin `Access-Control-Allow-Credentials`
-  policy is still open.
-- **[~] Anonymous quota tuning** — env-var-driven IP bucket exists
-  (`ZEROCODE_ALLOW_ANONYMOUS`, `ZEROCODE_ANON_MAX_PER_WINDOW`,
-  `ZEROCODE_ANON_WINDOW_SECS`). Cookie-based fingerprinting and
-  per-bucket policy are operator-side.
 
 ---
 
@@ -54,10 +47,10 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the version-by-version log.
 - **[ ] Separate compile-time / compile-memory limits**
   (`compile_time_limit`, `compile_memory_limit`); today compile shares
   the run-phase wall budget
-- **[ ] Auth tier for UI users** — browser session → short-lived
-  per-session API key, distinct from operator API keys
-- **[ ] Persistent submission history for signed-in users** backed by
-  `GET /v1/submissions` (server-side; requires the auth tier above)
+- **[ ] Optional authentication layer** — pluggable auth (static keys,
+  OIDC, mTLS) for deployments that can't rely on network-layer access
+  control. Today ZeroCode is open / unauthenticated by design; this
+  would put it behind an opt-in middleware.
 - **[ ] Typed TS SDK in `web/app/src/sdk/`** generated from
   `/v1/openapi.json` (today the playground uses a hand-written client)
 - **[ ] Auto-generated REST reference** rendered from

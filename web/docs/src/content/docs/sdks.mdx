@@ -21,7 +21,6 @@ endpoint is documented in the [REST API reference](/docs/api).
   <TabItem label="curl">
     ```bash
     curl -X POST "$ZC_BASE/v1/submissions?wait=true" \
-      -H "authorization: Bearer $ZC_KEY" \
       -H 'content-type: application/json' \
       -d '{"language_id":71,"source_code":"print(\"hi\")"}' \
       | jq -r '.stdout'
@@ -33,7 +32,6 @@ endpoint is documented in the [REST API reference](/docs/api).
 
     r = requests.post(
         f"{os.environ['ZC_BASE']}/v1/submissions?wait=true",
-        headers={"authorization": f"Bearer {os.environ['ZC_KEY']}"},
         json={"language_id": 71, "source_code": "print('hi')"},
         timeout=35,
     )
@@ -45,10 +43,7 @@ endpoint is documented in the [REST API reference](/docs/api).
     ```ts
     const res = await fetch(`${process.env.ZC_BASE}/v1/submissions?wait=true`, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${process.env.ZC_KEY}`,
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ language_id: 71, source_code: "console.log('hi')" }),
     });
     if (!res.ok) throw new Error(`zerocode: ${res.status} ${await res.text()}`);
@@ -62,7 +57,6 @@ endpoint is documented in the [REST API reference](/docs/api).
         "source_code": "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hi\") }",
     })
     req, _ := http.NewRequest("POST", base+"/v1/submissions?wait=true", bytes.NewReader(body))
-    req.Header.Set("authorization", "Bearer "+key)
     req.Header.Set("content-type", "application/json")
     resp, err := http.DefaultClient.Do(req)
     // …

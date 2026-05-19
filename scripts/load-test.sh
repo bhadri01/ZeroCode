@@ -11,7 +11,6 @@ DURATION=60
 CONCURRENCY=50
 RPS=100
 API_BASE="${API_BASE:-http://localhost:8080}"
-AUTH_HEADER="Authorization: Bearer dev-only-replace-me"
 
 usage() {
   cat <<EOF
@@ -77,7 +76,6 @@ oha -z 10s \
   -c 10 \
   -m POST \
   -H "Content-Type: application/json" \
-  -H "${AUTH_HEADER}" \
   -d "${PAYLOAD}" \
   "${SUBMIT_URL}"
 
@@ -94,7 +92,6 @@ oha -z "${DURATION}s" \
   -c "${CONCURRENCY}" \
   -m POST \
   -H "Content-Type: application/json" \
-  -H "${AUTH_HEADER}" \
   -d "${PAYLOAD}" \
   "${SUBMIT_URL}"
 
@@ -112,7 +109,6 @@ oha -z 30s \
   -c "${CONCURRENCY}" \
   -m POST \
   -H "Content-Type: application/json" \
-  -H "${AUTH_HEADER}" \
   -d "${PAYLOAD}" \
   "${SUBMIT_URL}"
 

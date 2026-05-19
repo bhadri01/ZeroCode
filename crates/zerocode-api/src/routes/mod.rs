@@ -1,22 +1,17 @@
-use std::time::Duration;
-
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::http::{HeaderName, HeaderValue, Method, header};
-use axum::middleware::from_fn_with_state;
+use axum::http::{HeaderName, HeaderValue, header};
 use axum::response::Json;
 use axum::routing::{get, post};
 use tower::ServiceBuilder;
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
-use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, MakeSpan, TraceLayer};
 use tracing::Level;
 use utoipa::OpenApi;
 
-use crate::auth;
 use crate::state::AppState;
 
 pub mod batches;
@@ -56,57 +51,6 @@ impl<B> MakeSpan<B> for SanitizedMakeSpan {
     }
 }
 
-/// Build a `CorsLayer` from the configured origin list.
-///
-/// - Empty list → CORS disabled entirely (same-origin only — the layer is
-///   omitted upstream).
-/// - `["*"]`    → permissive `Any` (no credentials, since browsers refuse to
-///                send `Authorization` together with `Origin: *`).
-/// - Otherwise  → exact-match allowlist with `Authorization` permitted on
-///                preflight responses so the playground can send bearer keys
-///                from origins it controls.
-fn build_cors_layer(origins: &[String]) -> Option<CorsLayer> {
-    if origins.is_empty() {
-        return None;
-    }
-    let methods = [
-        Method::GET,
-        Method::POST,
-        Method::PUT,
-        Method::DELETE,
-        Method::OPTIONS,
-    ];
-    let headers = [
-        header::AUTHORIZATION,
-        header::CONTENT_TYPE,
-        header::ACCEPT,
-        "idempotency-key".parse().unwrap(),
-    ];
-
-    let mut layer = CorsLayer::new()
-        .allow_methods(methods)
-        .allow_headers(headers)
-        // SSE streams are long-lived; let the browser keep the connection
-        // open for the full retention window.
-        .max_age(Duration::from_secs(600));
-
-    if origins.iter().any(|o| o == "*") {
-        layer = layer.allow_origin(AllowOrigin::any());
-    } else {
-        let parsed: Vec<HeaderValue> = origins
-            .iter()
-            .filter_map(|o| HeaderValue::from_str(o).ok())
-            .collect();
-        layer = layer
-            .allow_origin(AllowOrigin::list(parsed))
-            // exact-match origins are safe to combine with credentials so
-            // the bearer key flows on preflight + actual request.
-            .allow_credentials(true);
-    }
-
-    Some(layer)
-}
-
 pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .route("/v1/health", get(health::liveness))
@@ -122,7 +66,10 @@ pub fn router(state: AppState) -> Router {
         .finish()
         .unwrap();
 
-    let authed = Router::new()
+    // Routes that accept submissions and serve their results. No auth — the
+    // service is configured as an open, non-exported backend. The per-IP
+    // `tower_governor` rate limit is the only client-volume guard.
+    let api = Router::new()
         .route(
             "/v1/submissions",
             post(submissions::create).get(submissions::list),
@@ -132,19 +79,16 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/submissions/batch", post(batches::create))
         .route("/v1/batches/{batch_id}", get(batches::get))
         .route("/v1/languages", get(languages::list))
-        .layer(GovernorLayer::new(governor_conf))
-        .layer(from_fn_with_state(state.clone(), auth::require_auth));
+        .layer(GovernorLayer::new(governor_conf));
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(SanitizedMakeSpan)
         .on_request(DefaultOnRequest::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
-    let cors_layer = build_cors_layer(&state.config().cors_origins);
-
     let mut router = Router::new()
         .merge(public)
-        .merge(authed)
+        .merge(api)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(trace_layer)
         .layer(crate::metrics_layer::HttpMetricsLayer);
@@ -218,10 +162,6 @@ pub fn router(state: AppState) -> Router {
             .service(ServeDir::new(web_dir));
 
         router = router.fallback_service(static_with_headers);
-    }
-
-    if let Some(cors) = cors_layer {
-        router = router.layer(cors);
     }
 
     router.with_state(state)

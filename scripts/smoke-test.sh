@@ -26,7 +26,6 @@ fi
 # -- constants ---------------------------------------------------------------
 COMPOSE_FILE="deploy/docker-compose.yml"
 API_BASE="http://localhost:8080"
-AUTH_HEADER="Authorization: Bearer dev-only-replace-me"
 HEALTH_URL="${API_BASE}/v1/health"
 HEALTH_TIMEOUT=30          # seconds
 
@@ -117,7 +116,6 @@ log "Running tests"
 test_name="Python hello world (language_id=71, ?wait=true)"
 response=$(curl -sf -w "\n%{http_code}" \
   -X POST "${API_BASE}/v1/submissions?wait=true" \
-  -H "${AUTH_HEADER}" \
   -H "Content-Type: application/json" \
   -d '{"language_id":71,"source_code":"print(\"hello zerocode\")"}' 2>&1) || true
 
@@ -141,7 +139,6 @@ fi
 test_name="Unknown language (language_id=9999) returns 422"
 response=$(curl -sf -w "\n%{http_code}" \
   -X POST "${API_BASE}/v1/submissions" \
-  -H "${AUTH_HEADER}" \
   -H "Content-Type: application/json" \
   -d '{"language_id":9999,"source_code":"x"}' 2>&1) || true
 
@@ -157,7 +154,6 @@ fi
 test_name="Empty source_code returns 422"
 response=$(curl -sf -w "\n%{http_code}" \
   -X POST "${API_BASE}/v1/submissions" \
-  -H "${AUTH_HEADER}" \
   -H "Content-Type: application/json" \
   -d '{"language_id":71,"source_code":""}' 2>&1) || true
 
@@ -173,7 +169,7 @@ fi
 test_name="GET /v1/languages returns 41+ entries"
 response=$(curl -sf -w "\n%{http_code}" \
   -X GET "${API_BASE}/v1/languages" \
-  -H "${AUTH_HEADER}" 2>&1) || true
+  2>&1) || true
 
 http_code=$(echo "$response" | tail -1)
 body=$(echo "$response" | sed '$d')
@@ -214,7 +210,6 @@ test_name="Base64-encoded submission accepted"
 b64_source=$(printf 'print("hello zerocode")' | base64)
 response=$(curl -sf -w "\n%{http_code}" \
   -X POST "${API_BASE}/v1/submissions?wait=true" \
-  -H "${AUTH_HEADER}" \
   -H "Content-Type: application/json" \
   -d "{\"language_id\":71,\"source_code\":\"${b64_source}\",\"base64_encoded\":true}" 2>&1) || true
 

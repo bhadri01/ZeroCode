@@ -69,14 +69,16 @@ Variables without a default are **required**.
 
 ### API server (`zerocode-api`)
 
+ZeroCode runs as an open, unauthenticated backend. The only client-volume
+guard is a per-IP `tower_governor` rate limit. Network-layer protection
+(private subnet, firewall, reverse proxy with auth) is the operator's
+responsibility.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DATABASE_URL` | yes | — | Postgres connection string. |
 | `ZEROCODE_API_BIND` | no | `0.0.0.0:8080` | Listen address. |
-| `ZEROCODE_API_KEY` | yes | — | Static Bearer token for v1 auth. |
 | `ZEROCODE_LANGUAGES_FILE` | no | `runners/languages.toml` | Language registry path. |
-| `ZEROCODE_CORS_ORIGINS` | no | empty | Comma-separated origin allowlist. Empty = same-origin only. |
-| `ZEROCODE_ALLOW_ANONYMOUS` | no | `false` | Admit unauthenticated requests under the anon quota. **Leave off for prod.** |
 | `ZEROCODE_GOVERNOR_RPS` | no | `100` | Per-IP requests per second. |
 | `ZEROCODE_GOVERNOR_BURST` | no | `100` | Per-IP burst capacity. |
 | `ZEROCODE_WEB_DIR` | no | `web/dist` | Where the playground static assets live. `""` disables the mount. |
@@ -91,7 +93,7 @@ Variables without a default are **required**.
 | `ZEROCODE_RUNNER_ROOTFS` | yes | — | Path to the extracted runner filesystem. Typically `/var/lib/zerocode/runner-rootfs`. |
 | `ZEROCODE_LANGUAGES_FILE` | no | `runners/languages.toml` | Language registry path. |
 | `ZEROCODE_MAX_PARALLEL` | no | num CPUs | Concurrent sandbox count. |
-| `ZEROCODE_WEBHOOK_SECRET` | no | empty | HMAC-SHA256 secret for outbound webhook signatures. **Set in prod.** |
+| `ZEROCODE_WEBHOOK_SECRET` | no | empty | HMAC-SHA256 secret for outbound webhook signatures. Optional — leave empty to deliver webhooks unsigned. |
 | `RUST_LOG` | no | `info` | Logging filter. |
 
 ### Sweeper (runs inside each worker)
@@ -127,8 +129,7 @@ docker build -f deploy/Dockerfile.worker  -t zerocode-worker:v0.1.0  .
 
 ```bash
 cp deploy/docker-compose.prod.example.yml deploy/docker-compose.prod.yml
-# Edit secrets — replace every __CHANGE_ME__ marker. Set ZEROCODE_API_KEY,
-# ZEROCODE_WEBHOOK_SECRET, POSTGRES_PASSWORD, and the DATABASE_URL.
+# Replace every __CHANGE_ME__ marker (Postgres password + DATABASE_URL).
 
 docker compose -f deploy/docker-compose.prod.yml up -d
 ```
@@ -148,8 +149,7 @@ docker compose -f deploy/docker-compose.prod.yml ps
 docker compose -f deploy/docker-compose.prod.yml logs worker | grep -E 'bind-mount|rootfs'
 # Expect two "bind-mounted into runner rootfs" lines.
 
-curl -s -H "Authorization: Bearer $YOUR_KEY" \
-     http://localhost:8080/v1/languages | jq
+curl -s http://localhost:8080/v1/languages | jq
 ```
 
 ### Step 4 — tear down

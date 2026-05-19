@@ -60,11 +60,11 @@ The three trust boundaries are crossed by, respectively:
 
 | Threat | Mitigation |
 |---|---|
-| **Spoofing** (impersonate a user) | Constant-time bearer compare; HMAC-SHA256 on webhook deliveries. |
+| **Spoofing** (anyone can submit) | **Accepted.** ZeroCode is an open backend — control access at the network layer (private subnet, firewall, reverse proxy with auth). HMAC-SHA256 signs outbound webhook deliveries when `ZEROCODE_WEBHOOK_SECRET` is set. |
 | **Tampering** (modify queue rows) | Postgres is the source of truth; row updates go through typed queries; `claimed_at` + `worker_id` for sweep recovery. |
-| **Repudiation** (deny submission) | Idempotency key (blake3 of body) + retention window with `expired` terminal state. |
-| **Information disclosure** (leak source, output, env) | Source/stdin/stdout never logged at INFO; 24h row TTL, 1h payload TTL; `Authorization` redacted from spans. |
-| **Denial of service** | Global rate limit (100 RPS burst), per-language limits, output ring-buffer with overflow marker, wall+CPU+memory+pids caps. |
+| **Repudiation** (deny submission) | Idempotency key (blake3 of body) + retention window with `expired` terminal state. Peer IP is recorded on each row. |
+| **Information disclosure** (leak source, output, env) | Source/stdin/stdout never logged at INFO; 24h row TTL, 1h payload TTL. |
+| **Denial of service** | Per-IP rate limit (`tower_governor`, 100 RPS burst), per-language limits, output ring-buffer with overflow marker, wall+CPU+memory+pids caps. |
 | **Elevation of privilege** (escape the sandbox) | 8-layer stack above; periodic zombie reaper; `PR_SET_CHILD_SUBREAPER` on worker boot. |
 
 ## Known limitations

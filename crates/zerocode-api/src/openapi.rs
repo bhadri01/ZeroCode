@@ -54,11 +54,6 @@ use utoipa::{OpenApi, ToSchema};
         BatchViewBody,
         ErrorBody,
     )),
-    security(
-        (),
-        ("bearer" = []),
-    ),
-    modifiers(&SecurityAddon),
     tags(
         (name = "submissions", description = "Submit code and fetch results"),
         (name = "languages", description = "Active language registry"),
@@ -66,28 +61,6 @@ use utoipa::{OpenApi, ToSchema};
     ),
 )]
 pub struct ApiDoc;
-
-struct SecurityAddon;
-
-impl utoipa::Modify for SecurityAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
-        let components = openapi.components.get_or_insert_with(Default::default);
-        components.add_security_scheme(
-            "bearer",
-            SecurityScheme::Http(
-                HttpBuilder::new()
-                    .scheme(HttpAuthScheme::Bearer)
-                    .bearer_format("opaque")
-                    .description(Some(
-                        "Static API key configured via `ZEROCODE_API_KEY`. Required on all\
-                         `/v1/submissions*` and `/v1/languages` routes.",
-                    ))
-                    .build(),
-            ),
-        );
-    }
-}
 
 // ---------- response/request shape mirrors ----------
 

@@ -5,8 +5,11 @@ description: ZeroCode HTTP/JSON surface — endpoints, request/response shapes, 
 
 import { Aside } from '@astrojs/starlight/components';
 
-All endpoints live under `/v1`. Authentication is via `Authorization: Bearer <key>`
-unless explicitly noted. Errors return `{ "error": "..." }` with a 4xx/5xx status.
+All endpoints live under `/v1`. ZeroCode runs as an open, unauthenticated
+backend — there is no application-layer auth. Restrict access at the
+network layer (private subnet, firewall, reverse proxy with auth, VPN).
+A per-IP rate limit (`tower_governor`) caps client volume. Errors return
+`{ "error": "..." }` with a 4xx/5xx status.
 
 The full OpenAPI 3.1 specification is served at
 [`GET /v1/openapi.json`](/v1/openapi.json). ZeroCode does **not** ship
@@ -42,7 +45,6 @@ full result inline (up to 30 s server-side timeout).
 
 Headers:
 
-- `Authorization: Bearer <key>` — required.
 - `Idempotency-Key: <opaque>` — optional; the server hashes the body (blake3) and
   returns the same `token` for repeated keys within 5 minutes.
 
@@ -68,8 +70,8 @@ Server-Sent Events stream of the submission's progress. Events:
 | `finished` | `{"status":{"kind":"accepted","detail":null}}` |
 | `error` | error message text |
 
-The connection closes after `finished`. Browsers' `EventSource` can't send
-`Authorization`, so the playground uses `fetch` + a `ReadableStream` reader.
+The connection closes after `finished`. Browsers' `EventSource` is fine
+for this endpoint since no authentication header is required.
 
 ### `GET /v1/submissions`
 
@@ -144,9 +146,7 @@ The `status` field is `{ "kind": "...", "detail"?: ... }`:
 
 ## Errors
 
-`401 Unauthorized` — missing or wrong `Authorization` header.
-`403 Forbidden` — anonymous tier hit its per-IP rate-limit.
 `413 Payload Too Large` — body exceeded 256 KB.
 `422 Unprocessable Entity` — JSON parsed but the request shape was invalid.
-`429 Too Many Requests` — global rate-limit (100 RPS burst).
+`429 Too Many Requests` — per-IP `tower_governor` rate-limit exceeded.
 `500 Internal Server Error` — DB or sandbox-side bug; check logs.

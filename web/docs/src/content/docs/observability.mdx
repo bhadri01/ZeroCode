@@ -52,9 +52,7 @@ Both binaries write JSON-lines to stdout via `tracing-subscriber`. Fields:
  "message":"submission created","token":"7c8e..a31","language_id":71}
 ```
 
-The `Authorization` header is redacted from `http_request` spans via the
-custom `SanitizedMakeSpan`. Don't log source/stdin/stdout at INFO — the
-default config respects this.
+Don't log source/stdin/stdout at INFO — the default config respects this.
 
 Pipe to Loki/Vector/Fluentbit by collecting stdout. With Docker:
 

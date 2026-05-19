@@ -104,7 +104,6 @@ either need:
 
 ```bash
 curl -X POST 'http://localhost:8080/v1/submissions?wait=true' \
-     -H 'Authorization: Bearer dev-only-replace-me' \
      -H 'Content-Type: application/json' \
      -d '{"language_id": 71, "source_code": "print(\"hi\")"}'
 ```

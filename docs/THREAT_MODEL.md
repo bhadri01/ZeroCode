@@ -21,15 +21,24 @@ syscalls the submitted code invokes.
 
 ## 2. Trust Boundaries
 
+> ZeroCode is configured as an **open, unauthenticated backend**. There is
+> no application-layer auth on `/v1/*` routes. Operators are expected to
+> restrict who can reach the API via the network layer — private subnet,
+> firewall, reverse proxy with its own auth, VPN, or service-mesh policy.
+> A per-IP `tower_governor` rate limit (default 100 RPS) caps client
+> volume. The boundaries below assume that network-layer control is in
+> place; the in-process boundaries protect against attackers who have
+> already passed it.
+
 ```
-                         TB1                TB2               TB3              TB4
+                         TB1                TB2               TB3
     +---------+    +-----------+    +------------+    +----------+    +----------------+
     |  Client | -->|  API      | -->|  Postgres  | <--|  Worker  | -->|  Sandbox       |
     | (HTTP)  |    |  (axum)   |    |  (pg16)    |    |  (Rust)  |    |  (namespaces   |
-    |         |    |           |    |            |    |          |    |   + cgroup      |
-    |         |    | auth.rs   |    | submission |    | poll     |    |   + pivot_root  |
-    |         |    | bearer    |    | queue rows |    | loop     |    |   + landlock    |
-    |         |    | check     |    |            |    |          |    |   + seccomp)    |
+    |         |    | rate-     |    |            |    |          |    |   + cgroup      |
+    |         |    | limited   |    | submission |    | poll     |    |   + pivot_root  |
+    |         |    | per-IP    |    | queue rows |    | loop     |    |   + landlock    |
+    |         |    |           |    |            |    |          |    |   + seccomp)    |
     +---------+    +-----------+    +------------+    +----------+    +----------------+
                                                                        |
                                                                        | execvpe
@@ -39,14 +48,13 @@ syscalls the submitted code invokes.
                                                                      | (PID 1 in ns)  |
                                                                      +----------------+
 
-TB1 - Network boundary: client to API. Bearer token required. No TLS termination
-      (assumes reverse proxy). See crates/zerocode-api/src/auth.rs.
-TB2 - Data boundary: API to Postgres. Submissions enqueued as rows; worker polls.
-      No direct client access to the database.
-TB3 - Process boundary: worker to sandbox. fork() + unshare() creates an isolated
+TB1 - Data boundary: API to Postgres. Submissions enqueued as rows; worker polls.
+      No direct client access to the database. The API rate-limits per-IP and
+      caps request body size at 256 KB.
+TB2 - Process boundary: worker to sandbox. fork() + unshare() creates an isolated
       child. Parent writes uid_map and attaches the child to a cgroup before
       signalling it to proceed. See crates/zerocode-sandbox/src/native/exec.rs.
-TB4 - Kernel enforcement boundary: the sandbox child has been pivot_root'd into a
+TB3 - Kernel enforcement boundary: the sandbox child has been pivot_root'd into a
       minimal rootfs, has all capabilities dropped, is landlock-confined, and has
       a seccomp BPF filter loaded. The only way out is through the kernel, and
       the kernel policy denies the relevant syscalls.
@@ -59,8 +67,7 @@ TB4 - Kernel enforcement boundary: the sandbox child has been pivot_root'd into 
 
 | Threat | Mitigation |
 |--------|-----------|
-| Attacker submits requests without authentication | `Authorization: Bearer <key>` required on all submission endpoints (`crates/zerocode-api/src/auth.rs`). |
-| Timing attack against API key comparison | Constant-time comparison via `subtle::ConstantTimeEq` (`auth.rs:31`). |
+| Anyone can submit code | **Accepted.** ZeroCode runs as an open backend — restrict network reach (private subnet, firewall, reverse proxy with auth) at the operator level. |
 | Sandbox process spoofs identity to the worker | The child runs in a user namespace where UID 0 maps to the worker's unprivileged host UID (`crates/zerocode-sandbox/src/native/userns.rs`). The parent identifies the child by PID returned from `fork()`, not by any self-reported identity. |
 
 ### Tampering
@@ -76,7 +83,7 @@ TB4 - Kernel enforcement boundary: the sandbox child has been pivot_root'd into 
 
 | Threat | Mitigation |
 |--------|-----------|
-| Submitter denies having submitted code | Submissions are stored in Postgres with timestamp and the authenticated API key context. The worker logs execution lifecycle events via `tracing`. |
+| Submitter denies having submitted code | Submissions are stored in Postgres with a timestamp and the requesting peer IP. The worker logs execution lifecycle events via `tracing`. Stronger attribution requires an authenticating reverse proxy in front. |
 | Sandbox error obscures what happened | Exit status, stdout, stderr, wall-clock timeout flag, OOM-kill detection, and peak memory are all captured and returned (`exec.rs:RawOutcome`, `cgroup.rs:oom_killed`, `cgroup.rs:memory_peak_bytes`). |
 
 ### Information Disclosure
@@ -229,15 +236,16 @@ opportunity, tracked in [`ROADMAP.md`](ROADMAP.md) where work is planned.
    rootfs is inherited from the bind-mount. Mounting a minimal devtmpfs or
    bind-mounting only `/dev/null`, `/dev/zero`, `/dev/urandom` would harden this.
 
-3. **Single API key authentication (no multi-tenancy)**. The API accepts a
-   single static bearer token (`auth.rs`). There is no per-user isolation,
-   rate limiting per tenant, or submission quotas. All authenticated requests
-   share the same trust level.
+3. **No application-layer authentication.** ZeroCode is configured as an
+   open, unauthenticated backend — every `/v1/*` route is reachable by
+   anyone who can connect to the API port. Access control is the operator's
+   responsibility (private subnet, firewall, reverse proxy with auth, VPN,
+   service-mesh policy). The only in-app guard is the per-IP
+   `tower_governor` rate limit.
 
 4. **No TLS termination**. The API server binds plaintext HTTP (`0.0.0.0:8080`
    in `docker-compose.yml`). TLS must be terminated by a reverse proxy (nginx,
-   Caddy, cloud load balancer). The bearer token is transmitted in cleartext
-   without TLS.
+   Caddy, cloud load balancer) when traffic crosses an untrusted network.
 
 5. **Seccomp is deny-list, not allow-list**. The filter defaults to
    `ScmpAction::Allow` and subtracts specific dangerous syscalls (`seccomp.rs:31`).
