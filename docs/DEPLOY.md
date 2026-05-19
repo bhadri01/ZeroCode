@@ -4,7 +4,7 @@ Production deployment guide. Covers host prerequisites, image build,
 capabilities, cgroup delegation, TLS termination, and a troubleshooting
 section that includes the failure modes the team has hit in practice.
 
-For local development, see [`DEVELOPMENT.md`](DEVELOPMENT.md).
+> **For**: operators running ZeroCode on their own host. See [`README.md`](README.md) for docs orientation; [`DEVELOPMENT.md`](DEVELOPMENT.md) for local-dev workflow.
 
 ---
 

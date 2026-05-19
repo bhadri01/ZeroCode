@@ -1,5 +1,7 @@
 # ZeroCode Threat Model
 
+> **For**: security reviewers and contributors hardening the sandbox. See [`README.md`](README.md) for docs orientation.
+
 ## 1. Overview
 
 ZeroCode is a sandboxed code execution service designed as a replacement for
@@ -210,10 +212,10 @@ compromise the others.
 - **Source**: `exec.rs:241-242`
 
 
-## 5. Known Limitations (v1)
+## 5. Known Limitations
 
-These are gaps acknowledged in the current implementation. They represent areas
-for hardening in future phases.
+Gaps acknowledged in the current implementation. Each represents a hardening
+opportunity, tracked in [`ROADMAP.md`](ROADMAP.md) where work is planned.
 
 1. **No RLIMIT_FSIZE / RLIMIT_NOFILE enforcement**. File size and open file
    descriptor counts are bounded only indirectly by the tmpfs size limit and
@@ -227,41 +229,36 @@ for hardening in future phases.
    rootfs is inherited from the bind-mount. Mounting a minimal devtmpfs or
    bind-mounting only `/dev/null`, `/dev/zero`, `/dev/urandom` would harden this.
 
-3. **Compile-artifact cache not wired**. Compiled binaries live in the
-   per-submission `/box` tmpfs and are discarded after each run. There is no
-   shared compilation cache. This is safe but inefficient for repeated
-   compilations of the same source.
-
-4. **Single API key authentication (no multi-tenancy)**. The API accepts a
+3. **Single API key authentication (no multi-tenancy)**. The API accepts a
    single static bearer token (`auth.rs`). There is no per-user isolation,
    rate limiting per tenant, or submission quotas. All authenticated requests
    share the same trust level.
 
-5. **No TLS termination**. The API server binds plaintext HTTP (`0.0.0.0:8080`
+4. **No TLS termination**. The API server binds plaintext HTTP (`0.0.0.0:8080`
    in `docker-compose.yml`). TLS must be terminated by a reverse proxy (nginx,
    Caddy, cloud load balancer). The bearer token is transmitted in cleartext
    without TLS.
 
-6. **Seccomp is deny-list, not allow-list**. The filter defaults to
+5. **Seccomp is deny-list, not allow-list**. The filter defaults to
    `ScmpAction::Allow` and subtracts specific dangerous syscalls (`seccomp.rs:31`).
    A novel dangerous syscall added in a future kernel version would be allowed
    until explicitly added to the deny list. An allowlist approach would be
    stronger but requires careful enumeration per language runtime.
 
-7. **No Firecracker / gVisor isolation tier**. All sandbox isolation is
+6. **No Firecracker / gVisor isolation tier**. All sandbox isolation is
    provided by Linux namespaces, cgroups, landlock, and seccomp in a shared
    kernel. A kernel vulnerability in an allowed syscall could bypass all layers
    simultaneously. A microVM (Firecracker) or user-space kernel (gVisor) tier
    would add a hardware/process-level boundary.
 
-8. **No Landlock network restrictions**. Landlock ABI v1 covers only filesystem
+7. **No Landlock network restrictions**. Landlock ABI v1 covers only filesystem
    access. Network restrictions via Landlock require ABI v4+ (kernel >= 6.7).
    Currently, network isolation relies entirely on the NET namespace (no external
    connectivity).
 
-9. **CLONE_NEWUSER argument filtering not yet active**. The seccomp filter
+8. **CLONE_NEWUSER argument filtering not yet active**. The seccomp filter
    blocks the `unshare` syscall entirely, but `clone` with `CLONE_NEWUSER` flag
-   argument inspection is deferred to Phase 2.5 (`seccomp.rs:47`).
+   argument inspection is deferred to a follow-up hardening pass (`seccomp.rs:47`).
 
 
 ## 6. CVE Analysis: Judge0 2024 Vulnerabilities

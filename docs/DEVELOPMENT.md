@@ -1,8 +1,10 @@
 # Developing ZeroCode
 
+> **For**: contributors hacking on the codebase. See [`README.md`](README.md) for docs orientation; [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for commit style + PR checklist; [`DEPLOY.md`](DEPLOY.md) for production deployment.
+
 This guide is for working on ZeroCode itself: running the stack locally,
 iterating on the API and worker with hot reloads, and exercising the
-test suite. For production deployment, see [`DEPLOY.md`](DEPLOY.md).
+test suite.
 
 ---
 

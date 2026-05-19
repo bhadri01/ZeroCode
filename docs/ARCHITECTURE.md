@@ -3,6 +3,8 @@
 > Sandboxed code execution service. Rust workspace, Linux namespaces + cgroups v2
 > isolation, Postgres-backed queue with LISTEN/NOTIFY dispatch.
 
+> **For**: contributors reading source. See [`README.md`](README.md) for docs orientation.
+
 
 ## 1. System overview
 

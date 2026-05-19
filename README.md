@@ -237,15 +237,17 @@ ptrace, mount), signal handling, and per-language runtime quirks.
 
 ## Documentation
 
-| Doc | What's in it |
-|---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System diagram, crate map, submission lifecycle. |
-| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local-dev workflow, testing, debugging, hot reload. |
-| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Production deployment: host prereqs, capabilities, TLS, troubleshooting. |
-| [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | STRIDE analysis and isolation-layer rationale. |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Planned features, language expansion, milestones. |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to propose changes, run pre-commit checks. |
-| [`deploy/README.md`](deploy/README.md) | What lives in `deploy/` and how the images compose. |
+ZeroCode has two documentation systems for two audiences:
+
+- **[`docs/`](docs/README.md)** — plain markdown for contributors and
+  operators (read on GitHub or in your IDE).
+- **[`web/docs/`](web/docs/README.md)** — Astro/Starlight site for API
+  users, served at `/docs/` on any running instance (e.g.,
+  <http://localhost:8080/docs/> after `docker compose up`).
+
+**Start at [`docs/README.md`](docs/README.md)** — it's the index, has the
+"where do I start?" decision tree, and lists every doc in the project
+with audience labels.
 
 ---
 
