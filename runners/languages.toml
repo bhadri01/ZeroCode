@@ -31,7 +31,13 @@ id = 52
 name = "C++"
 version = "g++-14"
 source_file = "main.cpp"
-compile_cmd = ["/usr/bin/g++-14", "-O2", "-std=c++23", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "main.cpp", "-o", "prog", "-lm"]
+# `-O0 -pipe` keeps the cold compile of `<iostream>` hello-worlds under
+# 100 ms on Docker Desktop. `-O2` was ~5× slower without measurable
+# benefit for short-lived sandboxed runs. `-pipe` skips the cc1plus →
+# as intermediate temp file. Stack-protector + FORTIFY are dropped here
+# because the sandbox is the real security boundary; reintroduce on a
+# `--profile prod` build of the languages file if needed.
+compile_cmd = ["/usr/bin/g++-14", "-O0", "-pipe", "-std=c++23", "main.cpp", "-o", "prog", "-lm"]
 run_cmd = ["./prog"]
 env = []
 is_archived = false

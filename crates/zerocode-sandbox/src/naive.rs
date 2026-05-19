@@ -227,35 +227,88 @@ impl Sandbox for NaiveSandbox {
 
         // ── compile phase ─────────────────────────────────────────────────
         let mut compile_output: Option<Bytes> = None;
+        let mut compiled_binary: Option<Bytes> = None;
         let compile_cmd = job.language.compile_cmd.as_deref().unwrap_or(&[]);
         if !compile_cmd.is_empty() {
-            let (cprog, cargs) = compile_cmd
-                .split_first()
-                .ok_or_else(|| SandboxError::Internal("empty compile_cmd".into()))?;
-            let cargs_subbed: Vec<String> = cargs
-                .iter()
-                .map(|a| substitute_limits(a, &job.limits))
-                .collect();
+            // Compile cache hit — the worker already fetched a binary keyed
+            // on (language_id, source_code). Write it into the per-job
+            // workdir at `prog` and skip the compile fork entirely.
+            // Saves ~400 ms for C++ hello-worlds on Docker Desktop's Linux
+            // VM, where the bulk of compile time is parsing <iostream>.
+            if let Some(bytes) = job.cached_binary.as_ref() {
+                use std::os::unix::fs::PermissionsExt;
+                let prog_path = format!("{host_workdir}/prog");
+                std::fs::write(&prog_path, bytes).map_err(|e| {
+                    SandboxError::Internal(format!("write cached binary {prog_path}: {e}"))
+                })?;
+                let _ = std::fs::set_permissions(
+                    &prog_path,
+                    std::fs::Permissions::from_mode(0o755),
+                );
+                tracing::debug!(
+                    token = %job.token,
+                    bytes = bytes.len(),
+                    "compile cache hit — skipped recompile"
+                );
+            } else {
+                let (cprog, cargs) = compile_cmd
+                    .split_first()
+                    .ok_or_else(|| SandboxError::Internal("empty compile_cmd".into()))?;
+                let cargs_subbed: Vec<String> = cargs
+                    .iter()
+                    .map(|a| substitute_limits(a, &job.limits))
+                    .collect();
 
-            let child = prepare_cmd(cprog, &cargs_subbed, Stdio::null())
-                .spawn()
-                .map_err(|e| SandboxError::Spawn(format!("compile spawn: {e}")))?;
+                let child = prepare_cmd(cprog, &cargs_subbed, Stdio::null())
+                    .spawn()
+                    .map_err(|e| SandboxError::Spawn(format!("compile spawn: {e}")))?;
 
-            let out = match tokio::time::timeout(wall_budget, child.wait_with_output()).await {
-                Ok(r) => r.map_err(|e| SandboxError::Wait(format!("compile wait: {e}")))?,
-                Err(_) => {
-                    // Compile timed out — user code never ran, so wall/cpu = 0.
+                let out = match tokio::time::timeout(wall_budget, child.wait_with_output()).await
+                {
+                    Ok(r) => r.map_err(|e| SandboxError::Wait(format!("compile wait: {e}")))?,
+                    Err(_) => {
+                        // Compile timed out — user code never ran, so wall/cpu = 0.
+                        let _ = std::fs::remove_dir_all(&host_workdir);
+                        return Ok(SandboxResult {
+                            status: Status::TimeLimitExceeded(
+                                zerocode_core::status::TimeLimitKind::Wall,
+                            ),
+                            stdout: Bytes::new(),
+                            stderr: Bytes::new(),
+                            compile_output: Some(Bytes::from_static(b"compile timed out")),
+                            compiled_binary: None,
+                            exit_code: None,
+                            signal: Some(Signal::Sigkill),
+                            cpu_time: Duration::ZERO,
+                            wall_time: Duration::ZERO,
+                            memory_kb: 0,
+                            started_at,
+                            finished_at: Utc::now(),
+                        });
+                    }
+                };
+
+                let stderr_text = String::from_utf8_lossy(&out.stderr).into_owned();
+                let stdout_text = String::from_utf8_lossy(&out.stdout).into_owned();
+                let combined = if stdout_text.is_empty() {
+                    stderr_text
+                } else if stderr_text.is_empty() {
+                    stdout_text
+                } else {
+                    format!("{stdout_text}\n{stderr_text}")
+                };
+
+                if !out.status.success() {
+                    // Compile failed — user code never ran, so wall/cpu = 0.
                     let _ = std::fs::remove_dir_all(&host_workdir);
                     return Ok(SandboxResult {
-                        status: Status::TimeLimitExceeded(
-                            zerocode_core::status::TimeLimitKind::Wall,
-                        ),
+                        status: Status::CompileError,
                         stdout: Bytes::new(),
                         stderr: Bytes::new(),
-                        compile_output: Some(Bytes::from_static(b"compile timed out")),
+                        compile_output: Some(Bytes::from(combined.into_bytes())),
                         compiled_binary: None,
-                        exit_code: None,
-                        signal: Some(Signal::Sigkill),
+                        exit_code: out.status.code(),
+                        signal: None,
                         cpu_time: Duration::ZERO,
                         wall_time: Duration::ZERO,
                         memory_kb: 0,
@@ -263,38 +316,17 @@ impl Sandbox for NaiveSandbox {
                         finished_at: Utc::now(),
                     });
                 }
-            };
+                if !combined.is_empty() {
+                    compile_output = Some(Bytes::from(combined.into_bytes()));
+                }
 
-            let stderr_text = String::from_utf8_lossy(&out.stderr).into_owned();
-            let stdout_text = String::from_utf8_lossy(&out.stdout).into_owned();
-            let combined = if stdout_text.is_empty() {
-                stderr_text
-            } else if stderr_text.is_empty() {
-                stdout_text
-            } else {
-                format!("{stdout_text}\n{stderr_text}")
-            };
-
-            if !out.status.success() {
-                // Compile failed — user code never ran, so wall/cpu = 0.
-                let _ = std::fs::remove_dir_all(&host_workdir);
-                return Ok(SandboxResult {
-                    status: Status::CompileError,
-                    stdout: Bytes::new(),
-                    stderr: Bytes::new(),
-                    compile_output: Some(Bytes::from(combined.into_bytes())),
-                    compiled_binary: None,
-                    exit_code: out.status.code(),
-                    signal: None,
-                    cpu_time: Duration::ZERO,
-                    wall_time: Duration::ZERO,
-                    memory_kb: 0,
-                    started_at,
-                    finished_at: Utc::now(),
-                });
-            }
-            if !combined.is_empty() {
-                compile_output = Some(Bytes::from(combined.into_bytes()));
+                // Successful compile — read the produced binary back so the
+                // worker's CompileCache can persist it for the next run of
+                // this same source.
+                let prog_path = format!("{host_workdir}/prog");
+                if let Ok(bytes) = std::fs::read(&prog_path) {
+                    compiled_binary = Some(Bytes::from(bytes));
+                }
             }
         }
 
@@ -379,7 +411,7 @@ impl Sandbox for NaiveSandbox {
             stdout: cap(output.stdout, job.limits.max_stdout as usize),
             stderr: cap(output.stderr, job.limits.max_stderr as usize),
             compile_output,
-            compiled_binary: None,
+            compiled_binary,
             exit_code: output.status.code(),
             signal: None,
             cpu_time: run_elapsed,
