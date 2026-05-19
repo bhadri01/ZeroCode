@@ -12,6 +12,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Editor, type EditorHandle } from './Editor';
 import { LANGS, VERDICT_COLOR, VERDICT_LABEL, type Lang, type Verdict } from './data';
+import { TestsPanel } from './TestsPanel';
 import { getTheme, toggleTheme, type Theme } from '../shared/theme';
 import { LangIcon, langKeyFromId } from '../shared/lang-icons';
 import {
@@ -356,6 +357,7 @@ function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory
 }
 
 /* ─── WorkspaceBar ──────────────────────────────────────────────── */
+type RunMode = 'single' | 'tests';
 interface WorkspaceBarProps {
   lang: Lang; status: Verdict;
   onRun: () => void; onRunDemo: () => void; onCancel: () => void; onReset: () => void; onFormat: () => void;
@@ -364,6 +366,7 @@ interface WorkspaceBarProps {
   apiOnline: boolean;
   onShare: () => void;
   onOpenPicker: () => void;
+  mode: RunMode; setMode: (m: RunMode) => void;
 }
 function WorkspaceBar(p: WorkspaceBarProps) {
   const [showLimits, setShowLimits] = useState(false);
@@ -442,6 +445,30 @@ function WorkspaceBar(p: WorkspaceBarProps) {
         <span className="id">· {p.lang.version}</span>
         <svg className="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2 4l3 3 3-3"/></svg>
       </button>
+
+      {/* Single ↔ tests mode toggle. In tests mode the io-row swaps in
+          TestsPanel, which owns its own Run All button — so the right-side
+          run/cancel/demo buttons hide. */}
+      <div className="pg-wbar-mode" role="tablist" aria-label="Run mode">
+        <style>{`
+          .pg-wbar-mode { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+          .pg-wbar-mode button {
+            appearance: none; background: transparent; color: var(--fg-2);
+            padding: 6px 10px; font: 11.5px var(--f-mono); cursor: pointer;
+            border: 0; letter-spacing: 0.04em;
+          }
+          .pg-wbar-mode button + button { border-left: 1px solid var(--line-2); }
+          .pg-wbar-mode button:hover { color: var(--fg); }
+          .pg-wbar-mode button.active { background: var(--accent); color: var(--bg); font-weight: 500; }
+        `}</style>
+        <button type="button" role="tab" aria-selected={p.mode === 'single'}
+          className={p.mode === 'single' ? 'active' : ''}
+          onClick={() => p.setMode('single')}>single</button>
+        <button type="button" role="tab" aria-selected={p.mode === 'tests'}
+          className={p.mode === 'tests' ? 'active' : ''}
+          onClick={() => p.setMode('tests')}>tests</button>
+      </div>
+
       <div className="pg-wbar-right">
         <button className="pg-btn ghost" onClick={() => setShowLimits(s => !s)}>
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6" cy="6" r="4.5"/><path d="M6 2v4l2.5 1.5"/></svg>
@@ -455,16 +482,18 @@ function WorkspaceBar(p: WorkspaceBarProps) {
           format
         </button>
         <button className="pg-btn ghost pg-btn-reset" onClick={p.onReset} disabled={isRunning}>reset</button>
-        {isRunning ? (
-          <button className="pg-btn cancel" onClick={p.onCancel} title="Cancel run (⌘.)">cancel</button>
-        ) : (
-          <>
-            {!p.apiOnline && <button className="pg-btn ghost" onClick={p.onRunDemo} title="Run the built-in sample stream">demo run</button>}
-            <button className="pg-btn primary" onClick={p.onRun}>
-              <svg width="9" height="9" viewBox="0 0 8 8" fill="currentColor"><path d="M1 0 L7 4 L1 8 Z"/></svg>
-              {runLabel}
-            </button>
-          </>
+        {p.mode === 'single' && (
+          isRunning ? (
+            <button className="pg-btn cancel" onClick={p.onCancel} title="Cancel run (⌘.)">cancel</button>
+          ) : (
+            <>
+              {!p.apiOnline && <button className="pg-btn ghost" onClick={p.onRunDemo} title="Run the built-in sample stream">demo run</button>}
+              <button className="pg-btn primary" onClick={p.onRun}>
+                <svg width="9" height="9" viewBox="0 0 8 8" fill="currentColor"><path d="M1 0 L7 4 L1 8 Z"/></svg>
+                {runLabel}
+              </button>
+            </>
+          )
         )}
       </div>
       {showLimits && (
@@ -873,7 +902,9 @@ export function App() {
 
   const [lang, setLang] = useState<Lang>(initialLang);
   const [code, setCode] = useState<string>(share?.code ?? draft?.code ?? initialLang.snippet);
-  const [stdin, setStdin] = useState<string>(share?.stdin ?? draft?.stdin ?? '');
+  // Pre-fill stdin from share URL → saved draft → the language's sample
+  // input. The sample makes the default snippet runnable on first click.
+  const [stdin, setStdin] = useState<string>(share?.stdin ?? draft?.stdin ?? initialLang.sampleStdin);
   const [status, setStatus] = useState<Verdict>('idle');
   const [statusDetail, setStatusDetail] = useState<string | null>(null);
   const [output, setOutput] = useState<string[]>([]);
@@ -886,6 +917,15 @@ export function App() {
   });
   const [token, setToken] = useState<string>(share?.token || ('zc_' + Math.random().toString(36).slice(2, 10)));
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
+  // single = original UI (one stdin + one output pane); tests = TestsPanel
+  // covers the io row instead. Persisted in localStorage so reload keeps it.
+  const [runMode, setRunMode] = useState<RunMode>(() => {
+    try { return (localStorage.getItem('zerocode.playground.mode') as RunMode) || 'single'; }
+    catch { return 'single'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('zerocode.playground.mode', runMode); } catch { /* noop */ }
+  }, [runMode]);
   const [layout, setLayout] = useState<Layout>(() => loadLayout());
   useEffect(() => { saveLayout(layout); }, [layout]);
   const [error, setError] = useState<{ message: string; retry?: boolean } | null>(null);
@@ -960,14 +1000,15 @@ export function App() {
     cancelRun();
     setLang(l);
     setCode(l.snippet);
-    setStdin('');
+    // Reset stdin to the sample so the new snippet is runnable immediately.
+    setStdin(l.sampleStdin);
     clearResults();
     setToken('zc_' + Math.random().toString(36).slice(2, 10));
   }
   function reset() {
     cancelRun();
     setCode(lang.snippet);
-    setStdin('');
+    setStdin(lang.sampleStdin);
     clearResults();
   }
   function copyShareLink() {
@@ -1194,7 +1235,8 @@ export function App() {
         ceilings={apiCeilings}
         apiOnline={apiOnline}
         onShare={copyShareLink}
-        onOpenPicker={() => setPickerOpen(true)} />
+        onOpenPicker={() => setPickerOpen(true)}
+        mode={runMode} setMode={setRunMode} />
       {error && (
         <div className="pg-errbar">
           <style>{`
@@ -1307,16 +1349,26 @@ export function App() {
             setLayout(l => ({ ...l, editor: clamp(l.editor + d, 140, window.innerHeight - 220) }))} />
 
           <div className="pg-io-row">
-            <div className="pg-stdin-col" style={{ width: layout.stdinW }}>
-              <StdinPanel stdin={stdin} setStdin={setStdin} />
-            </div>
-            <Splitter direction="vertical" onDrag={(d) =>
-              setLayout(l => ({ ...l, stdinW: clamp(l.stdinW + d, 200, window.innerWidth - 480) }))} />
-            <div className="pg-output-col">
-              <OutputPane status={status} statusDetail={statusDetail}
-                output={output} stderr={stderr} compileOutput={compileOutput}
-                lang={lang} metrics={metrics} token={token} />
-            </div>
+            {runMode === 'single' ? (
+              <>
+                <div className="pg-stdin-col" style={{ width: layout.stdinW }}>
+                  <StdinPanel stdin={stdin} setStdin={setStdin} />
+                </div>
+                <Splitter direction="vertical" onDrag={(d) =>
+                  setLayout(l => ({ ...l, stdinW: clamp(l.stdinW + d, 200, window.innerWidth - 480) }))} />
+                <div className="pg-output-col">
+                  <OutputPane status={status} statusDetail={statusDetail}
+                    output={output} stderr={stderr} compileOutput={compileOutput}
+                    lang={lang} metrics={metrics} token={token} />
+                </div>
+              </>
+            ) : (
+              /* Tests mode: TestsPanel takes the full io-row width.
+                 It owns its own run-all button, polling, and result UI. */
+              <div className="pg-tests-col" style={{ flex: '1 1 0', display: 'flex', minWidth: 0 }}>
+                <TestsPanel lang={lang} code={code} limits={limits} apiOnline={apiOnline} />
+              </div>
+            )}
           </div>
         </div>
       </main>

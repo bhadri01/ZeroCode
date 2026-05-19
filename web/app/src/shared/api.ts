@@ -202,6 +202,94 @@ export async function get(token: string): Promise<SubmissionView> {
   );
 }
 
+/* ─── Batch endpoints ─────────────────────────────────────────────────
+ * `POST /v1/submissions/batch` accepts one source + N test cases (1–100)
+ * and returns N tokens tied by `batch_id`. The compile cache makes all
+ * N cases share one compile and N runs.
+ * `GET /v1/batches/{id}` returns the aggregated view + status summary.
+ */
+
+export interface BatchTestCaseInput { stdin?: string }
+
+export interface BatchSubmitParams {
+  language_id: number;
+  source_code: string;
+  test_cases: BatchTestCaseInput[];
+  limits?: { cpu_time?: number; wall_time?: number; memory_mb?: number };
+}
+
+export interface BatchSummary {
+  total: number;
+  queued: number;
+  processing: number;
+  accepted: number;
+  failed: number;
+}
+
+export interface BatchAck {
+  batch_id: string;
+  count: number;
+  tokens: string[];
+  status: string;
+}
+
+export interface BatchView {
+  batch_id: string;
+  items: SubmissionView[];
+  summary: BatchSummary;
+}
+
+export async function submitBatch(params: BatchSubmitParams): Promise<BatchAck> {
+  const body: Record<string, unknown> = {
+    language_id: params.language_id,
+    source_code: encode(params.source_code),
+    base64_encoded: true,
+    test_cases: params.test_cases.map((t) => ({
+      stdin: t.stdin ? encode(t.stdin) : null,
+    })),
+  };
+  if (params.limits?.cpu_time != null) body.cpu_time_limit = +params.limits.cpu_time;
+  if (params.limits?.wall_time != null) body.wall_time_limit = +params.limits.wall_time;
+  if (params.limits?.memory_mb != null) body.memory_limit_mb = +params.limits.memory_mb;
+
+  return jsonFetch('/v1/submissions/batch', {
+    method: 'POST',
+    headers: headers({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getBatch(batchId: string): Promise<BatchView> {
+  return jsonFetch(
+    `/v1/batches/${encodeURIComponent(batchId)}?base64_encoded=true`,
+    { headers: headers() },
+  );
+}
+
+/** Polls `GET /v1/batches/{id}` every `intervalMs` until every case has
+ * reached a terminal status (or the signal is aborted). The callback
+ * fires after each poll so the UI can light up cases as they finish. */
+export async function pollBatch(
+  batchId: string,
+  onUpdate: (view: BatchView) => void,
+  { intervalMs = 350, signal }: { intervalMs?: number; signal?: AbortSignal } = {},
+): Promise<BatchView> {
+  for (;;) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    const view = await getBatch(batchId);
+    onUpdate(view);
+    const pending = view.summary.queued + view.summary.processing;
+    if (pending === 0) return view;
+    await new Promise<void>((res, rej) => {
+      const t = setTimeout(res, intervalMs);
+      signal?.addEventListener('abort', () => {
+        clearTimeout(t);
+        rej(new DOMException('aborted', 'AbortError'));
+      }, { once: true });
+    });
+  }
+}
+
 export function statusKind(s: ApiStatus | string | null | undefined): StatusKind {
   if (!s) return 'idle';
   if (typeof s === 'string') return s.toLowerCase() as StatusKind;
