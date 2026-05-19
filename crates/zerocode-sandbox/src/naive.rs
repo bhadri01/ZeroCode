@@ -26,7 +26,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -52,69 +52,57 @@ pub struct NaiveSandbox;
 
 /// Bind-mounts `/proc` and `/dev` from the host into the runner rootfs so
 /// chroot'd processes can read them. Many tools (Go's `os.Executable`,
-/// rustc's working-dir probe, the JVM's `libjli.so` resolver) fail without
-/// `/proc/self/exe`; others (anything that writes to stdout/stderr) need
-/// `/dev/null`. Run once per worker process.
+/// rustc's working-dir probe, the JVM's `libjli.so` resolver, Go's
+/// buildID probe that opens `/dev/null`) fail without these pseudo-fs.
 ///
-/// Fails fast on any error. The previous "warn-and-continue" behaviour
-/// silently produced broken submissions for Go ("GOROOT not set"), Java
-/// ("libjli.so cannot be opened"), and Rust ("could not read sysroot")
-/// because all three rely on `/proc/self/exe` to locate their install root.
-fn init_rootfs_binds(rootfs: &str) -> Result<(), SandboxError> {
-    static ONCE: Once = Once::new();
-    static RESULT: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+/// Called on every job (not once per worker process) because the
+/// `runner-rootfs-init` compose service wipes + re-extracts the rootfs
+/// on each stack startup, which clears the mount-point directories the
+/// worker had previously bind-mounted into. Re-checking on each job
+/// keeps the sandbox resilient to that lifecycle.
+///
+/// The check is cheap: read `/proc/self/mountinfo` (~2 KB on Docker)
+/// and grep for the target paths; only run `mount` when missing.
+fn ensure_rootfs_binds(rootfs: &str) -> Result<(), SandboxError> {
+    for sub in ["proc", "dev"] {
+        let target = format!("{rootfs}/{sub}");
 
-    ONCE.call_once(|| {
-        let outcome = (|| -> Result<(), String> {
-            for sub in ["proc", "dev"] {
-                let target = format!("{rootfs}/{sub}");
-                if !Path::new(&target).exists() {
-                    std::fs::create_dir_all(&target).map_err(|e| {
-                        format!("create rootfs mount point {target}: {e}")
-                    })?;
-                }
-                // Skip if already mounted (the worker may have been restarted
-                // while the bind-mount survived in a parent namespace).
-                let already = std::fs::read_to_string("/proc/self/mountinfo")
-                    .map(|s| s.lines().any(|l| l.contains(&target)))
-                    .unwrap_or(false);
-                if already {
-                    tracing::info!(target = %target, "rootfs bind-mount already present");
-                    continue;
-                }
-                // `mount --rbind` via the `mount` binary; we can shell out
-                // here because this is one-time setup. The worker container
-                // needs CAP_SYS_ADMIN for the mount syscall.
-                let output = std::process::Command::new("/bin/mount")
-                    .args(["--rbind", &format!("/{sub}"), &target])
-                    .output()
-                    .map_err(|e| format!("spawn /bin/mount for {target}: {e}"))?;
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!(
-                        "bind-mount /{sub} -> {target} failed (code={:?}): {}. \
-                         Worker needs CAP_SYS_ADMIN and a writable runner-rootfs \
-                         volume; see docs/DEPLOY.md.",
-                        output.status.code(),
-                        stderr.trim()
-                    ));
-                }
-                tracing::info!(target = %target, "bind-mounted into runner rootfs");
-            }
-            Ok(())
-        })();
-        let _ = RESULT.set(outcome);
-    });
+        // Recreate the mount point if rootfs-init wiped it.
+        if !Path::new(&target).exists() {
+            std::fs::create_dir_all(&target).map_err(|e| {
+                SandboxError::Internal(format!("create rootfs mount point {target}: {e}"))
+            })?;
+        }
 
-    match RESULT.get() {
-        Some(Ok(())) => Ok(()),
-        Some(Err(msg)) => Err(SandboxError::Internal(msg.clone())),
-        // Unreachable: ONCE.call_once always populates RESULT, but treat a
-        // missing value defensively rather than unwrapping.
-        None => Err(SandboxError::Internal(
-            "init_rootfs_binds: result not initialised".into(),
-        )),
+        // Skip when already bind-mounted — mountinfo is the authoritative
+        // check (the dir exists on disk too, but only the mount makes
+        // the contents visible).
+        let already = std::fs::read_to_string("/proc/self/mountinfo")
+            .map(|s| s.lines().any(|l| l.contains(&format!(" {target} "))))
+            .unwrap_or(false);
+        if already {
+            continue;
+        }
+
+        let output = std::process::Command::new("/bin/mount")
+            .args(["--rbind", &format!("/{sub}"), &target])
+            .output()
+            .map_err(|e| {
+                SandboxError::Internal(format!("spawn /bin/mount for {target}: {e}"))
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SandboxError::Internal(format!(
+                "bind-mount /{sub} -> {target} failed (code={:?}): {}. \
+                 Worker needs CAP_SYS_ADMIN and a writable runner-rootfs \
+                 volume; see docs/DEPLOY.md.",
+                output.status.code(),
+                stderr.trim()
+            )));
+        }
+        tracing::info!(target = %target, "bind-mounted into runner rootfs");
     }
+    Ok(())
 }
 
 /// Mirror of `native::exec::substitute_limits`. Cheap string replace —
@@ -176,7 +164,7 @@ impl Sandbox for NaiveSandbox {
 
         let rootfs = std::env::var("ZEROCODE_RUNNER_ROOTFS")
             .unwrap_or_else(|_| DEFAULT_RUNNER_ROOTFS.to_string());
-        init_rootfs_binds(&rootfs)?;
+        ensure_rootfs_binds(&rootfs)?;
         let token_str = job.token.to_string();
         let inside_dir = inside_workdir(&token_str);
         let host_workdir = format!("{rootfs}/box/{token_str}");

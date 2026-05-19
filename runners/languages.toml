@@ -53,6 +53,13 @@ env = [
     ["GOMAXPROCS", "1"],
     ["GOMEMLIMIT", "${memory_mb}MiB"],
 ]
+# `go build` of a hello world routinely takes 2–6 s on Docker Desktop's
+# Linux VM (compiler + linker + stdlib link). The default 5 s wall trips
+# this. NaiveSandbox (dev) shares the wall budget between compile and run,
+# so we raise default_limits.wall_time; NativeSandbox (prod) will use the
+# per-phase compile_limits split.
+default_limits  = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits  = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -109,22 +116,19 @@ id = 73
 name = "Rust"
 version = "1.x-latest"
 source_file = "main.rs"
-# Use the canonical rustup install location directly rather than a /usr/bin
-# symlink. The production runner image (runners/Dockerfile) installs rustup
-# with RUSTUP_HOME=/usr/local/rustup, CARGO_HOME=/usr/local/cargo and does
-# not symlink rustc into /usr/bin, so any pre-existing /usr/bin/rustc path
-# would ENOENT inside the chroot.
-compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
+# `/usr/bin/rustc` is a symlink to the rustup proxy at `/root/.cargo/bin/rustc`
+# in the current runner image (rustup installed with default $HOME=/root).
+# The proxy reads RUSTUP_HOME + CARGO_HOME to locate the toolchain.
+compile_cmd = ["/usr/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
 run_cmd = ["./prog"]
 env = [
-    # rustup needs a toolchain selection — there's no `rustup default` baked
-    # into the runner rootfs. Naming `stable` lets rustup pick whichever
-    # stable-* toolchain is installed (matches the host arch).
+    # Rustup needs a toolchain selection — there's no `rustup default` baked
+    # into the runner rootfs. `stable` lets rustup pick whichever stable-*
+    # toolchain is installed (matches the host arch).
     ["RUSTUP_TOOLCHAIN", "stable"],
-    # Must match the paths used by runners/Dockerfile at install time. The
-    # rustup proxy reads these env vars to locate the toolchain; mismatched
-    # values surface as "no toolchain installed" or "could not read sysroot".
-    ["RUSTUP_HOME", "/usr/local/rustup"],
-    ["CARGO_HOME", "/usr/local/cargo"],
+    # Must match the paths the runner image actually used at install time.
+    # Mismatches surface as "no toolchain installed" or "could not read sysroot".
+    ["RUSTUP_HOME", "/root/.rustup"],
+    ["CARGO_HOME", "/root/.cargo"],
 ]
 is_archived = false
