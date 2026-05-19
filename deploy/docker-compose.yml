@@ -18,14 +18,14 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zerocode"]
+      test: [ "CMD-SHELL", "pg_isready -U zerocode" ]
       interval: 5s
       timeout: 3s
       retries: 10
 
   migrate:
     image: zerocode-service:dev
-    entrypoint: ["/usr/local/bin/zerocode-migrate"]
+    entrypoint: [ "/usr/local/bin/zerocode-migrate" ]
     command:
       - --database-url=postgres://zerocode:zerocode@postgres:5432/zerocode
       - --migrations-dir=/var/lib/zerocode/migrations
@@ -38,7 +38,7 @@ services:
     # Extract the runner image's filesystem into the shared named volume so the
     # worker can bind-mount it as the sandbox rootfs. One-shot.
     image: zerocode-runner:dev
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
         set -eu
@@ -85,8 +85,14 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    ports:
-      - "8080:8080"
+    labels:
+      - traefik.enable=true
+      - traefik.domain=youngstorage.in
+      - traefik.http.routers.zero-code.rule=Host(`zerocode.dev.succeedex.in`)
+      - traefik.http.routers.zero-code.entrypoints=websecure
+      - traefik.http.routers.zero-code.tls=true
+      - traefik.http.routers.zero-code.tls.certresolver=myresolver
+      - traefik.http.services.zero-code.loadbalancer.server.port=8080
     # The image bakes the built `web/dist/` at /srv/web (see deploy/Dockerfile.service,
     # which runs `pnpm build` in a node:20 stage). ZEROCODE_WEB_DIR is set to
     # /srv/web by the Dockerfile, so the API picks it up automatically.
@@ -96,10 +102,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    cap_drop: ["ALL"]
+    cap_drop: [ "ALL" ]
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks:
+      - default
 
   worker:
     image: zerocode-worker:dev
@@ -119,7 +127,7 @@ services:
       # NativeSandbox deployment this should go back to :ro.
       - runner-rootfs:/var/lib/zerocode/runner-rootfs:rw
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cap_drop: ["ALL"]
+    cap_drop: [ "ALL" ]
     cap_add:
       # Needed inside the worker's own user namespace for unshare/mount/pivot_root.
       - SYS_ADMIN
@@ -133,3 +141,8 @@ services:
 volumes:
   pg-data:
   runner-rootfs:
+
+networks:
+  default:
+    name: traefik
+    external: true
