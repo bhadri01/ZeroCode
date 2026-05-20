@@ -174,8 +174,8 @@ and remove the port mapping (see `deploy/README.md` § "Traefik (optional)").
 ### Step 3 — verify
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml ps
-docker compose -f deploy/docker-compose.prod.yml logs worker | grep -E 'bind-mount|rootfs'
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs worker | grep -E 'bind-mount|rootfs'
 # Expect two "bind-mounted into runner rootfs" lines.
 
 curl -s http://localhost:8080/v1/languages | jq
@@ -184,8 +184,8 @@ curl -s http://localhost:8080/v1/languages | jq
 ### Step 4 — tear down
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml down
-docker compose -f deploy/docker-compose.prod.yml down -v   # also drops volumes
+docker compose -f deploy/docker-compose.yml down
+docker compose -f deploy/docker-compose.yml down -v   # also drops volumes
 ```
 
 ---
@@ -251,10 +251,10 @@ When you rebuild the runner image (new language, toolchain upgrade):
 docker build -f runners/Dockerfile -t zerocode-runner:v0.1.1 runners/
 
 # Re-run the extraction
-docker compose -f deploy/docker-compose.prod.yml run --rm runner-rootfs-init
+docker compose -f deploy/docker-compose.yml run --rm runner-rootfs-init
 
 # Restart the worker so it picks up the new toolchains
-docker compose -f deploy/docker-compose.prod.yml restart worker
+docker compose -f deploy/docker-compose.yml restart worker
 ```
 
 ---
