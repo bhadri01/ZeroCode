@@ -53,6 +53,21 @@ RUN curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh \
     && /usr/local/cargo/bin/rustc --version \
     && chmod -R a+rX "$RUSTUP_HOME" "$CARGO_HOME"
 
+# ---- Java: prebuilt CDS archive for javac ----
+# javac's JVM startup dominates Java submission latency. A dynamic CDS archive
+# of the compiler's classes nearly halves javac startup (~640 ms -> ~340 ms
+# under 1 CPU). Stored under /usr/local/lib (landlock-readable inside the
+# sandbox) and referenced from runners/languages.toml's Java compile_cmd via
+# `-XX:SharedArchiveFile`. Regenerated automatically whenever the JDK layer
+# above changes. A version mismatch degrades gracefully (JVM ignores it).
+RUN mkdir -p /usr/local/lib/zerocode \
+    && printf 'public class Probe{public static void main(String[] a){}}' > /tmp/Probe.java \
+    && java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 \
+         -XX:ArchiveClassesAtExit=/usr/local/lib/zerocode/javac.jsa \
+         -m jdk.compiler/com.sun.tools.javac.Main /tmp/Probe.java \
+    && rm -f /tmp/Probe.java /tmp/Probe.class \
+    && chmod -R a+rX /usr/local/lib/zerocode
+
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \
     chmod 1777 /tmp && \

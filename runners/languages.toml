@@ -77,12 +77,33 @@ id = 62
 name = "Java"
 version = "21"
 source_file = "Main.java"
-compile_cmd = ["/usr/bin/javac", "Main.java"]
+# javac's JVM startup is the dominant cost of a Java submission. Two levers:
+#   1. SerialGC (one GC thread) + C1-only JIT (TieredStopAtLevel=1) — fewer
+#      threads contending for the sandbox's single CPU.
+#   2. A prebuilt CDS archive of the compiler's classes (baked into the runner
+#      image at /usr/local/lib/zerocode/javac.jsa) — nearly halves javac
+#      startup (~640 ms -> ~340 ms under 1 CPU).
+# We invoke the compiler via `java -m jdk.compiler/...` (what `javac` wraps) so
+# we can attach `-XX:SharedArchiveFile`. Behaviour + exit codes match `javac`,
+# so compile-error detection is unchanged. If the archive is missing/mismatched
+# the JVM silently ignores it. The archive is regenerated when the JDK changes.
+compile_cmd = [
+    "/usr/bin/java",
+    "-XX:+UseSerialGC",
+    "-XX:TieredStopAtLevel=1",
+    "-XX:SharedArchiveFile=/usr/local/lib/zerocode/javac.jsa",
+    "-m", "jdk.compiler/com.sun.tools.javac.Main",
+    "Main.java",
+]
 # JVM flags go on the command line, not in JAVA_TOOL_OPTIONS — the JVM prints
 # "Picked up JAVA_TOOL_OPTIONS: ..." to stderr whenever that env var is set,
 # which leaks into the user-visible output and there's no flag to silence it.
+# UseSerialGC speeds run-phase startup too (no parallel GC threads at the small
+# heaps we cap to); we keep full tiered JIT on the run so compute-heavy
+# solutions still get C2.
 run_cmd = [
     "/usr/bin/java",
+    "-XX:+UseSerialGC",
     "-Xmx${jvm_heap_mb}m",
     "-Xss512k",
     "-XX:MaxMetaspaceSize=128m",
