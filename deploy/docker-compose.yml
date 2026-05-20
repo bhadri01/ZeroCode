@@ -24,15 +24,17 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zerocode"]
+      test: [ "CMD-SHELL", "pg_isready -U zerocode" ]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    networks:
+      - default
 
   migrate:
     image: zerocode-service:dev
-    entrypoint: ["/usr/local/bin/zerocode-migrate"]
+    entrypoint: [ "/usr/local/bin/zerocode-migrate" ]
     command:
       - --database-url=postgres://zerocode:zerocode@postgres:5432/zerocode
       - --migrations-dir=/var/lib/zerocode/migrations
@@ -40,12 +42,14 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    networks:
+      - default
 
   runner-rootfs-init:
     # One-shot: extract the runner image's filesystem into the shared volume
     # so the worker can bind-mount it as the sandbox rootfs.
     image: zerocode-runner:dev
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: [ "/bin/sh", "-c" ]
     command:
       - |
         set -eu
@@ -66,6 +70,8 @@ services:
     volumes:
       - runner-rootfs:/target
     restart: "no"
+    networks:
+      - default
 
   api:
     image: zerocode-service:dev
@@ -99,10 +105,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    cap_drop: ["ALL"]
+    cap_drop: [ "ALL" ]
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks:
+      - default
 
   worker:
     image: zerocode-worker:dev
@@ -128,7 +136,7 @@ services:
       # The sandbox isolates user code from mutating toolchain files.
       - runner-rootfs:/var/lib/zerocode/runner-rootfs:rw
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cap_drop: ["ALL"]
+    cap_drop: [ "ALL" ]
     cap_add:
       # Required for unshare/mount/pivot_root inside the worker's user namespace
       # AND for the /proc bind-mount the NaiveSandbox does at startup.
@@ -137,6 +145,11 @@ services:
       - SYS_CHROOT
     security_opt:
       - no-new-privileges:true
+      # Docker's default AppArmor profile (docker-default) denies the mount()
+      # syscall even when CAP_SYS_ADMIN is granted, which breaks the sandbox's
+      # /proc + /dev bind-mounts into the runner rootfs on AppArmor hosts
+      # (e.g. Ubuntu). Unconfine *only* the worker so those binds succeed.
+      - apparmor=unconfined
     cgroup: private
     restart: unless-stopped
     # Horizontal scaling: bump replicas, or override at the CLI with
@@ -145,20 +158,22 @@ services:
     # — roughly 20 workers before you need PgBouncer or a higher limit.
     deploy:
       replicas: 1
+    networks:
+      - default
 
 volumes:
   pg-data:
   runner-rootfs:
 
-# ─── Optional: Traefik integration ─────────────────────────────────────
-# Uncomment to join the `traefik` external network so a host-level Traefik
-# reverse proxy can route by Host header (rules in the labels above).
-# Create the network once on the host before bringing up:
-#   docker network create traefik
-# When Traefik is fronting the stack, the `ports: 8080:8080` mapping above
-# becomes redundant — remove it to keep the API off the public host port.
-#
-# networks:
-#   default:
-#     name: traefik
-#     external: true
+    # ─── Optional: Traefik integration ─────────────────────────────────────
+    # Uncomment to join the `traefik` external network so a host-level Traefik
+    # reverse proxy can route by Host header (rules in the labels above).
+    # Create the network once on the host before bringing up:
+    #   docker network create traefik
+    # When Traefik is fronting the stack, the `ports: 8080:8080` mapping above
+    # becomes redundant — remove it to keep the API off the public host port.
+    #
+networks:
+  default:
+    name: traefik
+    external: true

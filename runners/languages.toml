@@ -122,10 +122,11 @@ id = 73
 name = "Rust"
 version = "1.x-latest"
 source_file = "main.rs"
-# `/usr/bin/rustc` is a symlink to the rustup proxy at `/root/.cargo/bin/rustc`
-# in the current runner image (rustup installed with default $HOME=/root).
+# The runner image installs rustup with RUSTUP_HOME=/usr/local/rustup and
+# CARGO_HOME=/usr/local/cargo (see runners/Dockerfile), so the rustc proxy
+# lives at `/usr/local/cargo/bin/rustc` — there is no `/usr/bin/rustc` symlink.
 # The proxy reads RUSTUP_HOME + CARGO_HOME to locate the toolchain.
-compile_cmd = ["/usr/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
+compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
 run_cmd = ["./prog"]
 env = [
     # Rustup needs a toolchain selection — there's no `rustup default` baked
@@ -134,7 +135,7 @@ env = [
     ["RUSTUP_TOOLCHAIN", "stable"],
     # Must match the paths the runner image actually used at install time.
     # Mismatches surface as "no toolchain installed" or "could not read sysroot".
-    ["RUSTUP_HOME", "/root/.rustup"],
-    ["CARGO_HOME", "/root/.cargo"],
+    ["RUSTUP_HOME", "/usr/local/rustup"],
+    ["CARGO_HOME", "/usr/local/cargo"],
 ]
 is_archived = false
