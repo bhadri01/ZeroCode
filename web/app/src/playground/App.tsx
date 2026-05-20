@@ -15,6 +15,7 @@ import { LANGS, VERDICT_COLOR, VERDICT_LABEL, type Lang, type Verdict } from './
 import { TestsPanel } from './TestsPanel';
 import { getTheme, toggleTheme, type Theme } from '../shared/theme';
 import { LangIcon, langKeyFromId } from '../shared/lang-icons';
+import { HIDE_DOCS } from '../shared/flags';
 import {
   decode, encode, get as apiGet, getBaseSource,
   idemKey, languages, poll, probe, resetProbe,
@@ -216,8 +217,12 @@ function TopNav({ token }: { token: string }) {
       <div className="pg-nav-right">
         <a className="pg-nav-link" href="/">home</a>
         <span className="pg-nav-sep">·</span>
-        <a className="pg-nav-link" href="/docs/">docs</a>
-        <span className="pg-nav-sep">·</span>
+        {!HIDE_DOCS && (
+          <>
+            <a className="pg-nav-link" href="/docs/">docs</a>
+            <span className="pg-nav-sep">·</span>
+          </>
+        )}
         <span className="pg-tok" title={`token · ${token}`}>token · {token}</span>
         <ThemeToggle />
       </div>

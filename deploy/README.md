@@ -46,6 +46,20 @@ curl http://localhost:8080/v1/languages
 
 Web playground at <http://localhost:8080/playground.html>.
 
+## Scale workers
+
+Workers are stateless and coordinate through Postgres (`SKIP LOCKED`), so
+more workers = more throughput. The compose leaves `ZEROCODE_WORKER_ID`
+unset so each replica gets a unique id automatically:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --scale worker=4
+```
+
+Keep `16 + workers × 4` under Postgres `max_connections` (default 100) —
+roughly 20 workers before you add PgBouncer. Full guidance, autoscaling
+signals, and capacity math in [`../docs/DEPLOY.md` §8](../docs/DEPLOY.md).
+
 ## Tear down
 
 ```bash

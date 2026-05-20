@@ -10,6 +10,10 @@
 FROM node:20-bookworm-slim AS web
 WORKDIR /web
 ENV CI=true
+# Hide the docs surface for the test launch (links dropped, /docs/ 404s).
+# Re-enable docs with:  docker build --build-arg VITE_HIDE_DOCS=false ...
+ARG VITE_HIDE_DOCS=true
+ENV VITE_HIDE_DOCS=${VITE_HIDE_DOCS}
 RUN corepack enable
 COPY web ./
 RUN rm -rf node_modules app/node_modules docs/node_modules dist app/dist docs/dist .astro docs/.astro

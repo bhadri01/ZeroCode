@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { toggleTheme, getTheme, type Theme } from '../shared/theme';
 import { fetchRepoStars, formatStars } from '../shared/github';
+import { HIDE_DOCS, GET_STARTED_HREF } from '../shared/flags';
 
 const GITHUB_REPO = 'bhadri01/ZeroCode';
 
@@ -258,7 +259,7 @@ export function Nav() {
           <a href="#how">how it works</a>
           <a href="#languages">languages</a>
           <a href="#batch">test cases</a>
-          <a href="/docs/">docs</a>
+          {!HIDE_DOCS && <a href="/docs/">docs</a>}
           <a href="/playground.html">playground</a>
         </div>
         <div className="zc-nav-right">
@@ -268,7 +269,7 @@ export function Nav() {
             <span>github</span>
             {stars != null && <><span className="sep">·</span><span className="count">{stars}</span></>}
           </a>
-          <a className="zc-cta-primary" href="/docs/quickstart">
+          <a className="zc-cta-primary" href={GET_STARTED_HREF}>
             <span className="cta-label">get started</span>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 5h8M5 1l4 4-4 4"/></svg>
           </a>
@@ -303,10 +304,10 @@ export function Nav() {
         <a href="#how" onClick={() => setMenuOpen(false)}>how it works<span className="arrow">→</span></a>
         <a href="#languages" onClick={() => setMenuOpen(false)}>languages<span className="arrow">→</span></a>
         <a href="#batch" onClick={() => setMenuOpen(false)}>test cases<span className="arrow">→</span></a>
-        <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>
+        {!HIDE_DOCS && <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>}
         <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
         <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>
-        <a className="cta" href="/docs/quickstart" onClick={() => setMenuOpen(false)}>get started →</a>
+        <a className="cta" href={GET_STARTED_HREF} onClick={() => setMenuOpen(false)}>get started →</a>
       </div>
     )}
     </>

@@ -84,6 +84,9 @@ responsibility.
 | `ZEROCODE_WEB_DIR` | no | `web/dist` | Where the playground static assets live. `""` disables the mount. |
 | `RUST_LOG` | no | `info` | `tracing`/`env_filter` directive. |
 
+> Hiding the `/docs/` site is a **build-time** choice (`VITE_HIDE_DOCS`), not a
+> runtime env var — see [§3 Step 1](#step-1--build-images).
+
 ### Worker (`zerocode-worker`)
 
 | Variable | Required | Default | Description |
@@ -126,6 +129,28 @@ docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 
 Tag with a version (`:v0.1.0`) instead of `:dev` when shipping to a
 production host — pinned tags make rollbacks deliberate.
+
+#### Documentation visibility (`VITE_HIDE_DOCS`)
+
+The `/docs/` site is gated by a **build-time** flag baked into the web bundle
+by `deploy/Dockerfile.service`. It is *not* a runtime env var — flipping it
+on a running container does nothing; you must rebuild the service image.
+
+| `--build-arg`        | Effect                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| `VITE_HIDE_DOCS=true`  | **Default.** Drops every `/docs/*` link from the UI, repoints "get started" CTAs to the playground, and skips building/serving the docs site so `/docs/` returns **404**. |
+| `VITE_HIDE_DOCS=false` | Builds and serves the full docs site at `/docs/`.                                        |
+
+```bash
+# Docs hidden (current launch default — no build-arg needed):
+docker build -f deploy/Dockerfile.service -t zerocode-service:dev .
+
+# Bring docs back:
+docker build -f deploy/Dockerfile.service --build-arg VITE_HIDE_DOCS=false -t zerocode-service:dev .
+```
+
+Local `pnpm dev` / `pnpm build` (outside Docker) default to docs **shown** —
+the flag only defaults on inside the service image.
 
 ### Step 2 — bring up the stack
 
@@ -482,17 +507,68 @@ psql "$DATABASE_URL" -c "
 
 ---
 
-## 8. Scaling notes
+## 8. Scaling workers
 
-- **Workers** scale horizontally. Run as many as your Postgres
-  connection budget allows. Each worker needs a distinct
-  `ZEROCODE_WORKER_ID`.
+Workers are stateless and coordinate only through Postgres
+(`SELECT … FOR UPDATE SKIP LOCKED`), so adding workers scales throughput
+linearly — no leader, no broker.
+
+### Scale on one host
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --scale worker=4
+```
+
+The compose file leaves `ZEROCODE_WORKER_ID` unset, so each replica
+auto-generates a unique `worker-<ulid>` — required for the stuck-job
+sweeper to attribute claims correctly. (Adjust the `deploy.replicas`
+value in the file to make a count stick without the `--scale` flag.)
+
+### Two knobs
+
+| Axis | Knob | Effect |
+|---|---|---|
+| Vertical | `ZEROCODE_MAX_PARALLEL` (default = CPU cores) | concurrent sandboxes *per* worker |
+| Horizontal | `--scale worker=N` / `deploy.replicas` / more hosts | more workers on the shared queue |
+
+Because sandboxes run real user code, workers are CPU-bound — keep
+`MAX_PARALLEL ≈ cores`, then add workers/hosts for more.
+
+### Watch these ceilings
+
+- **Postgres connections (first wall).** Each worker opens a pool of 4,
+  the API uses 16. Keep `16 + workers × 4 < max_connections` (default
+  100) → roughly **20 workers** before you raise `max_connections` or
+  add **PgBouncer** (transaction pooling).
+- **Per-host rootfs.** The `runner-rootfs` volume is per host. On a new
+  host, run `runner-rootfs-init` there too. Rebuild + re-extract on all
+  hosts together so toolchains stay in sync.
+- **cgroup parent (native sandbox).** Multiple native-sandbox workers on
+  one host each need a distinct `ZEROCODE_CGROUP_PARENT` so they don't
+  contend for the same delegated subtree.
+
+### Autoscale on queue depth
+
+Each worker exports the signals an autoscaler needs:
+
+- `zerocode_pending_jobs` — queued count (sampled every 5 s)
+- `zerocode_active_sandboxes` / `zerocode_worker_parallelism` — utilisation
+
+Point a Kubernetes HPA or KEDA `ScaledObject` at `zerocode_pending_jobs`
+(scale up as the queue grows, down as it drains). Rough capacity:
+
+```
+sustained throughput ≈ (Σ MAX_PARALLEL across workers) / avg_job_seconds
+```
+
+If `pending_jobs` keeps climbing instead of hovering near zero, you're
+under-provisioned — add workers until it drains.
+
+### The other tiers
+
 - **API** scales horizontally behind any L7 load balancer. Stateless
-  apart from the in-process moka result cache, which is per-instance
-  (cache misses fall through to Postgres).
-- **Postgres** is the queue and the source of truth. Vertical scaling
-  carries you a long way; the queue uses `LISTEN/NOTIFY` + `SELECT FOR
-  UPDATE SKIP LOCKED`, both of which are cheap on modern hardware.
-- **Runner-rootfs** is shared across workers via the same named volume.
-  All workers on a host pin the same toolchain set — rebuild and
-  re-extract the rootfs together to keep them in sync.
+  apart from the in-process moka result cache (per-instance; misses fall
+  through to Postgres).
+- **Postgres** is the queue and source of truth. Vertical scaling carries
+  you far; `LISTEN/NOTIFY` + `SKIP LOCKED` are cheap. Beyond that, add
+  PgBouncer and consider a read replica for the read-heavy `GET` paths.

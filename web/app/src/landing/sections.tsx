@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { LayerDiagram, LAYERS } from './layer-diagram';
+import { HIDE_DOCS, GET_STARTED_HREF } from '../shared/flags';
 import {
   EASE_OUT, Parallax, Reveal, Stagger, StaggerItem,
   motion, useReducedMotion,
@@ -445,7 +446,7 @@ export function TestCasesSection() {
             />
             <div className="zc-tc-cta">
               <a className="primary" href="/playground.html">Open the playground →</a>
-              <a className="ghost" href="/docs/api">Batch API docs</a>
+              {!HIDE_DOCS && <a className="ghost" href="/docs/api">Batch API docs</a>}
             </div>
           </div>
           <Parallax distance={28}>
@@ -652,8 +653,8 @@ export function GetStartedSection() {
               sub="Everything runs in Docker — no system-wide installs, no language-toolchain juggling on the host. The runner image bundles every Core 7 toolchain so first submissions work the moment compose finishes pulling."
             />
             <div className="zc-gs-cta">
-              <a className="primary" href="/docs/quickstart">
-                Read the quickstart →
+              <a className="primary" href={GET_STARTED_HREF}>
+                {HIDE_DOCS ? 'Open the playground →' : 'Read the quickstart →'}
               </a>
               <a className="ghost" href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">
                 View on GitHub
@@ -743,19 +744,19 @@ export function Footer() {
         <div className="zc-foot-col">
           <h4>Product</h4>
           <ul>
-            <li><a href="/docs/quickstart">Quickstart</a></li>
+            {!HIDE_DOCS && <li><a href="/docs/quickstart">Quickstart</a></li>}
             <li><a href="/playground.html">Playground</a></li>
-            <li><a href="/docs/languages">Languages</a></li>
-            <li><a href="/docs/security">Security</a></li>
+            {!HIDE_DOCS && <li><a href="/docs/languages">Languages</a></li>}
+            {!HIDE_DOCS && <li><a href="/docs/security">Security</a></li>}
           </ul>
         </div>
         <div className="zc-foot-col">
           <h4>Developers</h4>
           <ul>
-            <li><a href="/docs/api">REST API</a></li>
+            {!HIDE_DOCS && <li><a href="/docs/api">REST API</a></li>}
             <li><a href="/v1/openapi.json">OpenAPI 3.1</a></li>
-            <li><a href="/docs/sdks">Clients & SDKs</a></li>
-            <li><a href="/docs/observability">Observability</a></li>
+            {!HIDE_DOCS && <li><a href="/docs/sdks">Clients & SDKs</a></li>}
+            {!HIDE_DOCS && <li><a href="/docs/observability">Observability</a></li>}
           </ul>
         </div>
         <div className="zc-foot-col">
@@ -764,7 +765,7 @@ export function Footer() {
             <li><a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">GitHub</a></li>
             <li><a href={`https://github.com/${GITHUB_REPO}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer">Changelog</a></li>
             <li><a href={`https://github.com/${GITHUB_REPO}/issues`} target="_blank" rel="noreferrer">Issues</a></li>
-            <li><a href="/docs/deployment">Deployment</a></li>
+            {!HIDE_DOCS && <li><a href="/docs/deployment">Deployment</a></li>}
           </ul>
         </div>
       </div>

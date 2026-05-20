@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { EASE_OUT } from './motion';
+import { GET_STARTED_HREF } from '../shared/flags';
 
 const CURL = `curl -X POST https://api.example.com/v1/submissions?wait=true \\
   -d '{"language_id":71,"source_code":"print(\\"hello, sandbox\\")"}'`;
@@ -220,7 +221,7 @@ export function Hero() {
         </motion.p>
 
         <motion.div className="zc-hero-cta" variants={HERO_CHILD}>
-          <a className="primary" href="/docs/quickstart">
+          <a className="primary" href={GET_STARTED_HREF}>
             Get started <span className="arrow">→</span>
           </a>
           <a className="ghost" href="/playground.html">

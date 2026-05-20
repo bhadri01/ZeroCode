@@ -108,8 +108,14 @@ services:
     image: zerocode-worker:dev
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
-      ZEROCODE_WORKER_ID: worker-1
+      # ZEROCODE_WORKER_ID is intentionally NOT set. Each worker auto-generates
+      # a unique `worker-<ulid>` at boot, so you can run many replicas without
+      # them colliding on identity (the stuck-job sweeper attributes claims by
+      # this id). Set it explicitly only if you want a stable, named single
+      # worker.
       ZEROCODE_RUNNER_ROOTFS: /var/lib/zerocode/runner-rootfs
+      # Per-IP rate limiting lives on the API; per-worker concurrency is bounded
+      # by ZEROCODE_MAX_PARALLEL (defaults to the container's CPU count).
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:
@@ -133,6 +139,12 @@ services:
       - no-new-privileges:true
     cgroup: private
     restart: unless-stopped
+    # Horizontal scaling: bump replicas, or override at the CLI with
+    #   docker compose -f deploy/docker-compose.yml up -d --scale worker=4
+    # Keep (API 16 + workers × 4) under Postgres max_connections (default 100)
+    # — roughly 20 workers before you need PgBouncer or a higher limit.
+    deploy:
+      replicas: 1
 
 volumes:
   pg-data:
