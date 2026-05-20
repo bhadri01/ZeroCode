@@ -79,12 +79,62 @@ List submissions. Query params: `page`, `per_page` (max 100), `status` filter.
 
 ### `POST /v1/submissions/batch`
 
-Submit one program with 1–100 stdin test cases. Returns a `batch_id`; each
-test case becomes a normal submission row linked by the batch ID.
+Submit one program with **1–100 stdin test cases** in a single request.
+Each case becomes an independent submission row linked by a shared
+`batch_id`. Compiled languages compile once — the compile cache lets every
+case after the first skip straight to the run phase — so a 100-case C++
+batch costs roughly one compile plus 100 fast runs.
+
+```json title="request body"
+{
+  "language_id": 52,
+  "source_code": "#include <iostream>\nint main(){long long n;std::cin>>n;std::cout<<n*n<<\"\\n\";}",
+  "test_cases": [
+    { "stdin": "3" },
+    { "stdin": "7" },
+    { "stdin": "12" }
+  ],
+  "cpu_time_limit": 15,
+  "wall_time_limit": 30,
+  "base64_encoded": false
+}
+```
+
+```json title="response (202)"
+{
+  "batch_id": "01HX1ABCDEFGHJKMNPQRSTVWXY",
+  "count": 3,
+  "tokens": ["01HX…A", "01HX…B", "01HX…C"],
+  "status": "queued"
+}
+```
+
+<Aside type="tip">
+  Set a generous `wall_time_limit` (e.g. 30) for compiled-language batches —
+  the first case pays the cold compile cost; the rest are near-instant.
+</Aside>
 
 ### `GET /v1/batches/{batch_id}`
 
-Aggregated batch view + status summary (queued / processing / accepted / failed).
+Aggregated batch view: one `SubmissionView` per case (same shape as a
+single submission) plus a status summary. Poll until
+`summary.queued + summary.processing == 0`.
+
+```json title="response"
+{
+  "batch_id": "01HX1ABCDEFGHJKMNPQRSTVWXY",
+  "items": [
+    { "token": "01HX…A", "status": {"kind":"accepted"}, "stdout": "9\n",   "time": 0.41 },
+    { "token": "01HX…B", "status": {"kind":"accepted"}, "stdout": "49\n",  "time": 0.02 },
+    { "token": "01HX…C", "status": {"kind":"accepted"}, "stdout": "144\n", "time": 0.02 }
+  ],
+  "summary": { "total": 3, "queued": 0, "processing": 0, "accepted": 3, "failed": 0 }
+}
+```
+
+The browser playground's **Tests** tab is built on these two endpoints —
+it adds expected-output comparison, per-case pass/fail verdicts, and an
+inline diff entirely client-side.
 
 ## Languages
 

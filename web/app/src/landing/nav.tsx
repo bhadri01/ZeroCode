@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { toggleTheme, getTheme, type Theme } from '../shared/theme';
 import { fetchRepoStars, formatStars } from '../shared/github';
 
@@ -102,7 +103,12 @@ export function Nav() {
   return (
     <>
     <div className="zc-scrollbar" />
-    <nav className={`zc-nav ${scrolled ? 'is-scrolled' : ''}`}>
+    <motion.nav
+      className={`zc-nav ${scrolled ? 'is-scrolled' : ''}`}
+      initial={{ y: -64, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 0.05 }}
+    >
       <style>{`
         .zc-nav {
           position: sticky; top: 0; z-index: 50;
@@ -251,6 +257,7 @@ export function Nav() {
           <a href="#isolation">isolation</a>
           <a href="#how">how it works</a>
           <a href="#languages">languages</a>
+          <a href="#batch">test cases</a>
           <a href="/docs/">docs</a>
           <a href="/playground.html">playground</a>
         </div>
@@ -284,7 +291,7 @@ export function Nav() {
           </button>
         </div>
       </div>
-    </nav>
+    </motion.nav>
     {/* The sheet MUST live outside <nav>: the nav has backdrop-filter, which
         per CSS spec makes it the containing block for fixed-position
         descendants. Inside the nav, `inset: 56px 0 0 0` was being measured
@@ -295,6 +302,7 @@ export function Nav() {
         <a href="#isolation" onClick={() => setMenuOpen(false)}>isolation<span className="arrow">→</span></a>
         <a href="#how" onClick={() => setMenuOpen(false)}>how it works<span className="arrow">→</span></a>
         <a href="#languages" onClick={() => setMenuOpen(false)}>languages<span className="arrow">→</span></a>
+        <a href="#batch" onClick={() => setMenuOpen(false)}>test cases<span className="arrow">→</span></a>
         <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>
         <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
         <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>

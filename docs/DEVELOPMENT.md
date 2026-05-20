@@ -13,7 +13,7 @@ test suite.
 | Tool                | Version       | Notes |
 |---------------------|---------------|---|
 | **Rust**            | 1.85 stable   | Pinned in [`rust-toolchain.toml`](../rust-toolchain.toml). `rustup` will install it automatically when you first `cargo` in this repo. |
-| **Docker**          | 20.10+        | For Postgres, Jaeger, and the runner-rootfs build. Compose v2 (the `docker compose` subcommand) is required. |
+| **Docker**          | 20.10+        | For Postgres and the runner-rootfs build. Compose v2 (the `docker compose` subcommand) is required. |
 | **Node.js + pnpm**  | Node 20+, pnpm 10 | Only needed if you're working on the `web/` frontend. `corepack enable` will provide pnpm. |
 | **PostgreSQL client** (optional) | 16 | Handy for poking at the queue: `psql`, `pgcli`. |
 | **Linux kernel ≥ 5.14** | required for the native sandbox | macOS / Docker Desktop can run the API + worker, but the production-grade `NativeSandbox` features (cgroups v2, landlock, seccomp) need a real Linux host. The dev `NaiveSandbox` works anywhere. |
@@ -50,31 +50,29 @@ template.
 
 ## 3. Running the stack (hot-reload workflow)
 
-The recommended development setup is **Postgres + Jaeger in Docker,
-API + worker via `cargo run`**. You get sub-second rebuilds, full
-backtrace, and `tracing` output in your terminal.
+The recommended development setup is **Postgres in Docker, API + worker
+via `cargo run`**. You get sub-second rebuilds, full backtraces, and
+`tracing` output in your terminal.
 
-### Step 1 — start the supporting services
+### Step 1 — start Postgres
 
 ```bash
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose.dev.yml \
-               up -d postgres migrate jaeger
+docker compose -f deploy/docker-compose.yml up -d postgres migrate
 ```
 
 This brings up:
 
-- **Postgres** on host port `5433` (so it doesn't clash with a system Postgres on 5432)
+- **Postgres** on host port `5432`
 - **migrate** runs once and exits, applying SQL files from `migrations/`
-- **Jaeger** at <http://localhost:16686> for trace inspection
 
-The `api`, `worker`, and `runner-rootfs-init` services are intentionally
-disabled in the dev override — you'll run those yourself.
+The `api`, `worker`, and `runner-rootfs-init` services aren't started by
+this command — `up -d` with explicit service names only brings up what
+you ask for. You'll run the API + worker yourself via `cargo run`.
 
 ### Step 2 — run the API
 
 ```bash
-DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode \
+DATABASE_URL=postgres://zerocode:zerocode@localhost:5432/zerocode \
 cargo run -p zerocode-api
 ```
 
@@ -88,7 +86,7 @@ curl http://localhost:8080/v1/health
 ### Step 3 — run the worker
 
 ```bash
-DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode \
+DATABASE_URL=postgres://zerocode:zerocode@localhost:5432/zerocode \
 ZEROCODE_RUNNER_ROOTFS=/var/lib/zerocode/runner-rootfs \
 cargo run -p zerocode-worker --features unsafe-naive
 ```
@@ -151,7 +149,7 @@ docker export "$cid" | sudo tar -xf - -C /var/lib/zerocode/runner-rootfs
 docker rm "$cid"
 
 # 3. Run the worker with the `native` feature
-DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode \
+DATABASE_URL=postgres://zerocode:zerocode@localhost:5432/zerocode \
 ZEROCODE_RUNNER_ROOTFS=/var/lib/zerocode/runner-rootfs \
 cargo run -p zerocode-worker --features native
 ```
@@ -196,12 +194,12 @@ service invokes).
 
 ```bash
 # Apply pending migrations against a running Postgres
-DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode \
+DATABASE_URL=postgres://zerocode:zerocode@localhost:5432/zerocode \
 cargo run -p zerocode-migrate
 
 # Refresh the sqlx offline metadata after schema changes
 cargo install sqlx-cli --no-default-features --features postgres
-DATABASE_URL=postgres://zerocode:zerocode@localhost:5433/zerocode \
+DATABASE_URL=postgres://zerocode:zerocode@localhost:5432/zerocode \
 cargo sqlx prepare --workspace
 ```
 
@@ -210,21 +208,14 @@ build can compile without a live database (`SQLX_OFFLINE=true`).
 
 ---
 
-## 8. Tracing and observability
+## 8. Logging and metrics
 
-The API and worker emit OpenTelemetry spans over OTLP gRPC when
-`OTEL_EXPORTER_OTLP_ENDPOINT` is set. The dev override ships Jaeger
-all-in-one at `localhost:4317` (gRPC) with a UI at
-<http://localhost:16686>.
+Both binaries log to stdout in structured JSON via `tracing-subscriber`.
+Filter with `RUST_LOG`, e.g. `RUST_LOG=info,zerocode=debug,sqlx=warn`.
 
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
-cargo run -p zerocode-api
-```
-
-Without that env var, both binaries fall back to stdout JSON logging
-via `tracing-subscriber`. Filter logs with `RUST_LOG`, e.g.
-`RUST_LOG=info,zerocode=debug,sqlx=warn`.
+Prometheus metrics are exposed on each binary's HTTP port at `/metrics`
+— `localhost:8080/metrics` for the API and `localhost:9090/metrics` for
+the worker (default; override via `ZEROCODE_WORKER_METRICS_BIND`).
 
 ---
 
@@ -251,7 +242,7 @@ docker compose -f deploy/docker-compose.yml down -v
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `connection refused (5432)` from `cargo run` | Default Postgres port collides with dev compose. | Use `localhost:5433` in your `DATABASE_URL` (set by the dev override). |
+| `connection refused (5432)` from `cargo run` | Postgres container isn't running. | `docker compose -f deploy/docker-compose.yml up -d postgres migrate`. |
 | `SQLX_OFFLINE_DIR not found` build error | `.sqlx/` metadata stale after schema change. | `cargo sqlx prepare --workspace` against a live DB. |
 | `runner rootfs not found` at worker startup | `ZEROCODE_RUNNER_ROOTFS` path doesn't exist or wasn't extracted. | See §5, or use the full `docker compose up -d` flow. |
 | `bind-mount failed` / Go-Java-Rust submissions all error | `/proc` couldn't be bind-mounted into the rootfs. | See [`DEPLOY.md` §7](DEPLOY.md) — usually missing `CAP_SYS_ADMIN` or a read-only volume. |

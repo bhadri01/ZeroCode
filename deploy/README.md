@@ -1,10 +1,9 @@
-# `deploy/` — container images and compose stacks
+# `deploy/` — container images and compose stack
 
-This directory contains everything you need to build container images and
-orchestrate the ZeroCode services. See also:
+Everything you need to build and run ZeroCode in Docker. See also:
 
 - [`../docs/DEPLOY.md`](../docs/DEPLOY.md) — full production deployment guide
-  (host prerequisites, capabilities, troubleshooting).
+  (host prereqs, capabilities, troubleshooting).
 - [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) — local-dev workflows.
 
 ---
@@ -15,28 +14,24 @@ orchestrate the ZeroCode services. See also:
 |---|---|
 | `Dockerfile.service` | Builds the **API + migrate** image. Distroless / musl-static. Bundles the web UI from `web/`. |
 | `Dockerfile.worker`  | Builds the **worker** image. glibc-based (libseccomp + libcontainer need glibc). |
-| `docker-compose.yml` | Dev-flavoured baseline stack: Postgres, migrate, runner-rootfs init, API, worker. |
-| `docker-compose.dev.yml` | Override for local-dev: exposes Postgres on `:5433`, adds Jaeger, disables the API/worker so you can `cargo run` them. |
-| `docker-compose.prod.example.yml` | Production-shaped reference compose. Copy + edit; do not run as-is. |
+| `docker-compose.yml` | The full stack: Postgres, migrate, runner-rootfs init, API, worker. Works out of the box; has an optional Traefik integration commented at the bottom. |
 
 The runner-rootfs image (the filesystem containing language toolchains) lives
-under [`../runners/`](../runners/) — it's logically part of the deploy stack
-but its build is independent and triggered by the `runner-rootfs-init` service.
+under [`../runners/`](../runners/) — built independently and triggered by the
+`runner-rootfs-init` service in the compose file.
 
 ---
 
-## Quick reference
-
-### Build all three images
+## Build all three images
 
 ```bash
-# From repo root:
+# From the repo root:
 docker build -f runners/Dockerfile        -t zerocode-runner:dev  runners/
 docker build -f deploy/Dockerfile.service -t zerocode-service:dev .
 docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 ```
 
-### Bring up the full dev stack
+## Bring up the stack
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
@@ -45,21 +40,13 @@ docker compose -f deploy/docker-compose.yml up -d
 Then:
 
 ```bash
+curl http://localhost:8080/v1/health
 curl http://localhost:8080/v1/languages
 ```
 
-### Bring up just Postgres + Jaeger for `cargo run` development
+Web playground at <http://localhost:8080/playground.html>.
 
-```bash
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose.dev.yml \
-               up -d postgres migrate jaeger
-```
-
-See [`../docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md) for the full
-hot-reload workflow.
-
-### Tear down
+## Tear down
 
 ```bash
 docker compose -f deploy/docker-compose.yml down
@@ -70,17 +57,29 @@ docker compose -f deploy/docker-compose.yml down -v   # also drops volumes
 
 ## Production deployment
 
-`docker-compose.yml` here is **dev-shaped**, not production. ZeroCode runs
-as an open, unauthenticated backend — protect access at the network layer
-(private subnet, firewall, reverse proxy with its own auth) before
-exposing this anywhere.
-
-For production, copy `docker-compose.prod.example.yml`, populate the
-Postgres password placeholder, and read
-[`../docs/DEPLOY.md`](../docs/DEPLOY.md) for:
+ZeroCode runs as an open, unauthenticated backend — control access at the
+network layer (private subnet, firewall, reverse proxy with its own auth,
+VPN). Read [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for:
 
 - host kernel + cgroup v2 prerequisites
 - which Linux capabilities the worker needs (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`)
 - cgroup delegation under systemd
-- TLS termination patterns (Caddy / nginx / Traefik)
-- common failure modes (silent `/proc` bind-mount failures, etc.)
+- common failure modes (silent `/proc` bind-mount, etc.)
+
+### Traefik (optional)
+
+If you front the stack with a Traefik reverse proxy, the compose file
+already carries the routing labels. To wire them up:
+
+1. Create the shared discovery network once on the host:
+   ```bash
+   docker network create traefik
+   ```
+2. Edit your `deploy/docker-compose.yml` and uncomment the `networks` block
+   at the bottom (it joins the `traefik` external network).
+3. Remove the `ports: ["8080:8080"]` mapping on the `api` service so the
+   API isn't reachable on the public host port — Traefik routes to it via
+   the Docker network instead.
+
+Update the `traefik.http.routers.zero-code.rule` label to match your
+Host header.

@@ -34,9 +34,7 @@ git clone https://github.com/zerocode/zerocode.git
 cd zerocode
 cp .env.example .env
 
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose.dev.yml \
-               up -d postgres migrate jaeger
+docker compose -f deploy/docker-compose.yml up -d postgres migrate
 
 cargo run -p zerocode-api     # one terminal
 cargo run -p zerocode-worker  # another terminal

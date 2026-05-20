@@ -9,6 +9,7 @@
 
 import type { CSSProperties } from 'react';
 import { LangIcon, type LangKey } from '../shared/lang-icons';
+import { Reveal, Stagger, StaggerItem } from './motion';
 
 interface CoreLang {
   id: number; name: string; version: string;
@@ -135,7 +136,7 @@ export function LanguageMatrix() {
         .zc-lang-card .meta .sep { color: var(--fg-4); }
       `}</style>
       <div className="zc-langs-inner">
-        <div className="zc-langs-hd">
+        <Reveal className="zc-langs-hd">
           <div className="copy">
             <span className="k">languages</span>
             <h2>The Core 7. <span className="it">Versioned. Sandboxed.</span></h2>
@@ -147,10 +148,10 @@ export function LanguageMatrix() {
             </p>
           </div>
           <span className="count">7 shipped today</span>
-        </div>
-        <div className="zc-langs-grid">
+        </Reveal>
+        <Stagger className="zc-langs-grid">
           {CORE7.map((l) => (
-            <article key={l.id} className="zc-lang-card" style={{ '--g': l.accent } as CSSProperties}>
+            <StaggerItem key={l.id} as="article" className="zc-lang-card" hoverLift style={{ '--g': l.accent } as CSSProperties}>
               <div className="head">
                 <span className="glyph"><LangIcon lang={l.key} size={26} /></span>
                 <span className="name">{l.name}</span>
@@ -161,9 +162,9 @@ export function LanguageMatrix() {
                 <span className="sep">·</span>
                 <span>{KIND_LABEL[l.kind]}</span>
               </div>
-            </article>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </div>
     </section>
   );

@@ -1,10 +1,16 @@
-# Local dev stack. Not production — `--privileged` defaults are off, but the
-# host preconditions from docs/DEPLOY.md still apply (cgroups v2, kernel >=
-# 5.14, unprivileged_userns_clone=1, etc.).
+# ZeroCode stack: Postgres + migrate + runner-rootfs init + API + worker.
 #
-# The `runner-rootfs` named volume is populated by `runner-rootfs-init` from
-# the `zerocode-runner` image's filesystem; both the worker (Phase 1.5+) and
-# the rootfs-init mount it.
+# Works out of the box on any host with Docker:
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Reachable at http://localhost:8080 once the API is healthy.
+#
+# Host prerequisites are documented in docs/DEPLOY.md §1 — most importantly
+# kernel >= 5.14, cgroup v2 unified hierarchy, and unprivileged user
+# namespaces enabled (the worker fails its preflight otherwise).
+#
+# For production behind a Traefik reverse proxy, see the optional block at
+# the bottom of this file.
 
 name: zerocode
 
@@ -18,14 +24,15 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U zerocode" ]
+      test: ["CMD-SHELL", "pg_isready -U zerocode"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   migrate:
     image: zerocode-service:dev
-    entrypoint: [ "/usr/local/bin/zerocode-migrate" ]
+    entrypoint: ["/usr/local/bin/zerocode-migrate"]
     command:
       - --database-url=postgres://zerocode:zerocode@postgres:5432/zerocode
       - --migrations-dir=/var/lib/zerocode/migrations
@@ -35,20 +42,19 @@ services:
     restart: "no"
 
   runner-rootfs-init:
-    # Extract the runner image's filesystem into the shared named volume so the
-    # worker can bind-mount it as the sandbox rootfs. One-shot.
+    # One-shot: extract the runner image's filesystem into the shared volume
+    # so the worker can bind-mount it as the sandbox rootfs.
     image: zerocode-runner:dev
-    entrypoint: [ "/bin/sh", "-c" ]
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -eu
-        # Clear old contents without touching "." or "..".
+        # Wipe old contents (skip "." and "..") then re-extract.
         for path in /target/* /target/.[!.]* /target/..?*; do
           [ -e "$$path" ] || continue
           rm -rf -- "$$path"
         done
-        # Copy the runner image filesystem, but skip pseudo-filesystems and the
-        # target mount itself so procfs/sysfs entries do not get baked in.
+        # Skip pseudo-filesystems so procfs/sysfs entries are not baked in.
         tar -C / \
           --exclude=./target \
           --exclude=./dev \
@@ -65,39 +71,38 @@ services:
     image: zerocode-service:dev
     environment:
       DATABASE_URL: postgres://zerocode:zerocode@postgres:5432/zerocode
-      ZEROCODE_API_BIND: 0.0.0.0:8080
-      # tower_governor caps per-IP request volume. The 100/100 prod default
-      # is fine for real users but trips quickly under dev hammering, so the
-      # dev compose cranks it up.
+      # Per-IP rate limit (tower_governor). The 100/100 production default
+      # is fine for real users but trips on dev hammering; override here
+      # via env var if you want stricter behaviour.
       ZEROCODE_GOVERNOR_RPS: ${ZEROCODE_GOVERNOR_RPS:-10000}
       ZEROCODE_GOVERNOR_BURST: ${ZEROCODE_GOVERNOR_BURST:-10000}
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:
         condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    # Traefik discovery labels — inert without a Traefik instance. To
+    # actually route through Traefik, also uncomment the `networks` block
+    # at the bottom of this file.
     labels:
       - traefik.enable=true
-      - traefik.domain=youngstorage.in
       - traefik.http.routers.zero-code.rule=Host(`zerocode.dev.succeedex.in`)
       - traefik.http.routers.zero-code.entrypoints=websecure
       - traefik.http.routers.zero-code.tls=true
       - traefik.http.routers.zero-code.tls.certresolver=myresolver
       - traefik.http.services.zero-code.loadbalancer.server.port=8080
-    # The image bakes the built `web/dist/` at /srv/web (see deploy/Dockerfile.service,
-    # which runs `pnpm build` in a node:20 stage). ZEROCODE_WEB_DIR is set to
-    # /srv/web by the Dockerfile, so the API picks it up automatically.
-    # For dev hot-reload of the UI, run `pnpm --filter @zerocode/app dev`
-    # separately at http://localhost:5173 and disable the embedded mount with
-    # ZEROCODE_WEB_DIR="" .
+    # The service image bakes the built web/dist/ at /srv/web (Dockerfile.service
+    # runs `pnpm build` in a node:20 stage). ZEROCODE_WEB_DIR=/srv/web is set
+    # there, so the API picks it up automatically. For dev hot-reload of the
+    # UI, run `pnpm --filter @zerocode/app dev` on port 5173 separately.
     read_only: true
     tmpfs:
       - /tmp
-    cap_drop: [ "ALL" ]
+    cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
-    networks:
-      - default
 
   worker:
     image: zerocode-worker:dev
@@ -112,16 +117,17 @@ services:
       runner-rootfs-init:
         condition: service_completed_successfully
     volumes:
-      # Read-write in dev mode so NaiveSandbox can create per-job workdirs at
-      # <rootfs>/box/<token> before chroot()-ing into the rootfs. In a
-      # NativeSandbox deployment this should go back to :ro.
+      # Read-write so the NaiveSandbox can create per-job workdirs at
+      # <rootfs>/box/<token> and bind-mount /proc + /dev into the rootfs.
+      # The sandbox isolates user code from mutating toolchain files.
       - runner-rootfs:/var/lib/zerocode/runner-rootfs:rw
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-    cap_drop: [ "ALL" ]
+    cap_drop: ["ALL"]
     cap_add:
-      # Needed inside the worker's own user namespace for unshare/mount/pivot_root.
+      # Required for unshare/mount/pivot_root inside the worker's user namespace
+      # AND for the /proc bind-mount the NaiveSandbox does at startup.
       - SYS_ADMIN
-      # Needed by NaiveSandbox to chroot() into the runner rootfs.
+      # Required by NaiveSandbox to chroot() into the runner rootfs.
       - SYS_CHROOT
     security_opt:
       - no-new-privileges:true
@@ -132,7 +138,15 @@ volumes:
   pg-data:
   runner-rootfs:
 
-networks:
-  default:
-    name: traefik
-    external: true
+# ─── Optional: Traefik integration ─────────────────────────────────────
+# Uncomment to join the `traefik` external network so a host-level Traefik
+# reverse proxy can route by Host header (rules in the labels above).
+# Create the network once on the host before bringing up:
+#   docker network create traefik
+# When Traefik is fronting the stack, the `ports: 8080:8080` mapping above
+# becomes redundant — remove it to keep the API off the public host port.
+#
+# networks:
+#   default:
+#     name: traefik
+#     external: true

@@ -16,8 +16,15 @@
  * 720 px, font sizes clamp, touch targets stay ≥ 44 px.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LayerDiagram, LAYERS } from './layer-diagram';
+import {
+  EASE_OUT, Parallax, Reveal, Stagger, StaggerItem,
+  motion, useReducedMotion,
+} from './motion';
+import {
+  animate, useInView, useMotionValue, useTransform,
+} from 'motion/react';
 
 const GITHUB_REPO = 'bhadri01/ZeroCode';
 
@@ -28,19 +35,38 @@ interface SectionHeaderProps {
   sub?: string;
   anchor?: string;
 }
+const headerParent = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.02 } },
+};
+const headerChild = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE_OUT } },
+};
 export function SectionHeader({ kicker, title, sub, anchor }: SectionHeaderProps) {
   return (
-    <header className="zc-sh" id={anchor}>
+    <motion.header
+      className="zc-sh"
+      id={anchor}
+      variants={headerParent}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: '-12% 0px -12% 0px' }}
+    >
       <style>{`
         .zc-sh {
           max-width: 720px;
           margin: 0 0 clamp(36px, 6vw, 56px);
         }
         .zc-sh .k {
-          display: inline-block;
+          display: inline-flex; align-items: center; gap: 8px;
           font: 500 11.5px var(--f-mono); color: var(--accent);
           letter-spacing: 0.16em; text-transform: uppercase;
           margin-bottom: 16px;
+        }
+        .zc-sh .k::before {
+          content: ''; width: 18px; height: 1px;
+          background: linear-gradient(90deg, var(--accent), transparent);
         }
         .zc-sh h2 {
           margin: 0;
@@ -57,10 +83,10 @@ export function SectionHeader({ kicker, title, sub, anchor }: SectionHeaderProps
           max-width: 60ch;
         }
       `}</style>
-      <span className="k">{kicker}</span>
-      <h2 dangerouslySetInnerHTML={{ __html: title }} />
-      {sub && <p>{sub}</p>}
-    </header>
+      <motion.span className="k" variants={headerChild}>{kicker}</motion.span>
+      <motion.h2 variants={headerChild} dangerouslySetInnerHTML={{ __html: title }} />
+      {sub && <motion.p variants={headerChild}>{sub}</motion.p>}
+    </motion.header>
   );
 }
 
@@ -197,10 +223,12 @@ export function IsolationSection() {
           sub="Every submission runs in its own user namespace, behind seccomp, landlock, and a pivot_rooted runner rootfs. The same primitives Linux production containers rely on — wired straight into the sandbox."
         />
         <div className="zc-iso-grid">
-          <div className="zc-iso-stage">
-            <LayerDiagram variant="hero" />
-          </div>
-          <div className="zc-iso-info">
+          <Reveal className="zc-iso-stage" y={0} duration={0.9}>
+            <Parallax distance={24}>
+              <LayerDiagram variant="hero" />
+            </Parallax>
+          </Reveal>
+          <Reveal className="zc-iso-info" delay={0.1}>
             <div className="layer-card">
               <div className="layer-card-inner" key={active}>
                 <span className="num">layer {String(active + 1).padStart(2, '0')}</span>
@@ -224,7 +252,7 @@ export function IsolationSection() {
                 </button>
               ))}
             </div>
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>
@@ -319,19 +347,145 @@ export function HowItWorks() {
           title='Three steps. <span class="it">No broker. No queue daemon.</span>'
           sub="The queue lives in Postgres. Workers wake on LISTEN/NOTIFY — no Redis, no RabbitMQ, no separate orchestrator process to babysit."
         />
-        <div className="zc-how-grid">
+        <Stagger className="zc-how-grid">
           {STEPS.map((s) => (
-            <article key={s.n} className="zc-how-step">
+            <StaggerItem key={s.n} as="article" className="zc-how-step" hoverLift>
               <span className="num">step {s.n}</span>
               <h3>{s.title}</h3>
               <p className="body">{s.body}</p>
               <pre>{s.code}</pre>
-            </article>
+            </StaggerItem>
           ))}
+        </Stagger>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Test cases (batch submissions) ───────────────────────────────────── */
+const BATCH_CASES: { stdin: string; out: string; verdict: 'pass' | 'fail' }[] = [
+  { stdin: '3',    out: '9',     verdict: 'pass' },
+  { stdin: '7',    out: '49',    verdict: 'pass' },
+  { stdin: '12',   out: '144',   verdict: 'pass' },
+  { stdin: '-5',   out: '25',    verdict: 'pass' },
+  { stdin: '9999', out: '99980001', verdict: 'pass' },
+];
+
+export function TestCasesSection() {
+  return (
+    <section className="zc-tc" id="batch">
+      <style>{`
+        .zc-tc {
+          padding: clamp(72px, 11vw, 140px) clamp(20px, 5vw, 64px);
+          background: var(--bg-1);
+          border-top: 1px solid var(--line);
+        }
+        .zc-tc-inner { max-width: 1180px; margin: 0 auto; }
+        .zc-tc-row {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: clamp(32px, 6vw, 72px); align-items: center;
+        }
+        .zc-tc-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+        .zc-tc-cta a {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 11px 18px; border-radius: 8px; font: 500 14px var(--f-sans);
+          text-decoration: none; min-height: 44px;
+          transition: transform 120ms ease, filter 120ms ease, border-color 120ms ease, color 120ms ease;
+        }
+        .zc-tc-cta .primary { background: var(--accent); color: var(--bg); border: 1px solid var(--accent); }
+        .zc-tc-cta .primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+        .zc-tc-cta .ghost { color: var(--fg-1); border: 1px solid var(--line-2); }
+        .zc-tc-cta .ghost:hover { color: var(--fg); border-color: var(--line-strong); }
+
+        /* Runner card mockup */
+        .zc-tc-card {
+          border: 1px solid var(--line); border-radius: 14px;
+          background: var(--bg); overflow: hidden;
+          box-shadow: 0 32px 80px -44px rgba(0,0,0,0.4);
+        }
+        .zc-tc-card-hd {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 14px; border-bottom: 1px solid var(--line);
+          background: color-mix(in oklab, var(--bg-2) 60%, transparent);
+          font: 11.5px var(--f-mono); color: var(--fg-3); letter-spacing: 0.04em;
+        }
+        .zc-tc-card-hd .pill {
+          margin-left: auto; padding: 2px 9px; border-radius: 99px;
+          background: color-mix(in oklab, var(--st-accepted) 18%, transparent);
+          color: var(--st-accepted); font-size: 10.5px; letter-spacing: 0.06em;
+        }
+        .zc-tc-case {
+          display: grid; grid-template-columns: 22px 1fr auto auto; gap: 12px;
+          align-items: center; padding: 11px 16px;
+          border-bottom: 1px dashed var(--line);
+          font: 12.5px var(--f-mono);
+        }
+        .zc-tc-case:last-child { border-bottom: 0; }
+        .zc-tc-case .n { color: var(--fg-4); }
+        .zc-tc-case .io { color: var(--fg-1); }
+        .zc-tc-case .io .arrow { color: var(--fg-4); margin: 0 6px; }
+        .zc-tc-case .io .out { color: var(--fg); }
+        .zc-tc-case .ms { color: var(--fg-4); font-size: 11px; }
+        .zc-tc-case .v {
+          color: var(--st-accepted); font-size: 11px; letter-spacing: 0.04em;
+          display: inline-flex; align-items: center; gap: 4px;
+        }
+        @media (max-width: 880px) {
+          .zc-tc-row { grid-template-columns: 1fr; }
+          .zc-tc-case .ms { display: none; }
+        }
+      `}</style>
+      <div className="zc-tc-inner">
+        <div className="zc-tc-row">
+          <div>
+            <SectionHeader
+              kicker="test cases"
+              title='One program. <span class="it">Many inputs.</span> One request.'
+              sub="POST a single source plus up to 100 stdin cases to /v1/submissions/batch. Compiled languages compile once and run N times — the compile cache makes every case after the first near-instant. In the playground, switch to the Tests tab to define cases, set expected output, and get per-case pass/fail with an inline diff."
+            />
+            <div className="zc-tc-cta">
+              <a className="primary" href="/playground.html">Open the playground →</a>
+              <a className="ghost" href="/docs/api">Batch API docs</a>
+            </div>
+          </div>
+          <Parallax distance={28}>
+            <Stagger className="zc-tc-card" aria-hidden="true">
+              <div className="zc-tc-card-hd">
+                <span>squared.cpp · 5 cases</span>
+                <span className="pill">5 / 5 pass</span>
+              </div>
+              {BATCH_CASES.map((c, i) => (
+                <StaggerItem key={i} className="zc-tc-case">
+                  <span className="n">#{i + 1}</span>
+                  <span className="io">
+                    {c.stdin}<span className="arrow">→</span><span className="out">{c.out}</span>
+                  </span>
+                  <span className="ms">{i === 0 ? '410ms' : '24ms'}</span>
+                  <span className="v">✓ pass</span>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </Parallax>
         </div>
       </div>
     </section>
   );
+}
+
+/* ─── CountUp — animate a number from 0 → target when scrolled into view ── */
+function CountUp({ to, duration = 1.1 }: { to: number; duration?: number }) {
+  const reduce = useReducedMotion();
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-15% 0px' });
+  const mv = useMotionValue(0);
+  const rounded = useTransform(mv, (v) => String(Math.round(v)));
+  useEffect(() => {
+    if (!inView) return;
+    if (reduce) { mv.set(to); return; }
+    const controls = animate(mv, to, { duration, ease: EASE_OUT });
+    return () => controls.stop();
+  }, [inView, to, duration, reduce, mv]);
+  return <motion.span ref={ref}>{rounded}</motion.span>;
 }
 
 /* ─── Speed (single big stat + budget breakdown) ───────────────────────── */
@@ -340,7 +494,7 @@ export function SpeedSection() {
     { lbl: 'POST → INSERT',           v: '~1.2 ms', c: 'var(--accent)' },
     { lbl: 'NOTIFY → worker wake',    v: '~0.8 ms', c: 'var(--blue-1)' },
     { lbl: 'claim + spawn sandbox',   v: '~2.4 ms', c: 'var(--green-1)' },
-    { lbl: 'first stdout byte',       v: 'sandbox-bound', c: 'var(--fg-2)' },
+    { lbl: 'repeat compile (cached)', v: 'skipped',  c: 'var(--fg-2)' },
   ];
   return (
     <section className="zc-spd" id="speed">
@@ -395,22 +549,22 @@ export function SpeedSection() {
         <SectionHeader
           kicker="speed"
           title='Sub-5 ms <span class="it">job pickup.</span>'
-          sub="No polling, no broker hop, no queue-daemon round-trip. Postgres LISTEN/NOTIFY wakes the worker on the same SQL transaction the API just committed."
+          sub="No polling, no broker hop, no queue-daemon round-trip. Postgres LISTEN/NOTIFY wakes the worker on the same SQL transaction the API just committed. Identical submissions short-circuit through an in-process result cache, and recompiles of the same source skip straight to the run phase via the compile cache."
         />
         <div className="zc-spd-row">
-          <div className="zc-spd-stat">
-            <div className="big">&lt; 5<span className="unit"> ms</span></div>
+          <Reveal className="zc-spd-stat" y={28}>
+            <div className="big">&lt; <CountUp to={5} /><span className="unit"> ms</span></div>
             <div className="lbl">dispatch latency · p99</div>
-          </div>
-          <div className="zc-spd-budget">
+          </Reveal>
+          <Stagger className="zc-spd-budget">
             {budget.map((b, i) => (
-              <div key={i} className="item">
+              <StaggerItem key={i} className="item">
                 <span className="dot" style={{ background: b.c }} />
                 <span className="lbl">{b.lbl}</span>
                 <span className="v">{b.v}</span>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </div>
       </div>
     </section>
@@ -506,16 +660,15 @@ export function GetStartedSection() {
               </a>
             </div>
           </div>
-          <div className="zc-gs-cmds" aria-hidden="true">
+          <Reveal className="zc-gs-cmds" aria-hidden="true" delay={0.08}>
             <div className="row"><span className="com"># clone the repo</span></div>
             <div className="row"><span className="pr">$</span>git clone https://github.com/{GITHUB_REPO}</div>
             <div className="row"><span className="com"># bring up the stack</span></div>
             <div className="row"><span className="pr">$</span>docker compose -f deploy/docker-compose.yml up -d</div>
-            <div className="row"><span className="com"># submit your first program</span></div>
+            <div className="row"><span className="com"># submit your first program — no API key needed</span></div>
             <div className="row"><span className="pr">$</span>curl -X POST localhost:8080/v1/submissions?wait=true \</div>
-            <div className="row" style={{ paddingLeft: 36 }}>-H 'authorization: Bearer dev-only-replace-me' \</div>
             <div className="row" style={{ paddingLeft: 36 }}>-d '{`{"language_id":71,"source_code":"print(123)"}`}'</div>
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>

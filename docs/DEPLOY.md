@@ -107,31 +107,30 @@ responsibility.
 
 ## 3. Docker Compose quickstart
 
-The repo ships a dev-flavoured compose at
-[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) and a
-production-shaped template at
-[`deploy/docker-compose.prod.example.yml`](../deploy/docker-compose.prod.example.yml).
+The repo ships a single compose file at
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml). It works for
+both local dev and production behind a reverse proxy.
 
 ### Step 1 — build images
 
 ```bash
 # Toolchain rootfs
-docker build -f runners/Dockerfile        -t zerocode-runner:v0.1.0  runners/
+docker build -f runners/Dockerfile        -t zerocode-runner:dev  runners/
 
 # API + migrate (distroless/musl-static)
-docker build -f deploy/Dockerfile.service -t zerocode-service:v0.1.0 .
+docker build -f deploy/Dockerfile.service -t zerocode-service:dev .
 
 # Worker (glibc)
-docker build -f deploy/Dockerfile.worker  -t zerocode-worker:v0.1.0  .
+docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 ```
 
-### Step 2 — production compose
+Tag with a version (`:v0.1.0`) instead of `:dev` when shipping to a
+production host — pinned tags make rollbacks deliberate.
+
+### Step 2 — bring up the stack
 
 ```bash
-cp deploy/docker-compose.prod.example.yml deploy/docker-compose.prod.yml
-# Replace every __CHANGE_ME__ marker (Postgres password + DATABASE_URL).
-
-docker compose -f deploy/docker-compose.prod.yml up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
 This brings up, in dependency order:
@@ -139,8 +138,13 @@ This brings up, in dependency order:
 1. **postgres** — waits for healthcheck to pass.
 2. **migrate** — applies SQL migrations, exits.
 3. **runner-rootfs-init** — extracts the runner image filesystem into the shared volume.
-4. **api** — listens on `127.0.0.1:8080` (behind your reverse proxy).
+4. **api** — listens on `0.0.0.0:8080` (mapped to the host).
 5. **worker** — claims jobs and runs sandboxes.
+
+For production behind a reverse proxy (Caddy, nginx, Traefik), either
+keep the `8080:8080` port mapping and proxy to `localhost:8080`, or
+uncomment the Traefik network block at the bottom of the compose file
+and remove the port mapping (see `deploy/README.md` § "Traefik (optional)").
 
 ### Step 3 — verify
 

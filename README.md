@@ -117,14 +117,12 @@ Web playground at <http://localhost:8080/playground.html>.
 
 ### Option B — hot-reload development
 
-Run Postgres and Jaeger in Docker, but `cargo run` the API and worker
-on the host so you get fast rebuilds. Full instructions in
+Run only Postgres in Docker, but `cargo run` the API and worker on the
+host so you get fast rebuilds. Full instructions in
 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md):
 
 ```bash
-docker compose -f deploy/docker-compose.yml \
-               -f deploy/docker-compose.dev.yml \
-               up -d postgres migrate jaeger
+docker compose -f deploy/docker-compose.yml up -d postgres migrate
 
 cp .env.example .env
 cargo run -p zerocode-api      # terminal 1
@@ -153,12 +151,10 @@ ZeroCode/
 │   ├── Dockerfile.slim           # Per-language slim images
 │   └── languages.toml            # Per-language compile/run specs
 │
-├── deploy/                       # Container images + compose stacks
+├── deploy/                       # Container images + compose stack
 │   ├── Dockerfile.service        # API + migrate (distroless / musl-static)
 │   ├── Dockerfile.worker         # Worker (glibc + libseccomp)
-│   ├── docker-compose.yml        # Dev-flavoured baseline stack
-│   ├── docker-compose.dev.yml    # Override for `cargo run` hot-reload
-│   └── docker-compose.prod.example.yml   # Copy + edit for production
+│   └── docker-compose.yml        # Full stack — Postgres, migrate, runner-rootfs, API, worker
 │
 ├── web/                          # Browser-facing frontend (pnpm workspace)
 │   ├── app/                      # Landing + playground (Vite + React)

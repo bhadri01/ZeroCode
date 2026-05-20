@@ -15,9 +15,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import { EASE_OUT } from './motion';
 
 const CURL = `curl -X POST https://api.example.com/v1/submissions?wait=true \\
-  -H "authorization: Bearer $ZC_KEY" \\
   -d '{"language_id":71,"source_code":"print(\\"hello, sandbox\\")"}'`;
 
 const OUTPUT_LINES: { c: string; text: string }[] = [
@@ -26,6 +27,21 @@ const OUTPUT_LINES: { c: string; text: string }[] = [
   { c: 'fg-1',        text: 'hello, sandbox'                          },
   { c: 'st-accepted', text: '✓ accepted · 47 ms wall · 8.2 MB mem'   },
 ];
+
+// On-load entrance — staggered rise of headline → sub → CTAs → meta, with
+// the terminal arriving last on a slightly longer, scale-in beat.
+const HERO_PARENT = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.1, delayChildren: 0.08 } },
+};
+const HERO_CHILD = {
+  hidden: { opacity: 0, y: 22 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.75, ease: EASE_OUT } },
+};
+const HERO_TERM = {
+  hidden: { opacity: 0, y: 34, scale: 0.985 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.9, ease: EASE_OUT } },
+};
 
 export function Hero() {
   const [typed, setTyped] = useState('');
@@ -186,35 +202,40 @@ export function Hero() {
           .zc-hero-meta { gap: 10px 18px; }
         }
       `}</style>
-      <div className="zc-hero-inner">
-        <h1>
+      <motion.div
+        className="zc-hero-inner"
+        variants={HERO_PARENT}
+        initial="hidden"
+        animate="show"
+      >
+        <motion.h1 variants={HERO_CHILD}>
           Run untrusted code.<br />
           <span className="it">Without the prayer.</span>
-        </h1>
+        </motion.h1>
 
-        <p className="sub">
+        <motion.p className="sub" variants={HERO_CHILD}>
           A self-hosted code-execution sandbox in Rust. Eight kernel-enforced
           isolation layers, sub-5 ms job pickup, REST + SSE. Seven languages
           wired up out of the box — Python, Node, Rust, Go, C, C++, Java.
-        </p>
+        </motion.p>
 
-        <div className="zc-hero-cta">
+        <motion.div className="zc-hero-cta" variants={HERO_CHILD}>
           <a className="primary" href="/docs/quickstart">
             Get started <span className="arrow">→</span>
           </a>
           <a className="ghost" href="/playground.html">
             Try the playground
           </a>
-        </div>
+        </motion.div>
 
-        <div className="zc-hero-meta">
+        <motion.div className="zc-hero-meta" variants={HERO_CHILD}>
           <span><b>8</b> isolation layers</span>
           <span><b>7</b> languages</span>
           <span><b>&lt; 5 ms</b> dispatch p99</span>
           <span><b>71</b> tests · <b>0</b> CVEs</span>
-        </div>
+        </motion.div>
 
-        <div className="zc-term" aria-hidden="true">
+        <motion.div className="zc-term" aria-hidden="true" variants={HERO_TERM}>
           <div className="zc-term-hd">
             <span className="light" /><span className="light" /><span className="light" />
             <span className="label">~/zerocode · zsh</span>
@@ -236,8 +257,8 @@ export function Hero() {
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </section>
   );
 }

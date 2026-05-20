@@ -99,7 +99,26 @@ The response contains:
 ## 5. Try the playground
 
 Open [http://localhost:8080/playground.html](http://localhost:8080/playground.html) — the
-same API, fronted by a CodeMirror editor with live SSE output.
+same API, fronted by a CodeMirror editor with live SSE output. Each
+language starts with a snippet that reads stdin, and `stdin` is pre-filled
+so Run works on the first click. Switch to the **Tests** tab to feed one
+program many inputs at once with per-case pass/fail verdicts.
+
+## 6. Run a batch of test cases
+
+One program, many inputs, one request — see [Batch submissions](/docs/api#post-v1submissionsbatch):
+
+```bash
+curl -X POST 'http://localhost:8080/v1/submissions/batch' \
+  -H 'content-type: application/json' \
+  -d '{
+    "language_id": 71,
+    "source_code": "import sys\nn=int(sys.stdin.read());print(n*n)",
+    "test_cases": [{"stdin":"3"},{"stdin":"7"},{"stdin":"12"}]
+  }'
+# → { "batch_id": "...", "count": 3, "tokens": [...] }
+# then: curl http://localhost:8080/v1/batches/<batch_id>
+```
 
 ## Next
 
