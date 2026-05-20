@@ -39,7 +39,7 @@ pub fn apply(scratch_dir: &Path) -> Result<(), SandboxError> {
             .map(|fd| Ok(PathBeneath::new(fd, ro)))
             .collect();
     let rw_rules: Vec<Result<PathBeneath<PathFd>, landlock::RulesetError>> =
-        [scratch_dir, Path::new("/tmp")]
+        [scratch_dir, Path::new("/tmp"), Path::new("/dev")]
             .iter()
             .filter_map(|p| PathFd::new(p).ok())
             .map(|fd| Ok(PathBeneath::new(fd, rw)))

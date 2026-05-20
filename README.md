@@ -11,7 +11,7 @@ LISTEN/NOTIFY-dispatched worker pool, and a built-in browser playground.
 ┌──────────┐   POST /v1/submissions   ┌─────┐  pg_notify  ┌────────┐
 │  Client  │ ───────────────────────► │ API │ ──────────► │ Worker │
 └──────────┘   SSE / wait=true poll   └──┬──┘             └───┬────┘
-                                         │                    │ chroot + exec
+                                         │                    │ pivot_root + exec
                                          ▼                    ▼
                                    ┌──────────┐         ┌───────────────┐
                                    │ Postgres │         │ runner-rootfs │
@@ -178,8 +178,9 @@ ZeroCode/
 The **API** accepts submissions, writes them to Postgres, and emits a
 `pg_notify` on `zerocode.jobs`. **Workers** `LISTEN` on that channel and
 race for jobs via `SELECT … FOR UPDATE SKIP LOCKED`. The winning worker
-hands the job to a **Sandbox** which `chroot`s into the **runner-rootfs**
-volume and exec's the language toolchain. The sandbox publishes
+hands the job to a **Sandbox** which `pivot_root`s into the
+**runner-rootfs** volume (inside per-job namespaces + cgroups, with
+seccomp and landlock) and exec's the language toolchain. The sandbox publishes
 `Processing` / `StdoutChunk` / `StderrChunk` / `Finished` events on
 `zerocode.events.<token>`, which the API turns into SSE for clients.
 Identical submissions short-circuit through a moka result cache without

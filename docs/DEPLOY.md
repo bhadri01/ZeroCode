@@ -53,11 +53,61 @@ echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/99-userns.con
 sudo sysctl --system
 ```
 
+### AppArmor (Ubuntu / Debian)
+
+The worker performs two operations that the **stock Docker AppArmor profile
+(`docker-default`) blocks or restricts**, even with `CAP_SYS_ADMIN`:
+
+1. **`mount` / `pivot_root`** — `docker-default` denies the `mount` syscall
+   outright. The sandbox needs it to build each per-submission rootfs.
+2. **User-namespace setup** — Ubuntu 23.10+ ships
+   `kernel.apparmor_restrict_unprivileged_userns=1`, which makes the
+   per-job `uid_map`/`gid_map` write fail with `EPERM` (symptom:
+   `userns map write failed … write uid_map: Operation not permitted`).
+
+The supported fix is the **named AppArmor profile** shipped at
+[`deploy/apparmor/zerocode-worker`](../deploy/apparmor/zerocode-worker),
+which grants `userns` + `mount` + `pivot_root`. Load it on the host before
+starting the worker:
+
+```bash
+sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker
+sudo aa-status | grep zerocode-worker      # confirm it's loaded
+# persist across reboots:
+sudo cp deploy/apparmor/zerocode-worker /etc/apparmor.d/zerocode-worker
+```
+
+The compose worker then runs under `security_opt: apparmor=zerocode-worker`.
+If your AppArmor is < 4.0 (the `userns` rule won't parse), the only
+alternative is `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`
+— but that disables the mitigation **host-wide**, which is a poor trade on a
+host that runs untrusted code. Prefer the profile.
+
+> Hosts without AppArmor (many non-Ubuntu distros) skip this entirely.
+
+The AppArmor profile is necessary but **not sufficient** for a containerised
+worker. Two more `security_opt` settings are required (full list in
+[§6 — Docker Compose](#docker-compose)):
+- **`seccomp=unconfined`** — Docker's default seccomp profile blocks
+  `pivot_root` (even with `CAP_SYS_ADMIN`).
+- **`systempaths=unconfined`** — Docker locks `/proc` on a non-privileged
+  container, which makes the kernel refuse the per-job procfs mount
+  (`mount /proc: EPERM`).
+
+Plus `CAP_SETFCAP` in `cap_add` (the kernel requires it to establish
+user-namespace ID maps). All of these relax confinement on the *trusted
+worker only*; user code stays boxed by the per-job sandbox. None are needed on
+bare metal / systemd, where there are no locked container mounts or default
+seccomp profile.
+
 ### Delegated cgroup subtree
 
 The worker process must own a cgroup subtree so it can create per-sandbox
-child cgroups. Under Docker, the compose file (`cgroup: private`) handles
-this. Under systemd, use `Delegate=cpu memory pids`. See
+child cgroups. Under Docker, `cgroup: private` gives the container its own
+cgroup namespace and the worker's entrypoint
+([`deploy/worker-entrypoint.sh`](../deploy/worker-entrypoint.sh)) remounts
+it read-write and delegates the `cpu/memory/pids` controllers at startup.
+Under systemd, use `Delegate=cpu memory pids`. See
 [§6 — Cgroup delegation](#6-cgroup-delegation).
 
 ---
@@ -94,6 +144,8 @@ responsibility.
 | `DATABASE_URL` | yes | — | Same as API. |
 | `ZEROCODE_WORKER_ID` | no | `worker-<ulid>` | Stable identifier. Set explicitly with multiple workers. |
 | `ZEROCODE_RUNNER_ROOTFS` | yes | — | Path to the extracted runner filesystem. Typically `/var/lib/zerocode/runner-rootfs`. |
+| `ZEROCODE_CGROUP_PARENT` | no | `/sys/fs/cgroup/zerocode` | Delegated cgroup the sandbox creates per-job child cgroups under. Give each worker on a host a distinct path. |
+| `ZEROCODE_SCRATCH_DIR` | no | `/run/zerocode-sandbox` | Where per-submission scratch dirs are created before `pivot_root`. |
 | `ZEROCODE_LANGUAGES_FILE` | no | `runners/languages.toml` | Language registry path. |
 | `ZEROCODE_MAX_PARALLEL` | no | num CPUs | Concurrent sandbox count. |
 | `ZEROCODE_WEBHOOK_SECRET` | no | empty | HMAC-SHA256 secret for outbound webhook signatures. Optional — leave empty to deliver webhooks unsigned. |
@@ -129,6 +181,14 @@ docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 
 Tag with a version (`:v0.1.0`) instead of `:dev` when shipping to a
 production host — pinned tags make rollbacks deliberate.
+
+The worker image is built `--features native` (real OS-level isolation:
+namespaces + cgroups + seccomp + landlock). On AppArmor hosts, load the
+worker profile now — see [§1 — AppArmor](#apparmor-ubuntu--debian):
+
+```bash
+sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker
+```
 
 #### Documentation visibility (`VITE_HIDE_DOCS`)
 
@@ -175,10 +235,21 @@ and remove the port mapping (see `deploy/README.md` § "Traefik (optional)").
 
 ```bash
 docker compose -f deploy/docker-compose.yml ps
-docker compose -f deploy/docker-compose.yml logs worker | grep -E 'bind-mount|rootfs'
-# Expect two "bind-mounted into runner rootfs" lines.
+
+# Worker boot should show the native preflight passing and the cgroup
+# subtree delegated — no "uid_map" / "kernel feature missing" errors.
+docker compose -f deploy/docker-compose.yml logs worker \
+  | grep -E 'preflight|cgroup ready|NativeSandbox|user namespaces'
+# Expect lines like:
+#   worker-entrypoint: cgroup ready parent=/sys/fs/cgroup/zerocode controllers=[cpu memory pids]
+#   starting NativeSandbox for tier=Native
 
 curl -s http://localhost:8080/v1/languages | jq
+
+# End-to-end smoke test (synchronous):
+curl -s -X POST 'http://localhost:8080/v1/submissions?wait=true' \
+  -H 'Content-Type: application/json' \
+  -d '{"language_id":71,"source_code":"print(\"ok\")","base64_encoded":false}' | jq '.status,.stdout'
 ```
 
 ### Step 4 — tear down
@@ -192,10 +263,9 @@ docker compose -f deploy/docker-compose.yml down -v   # also drops volumes
 
 ## 4. Runner rootfs setup
 
-The worker sandbox uses `pivot_root` (production) or `chroot` (dev) to
-place each submission inside a copy of the runner filesystem. That
-filesystem contains every language toolchain: Python, Node, GCC, Go,
-Rust, Java.
+The worker sandbox `pivot_root`s each submission into the runner
+filesystem (inside a per-job mount namespace). That filesystem contains
+every language toolchain: Python, Node, GCC, Go, Rust, Java.
 
 ### How it works under Compose
 
@@ -212,20 +282,26 @@ runner-rootfs-init:
         --exclude=./target \
         --exclude=./dev --exclude=./proc --exclude=./sys --exclude=./tmp \
         -cf - . | tar -C /target -xf -
+      # Recreate the mountpoints the sandbox mounts onto, as empty dirs.
+      mkdir -p /target/tmp /target/proc /target/dev /target/box
+      chmod 1777 /target/tmp
   volumes:
     - runner-rootfs:/target
 ```
 
 The exclusions are important — `/proc`, `/sys`, and `/dev` are
 kernel-backed pseudo-filesystems. If you tar them you'll inflate the
-rootfs dramatically and pull in bogus files like `pagemap`.
+rootfs dramatically and pull in bogus files like `pagemap`. **But the
+sandbox still needs empty `/tmp`, `/proc`, `/dev`, and `/box` mountpoints
+to exist** in the rootfs — the `mkdir` line above recreates them. Miss it
+and submissions fail with `mount setup failed: tmpfs /tmp: ENOENT`.
 
-The worker then mounts `runner-rootfs` at
-`/var/lib/zerocode/runner-rootfs` and bind-mounts the worker's `/proc`
-and `/dev` *into* that path at startup so chrooted processes have
-working pseudo-filesystems. **This bind-mount step is essential** —
-without it, Go, Java, and Rust will all fail; see
-[§7 — Troubleshooting](#7-troubleshooting).
+The worker mounts `runner-rootfs` at `/var/lib/zerocode/runner-rootfs`
+(read-mostly). Per submission, the sandbox `rbind`s it into a private
+mount namespace, overlays per-job `tmpfs` at `/box` and `/tmp`,
+`pivot_root`s in, and mounts a fresh `/proc` scoped to the new PID
+namespace — so each job gets working pseudo-filesystems without anything
+being baked into or leaked out of the shared rootfs.
 
 ### Manual setup (no compose)
 
@@ -237,6 +313,10 @@ cid=$(docker create zerocode-runner:v0.1.0 /bin/true)
 sudo mkdir -p /var/lib/zerocode/runner-rootfs
 docker export "$cid" | sudo tar -xf - -C /var/lib/zerocode/runner-rootfs
 docker rm "$cid"
+
+# Ensure the sandbox mountpoints exist as empty dirs
+sudo mkdir -p /var/lib/zerocode/runner-rootfs/{tmp,proc,dev,box}
+sudo chmod 1777 /var/lib/zerocode/runner-rootfs/tmp
 
 # Point the worker at it
 export ZEROCODE_RUNNER_ROOTFS=/var/lib/zerocode/runner-rootfs
@@ -369,63 +449,107 @@ sudo chown -R zerocode:zerocode /sys/fs/cgroup/zerocode
 
 ### Docker Compose
 
-The provided compose files already handle delegation:
+Under Compose, `cgroup: private` only makes delegation *possible* — it
+gives the container its own cgroup namespace, but something still has to
+remount cgroupfs read-write (Docker mounts it read-only) and enable the
+controllers. The worker's entrypoint
+([`deploy/worker-entrypoint.sh`](../deploy/worker-entrypoint.sh)) does
+that at startup. The relevant compose settings:
 
 ```yaml
 worker:
-  volumes:
-    - /sys/fs/cgroup:/sys/fs/cgroup:rw
-  cap_add:
-    - SYS_ADMIN
-    - SYS_CHROOT
+  # NOTE: do NOT bind-mount the host /sys/fs/cgroup — that exposes the host
+  # root cgroup and nsdelegate blocks the worker from creating cgroups
+  # (EACCES). Rely on the namespaced mount from `cgroup: private` instead.
   cgroup: private
+  cap_drop: [ "ALL" ]
+  cap_add:
+    - SYS_ADMIN     # unshare, mount, pivot_root, remount cgroupfs rw
+    - SYS_CHROOT    # pivot_root / chroot into the runner rootfs
+    - SETUID        # write the per-job uid_map
+    - SETGID        # write the per-job gid_map
+    - SETFCAP       # PR_CAPBSET_DROP / establish userns ID maps
+  security_opt:
+    - apparmor=zerocode-worker   # §1 — grants userns + mount/pivot_root
+    - seccomp=unconfined         # Docker's default seccomp blocks pivot_root
+    - systempaths=unconfined     # unlock /proc so the sandbox can mount a fresh procfs
 ```
 
-`cgroup: private` gives the container its own cgroup namespace.
-`SYS_ADMIN` is scoped to the worker's user namespace and is required
-for `unshare`, `mount` (including the `/proc` bind-mount), and
-`pivot_root`. `SYS_CHROOT` is needed by the NaiveSandbox to call
-`chroot()`.
+All three `security_opt` entries are required when the worker runs **inside a
+container**: the AppArmor profile permits `userns`/`mount`, `seccomp=unconfined`
+unblocks `pivot_root`, and `systempaths=unconfined` removes the locked-mount on
+`/proc` that otherwise blocks the per-job procfs (`mount /proc: EPERM`). They
+relax confinement on the **trusted worker only** — untrusted user code is still
+fully boxed by the per-job namespaces, cgroups, seccomp and landlock the sandbox
+applies. On bare metal / systemd (§6 Method A) none of these are needed.
+
+The entrypoint then, at boot:
+
+1. `mount -o remount,rw /sys/fs/cgroup` (namespaced cgroup tree).
+2. Moves PID 1 into a leaf cgroup so the namespace-root can delegate
+   controllers (cgroup v2 "no internal processes" rule).
+3. `echo +cpu +memory +pids > cgroup.subtree_control` on the root and on
+   the `ZEROCODE_CGROUP_PARENT` it creates.
+
+Confirm it worked: the worker logs
+`worker-entrypoint: cgroup ready parent=/sys/fs/cgroup/zerocode controllers=[cpu memory pids]`.
 
 ---
 
 ## 7. Troubleshooting
 
-### Worker can't bind-mount `/proc` (silent on older builds — now fatal)
+### `userns map write failed … write uid_map: Operation not permitted`
 
-**Symptom (current builds):** worker logs `bind-mount /proc -> <rootfs>/proc failed`
-at startup or on first submission.
+**Symptom:** the worker boots fine but every submission fails; logs show
+`userns map write failed; killing child` and submissions return exit
+`127` with empty stdout/stderr.
 
-**Symptom (pre-fix builds):** worker logs a `warn`, then every Go,
-Java, and Rust submission fails with one of:
+**Why:** the sandbox creates a per-job user namespace and the worker
+writes the child's `uid_map`. On Ubuntu 23.10+,
+`kernel.apparmor_restrict_unprivileged_userns=1` blocks this for
+containers that lack the AppArmor `userns` permission — even with
+`CAP_SETUID` + `CAP_SYS_ADMIN` + `apparmor=unconfined`.
 
-- Go: `cannot find GOROOT directory: 'go' binary is trimmed and GOROOT is not set`
-- Java: `/usr/bin/javac: error while loading shared libraries: libjli.so: cannot open shared object file`
-- Rust: spawn errors / "sandbox error"
-
-**Why:** Go, Java, and Rust all use `/proc/self/exe` to locate their
-install dir. If `/proc` isn't bind-mounted into the chroot, none of
-them can find their stdlib / sysroot / RPATH origin.
-
-**Fixes (in priority order):**
-
-1. **Grant the worker `CAP_SYS_ADMIN`.** Required for the bind-mount.
-   Under Compose, this is in
-   [`deploy/docker-compose.yml`](../deploy/docker-compose.yml#L122-L127);
-   under Kubernetes, add it to `securityContext.capabilities.add`;
-   under systemd, `AmbientCapabilities=CAP_SYS_ADMIN`.
-2. **Mount the runner rootfs read-write.** The worker needs to create
-   `<rootfs>/proc` and `<rootfs>/dev` directories before binding into them.
-3. **Ensure `/bin/mount` exists in the worker image.** It's installed
-   by [`deploy/Dockerfile.worker`](../deploy/Dockerfile.worker#L33-L35); only
-   relevant if you've forked the worker image.
-
-Verify after the fix:
+**Fix:** load the worker AppArmor profile (grants `userns`) and run the
+worker under it — see [§1 — AppArmor](#apparmor-ubuntu--debian):
 
 ```bash
-docker exec <worker> cat /proc/self/mountinfo | grep runner-rootfs
-docker exec <worker> ls /var/lib/zerocode/runner-rootfs/proc | head
+sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker   # then recreate the worker
 ```
+
+Also confirm the worker has `CAP_SETUID`, `CAP_SETGID` **and `CAP_SETFCAP`**
+(compose `cap_add`) — the kernel needs `CAP_SETFCAP` to establish userns ID
+maps, and the write fails without it even when AppArmor allows it:
+
+```bash
+grep CapEff /proc/$(docker inspect -f '{{.State.Pid}}' <worker>)/status
+# decode: capsh --decode=<hex>  → must include cap_setuid,cap_setgid
+```
+
+### `failed to apply apparmor profile … zerocode-worker` on `up`
+
+The named profile isn't loaded in the kernel. Load it
+(`sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker`) **before**
+starting the worker, or temporarily set `apparmor=unconfined` in compose
+(note: unconfined still hits the `uid_map` issue above on Ubuntu 23.10+).
+
+### `mount setup failed: tmpfs /tmp: ENOENT`
+
+The runner rootfs is missing the `/tmp` (or `/box`/`/proc`/`/dev`)
+mountpoint the sandbox mounts onto. The extraction excludes those paths;
+recreate them as empty dirs — see [§4](#4-runner-rootfs-setup). Re-run
+`runner-rootfs-init`, then check:
+
+```bash
+docker run --rm -v <stack>_runner-rootfs:/r:ro busybox ls -ld /r/tmp /r/box /r/proc
+```
+
+### Compiled-language submissions fail to spawn (`No such file or directory`)
+
+The `compile_cmd[0]`/`run_cmd[0]` path in `runners/languages.toml` doesn't
+exist inside the runner rootfs (e.g. `/usr/bin/rustc` when rustup installed
+the proxy at `/usr/local/cargo/bin/rustc`). Confirm the binary exists in
+the rootfs and fix the path/env in the registry to match the runner image.
 
 ### "kernel feature missing" on worker boot
 

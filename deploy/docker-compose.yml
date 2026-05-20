@@ -66,6 +66,12 @@ services:
           --exclude=./sys \
           --exclude=./tmp \
           -cf - . | tar -C /target -xf -
+        # Recreate the mountpoints the NativeSandbox mounts onto inside the
+        # rootfs. These are excluded from the tar above (to avoid baking
+        # build-time/pseudo-fs contents) but must exist as empty dirs so the
+        # per-submission tmpfs / proc / pivot_root mounts have a target.
+        mkdir -p /target/tmp /target/proc /target/dev /target/box
+        chmod 1777 /target/tmp
         echo "runner rootfs ready"
     volumes:
       - runner-rootfs:/target
@@ -131,25 +137,51 @@ services:
       runner-rootfs-init:
         condition: service_completed_successfully
     volumes:
-      # Read-write so the NaiveSandbox can create per-job workdirs at
-      # <rootfs>/box/<token> and bind-mount /proc + /dev into the rootfs.
-      # The sandbox isolates user code from mutating toolchain files.
+      # The NativeSandbox pivot_root's into this rootfs (read-only at runtime)
+      # and creates per-job scratch under /run/zerocode-sandbox instead, so this
+      # can likely be tightened to :ro — left :rw for now until verified.
       - runner-rootfs:/var/lib/zerocode/runner-rootfs:rw
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # NOTE: do NOT bind-mount the host /sys/fs/cgroup here. With `cgroup:
+      # private` Docker already gives the container its own namespaced cgroup
+      # tree; the entrypoint remounts it rw and creates the delegated subtree.
+      # Bind-mounting the host root cgroup instead trips nsdelegate (EACCES on
+      # mkdir) and breaks native per-job cgroup limits.
     cap_drop: [ "ALL" ]
     cap_add:
       # Required for unshare/mount/pivot_root inside the worker's user namespace
-      # AND for the /proc bind-mount the NaiveSandbox does at startup.
+      # and for the /proc (re)mount the NativeSandbox does per submission.
       - SYS_ADMIN
-      # Required by NaiveSandbox to chroot() into the runner rootfs.
+      # Required to pivot_root / chroot into the runner rootfs.
       - SYS_CHROOT
+      # Required so the worker (UID 0 but otherwise cap-stripped) can write the
+      # child's /proc/<pid>/uid_map + gid_map when setting up its user namespace.
+      - SETUID
+      - SETGID
+      # The kernel requires CAP_SETFCAP to establish user-namespace ID mappings
+      # (uid_map write fails EPERM without it, even with SETUID + SYS_ADMIN).
+      - SETFCAP
     security_opt:
       - no-new-privileges:true
-      # Docker's default AppArmor profile (docker-default) denies the mount()
-      # syscall even when CAP_SYS_ADMIN is granted, which breaks the sandbox's
-      # /proc + /dev bind-mounts into the runner rootfs on AppArmor hosts
-      # (e.g. Ubuntu). Unconfine *only* the worker so those binds succeed.
-      - apparmor=unconfined
+      # Named AppArmor profile (deploy/apparmor/zerocode-worker) that grants the
+      # `userns` permission required by Ubuntu's
+      # kernel.apparmor_restrict_unprivileged_userns=1 mitigation, plus the
+      # mount/pivot_root the sandbox needs (docker-default denies mount). Load
+      # it on the host first:
+      #   sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker
+      # Falls back to `apparmor=unconfined` only if the profile isn't loaded.
+      - apparmor=zerocode-worker
+      # Docker's default seccomp profile blocks pivot_root (even with
+      # CAP_SYS_ADMIN), which the NativeSandbox needs to enter the runner
+      # rootfs. Disabling it here only unfilters the *trusted worker* process —
+      # untrusted user code still gets the sandbox's own per-job seccomp filter
+      # (native::seccomp::apply_default), applied after pivot_root, before exec.
+      - seccomp=unconfined
+      # Docker masks paths on the container's /proc (kcore, keys, …); the kernel
+      # then refuses to let the sandbox mount a fresh procfs inside its PID
+      # namespace (mount_too_revealing -> EPERM). Unmask for the worker only —
+      # user code pivot_roots away and mounts its OWN clean /proc, so it never
+      # sees these host paths.
+      - systempaths=unconfined
     cgroup: private
     restart: unless-stopped
     # Horizontal scaling: bump replicas, or override at the CLI with

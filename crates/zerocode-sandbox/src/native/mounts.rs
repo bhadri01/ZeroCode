@@ -127,6 +127,37 @@ pub fn pivot_into_runner(
     )
     .map_err(|e| SandboxError::MountSetup(format!("tmpfs /tmp: {e}")))?;
 
+    // 3b. Minimal /dev. The runner rootfs ships an empty /dev mount point; many
+    // toolchains/runtimes need real device nodes (Go's compiler opens
+    // /dev/null; libraries read /dev/urandom). We can't mknod real devices in a
+    // user namespace, so mount a per-submission tmpfs and bind the essential
+    // nodes in from the worker's /dev (still visible pre-pivot). Done before
+    // pivot_root for exactly that reason.
+    let dev_path = new_root.join("dev");
+    let dev_opts = CString::new("mode=0755,size=1m").expect("dev mount option string");
+    mount::<str, Path, str, [u8]>(
+        Some("tmpfs"),
+        &dev_path,
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
+        Some(dev_opts.to_bytes()),
+    )
+    .map_err(|e| SandboxError::MountSetup(format!("tmpfs /dev: {e}")))?;
+    for node in ["null", "zero", "full", "random", "urandom", "tty"] {
+        let target = dev_path.join(node);
+        std::fs::File::create(&target)
+            .map_err(|e| SandboxError::MountSetup(format!("touch /dev/{node}: {e}")))?;
+        let src = format!("/dev/{node}");
+        mount::<str, Path, str, str>(Some(src.as_str()), &target, None, MsFlags::MS_BIND, None)
+            .map_err(|e| SandboxError::MountSetup(format!("bind /dev/{node}: {e}")))?;
+    }
+    // Standard fd symlinks (resolve once the new /proc is mounted post-pivot).
+    use std::os::unix::fs::symlink;
+    let _ = symlink("/proc/self/fd", dev_path.join("fd"));
+    let _ = symlink("/proc/self/fd/0", dev_path.join("stdin"));
+    let _ = symlink("/proc/self/fd/1", dev_path.join("stdout"));
+    let _ = symlink("/proc/self/fd/2", dev_path.join("stderr"));
+
     // 4. Source + stdin into the box tmpfs. We deliberately copy rather than
     // bind-mount: the box tmpfs is per-submission and writable, so the child
     // can read/modify these without escaping to a shared host path.
@@ -179,16 +210,14 @@ pub fn pivot_into_runner(
     std::env::set_current_dir("/")
         .map_err(|e| SandboxError::MountSetup(format!("chdir /: {e}")))?;
 
-    // 8. Detach the old root. MNT_DETACH is the lazy umount that succeeds even
-    // if the old root has busy children; the actual teardown happens when
-    // nothing references those mounts anymore.
-    umount2("/box/.zc-old", MntFlags::MNT_DETACH)
-        .map_err(|e| SandboxError::MountSetup(format!("umount /box/.zc-old: {e}")))?;
-    std::fs::remove_dir("/box/.zc-old")
-        .map_err(|e| SandboxError::MountSetup(format!("rmdir /box/.zc-old: {e}")))?;
-
-    // 9. Fresh /proc reflecting the new PID namespace (process 1 = our child).
-    // The runner image's own /proc directory is just an empty mount point.
+    // 8. Fresh /proc reflecting the new PID namespace (the caller is PID 1 of
+    // it). Mounted BEFORE detaching the old root: inside a nested user
+    // namespace (e.g. the worker itself in a container) the kernel's
+    // `mount_too_revealing` check requires a fully-visible reference procfs to
+    // permit a new one — the old root's /proc, still mounted at
+    // `/box/.zc-old/proc`, is that reference. Detaching first removes it and the
+    // mount fails with EPERM. The runner image's own /proc is an empty mount
+    // point that this overlays.
     mount::<str, str, str, str>(
         Some("proc"),
         "/proc",
@@ -197,6 +226,14 @@ pub fn pivot_into_runner(
         None,
     )
     .map_err(|e| SandboxError::MountSetup(format!("mount /proc: {e}")))?;
+
+    // 9. Now detach the old root. MNT_DETACH is the lazy umount that succeeds
+    // even if the old root has busy children; the actual teardown happens when
+    // nothing references those mounts anymore.
+    umount2("/box/.zc-old", MntFlags::MNT_DETACH)
+        .map_err(|e| SandboxError::MountSetup(format!("umount /box/.zc-old: {e}")))?;
+    std::fs::remove_dir("/box/.zc-old")
+        .map_err(|e| SandboxError::MountSetup(format!("rmdir /box/.zc-old: {e}")))?;
 
     // 10. Run the program from /box where its source + stdin live.
     std::env::set_current_dir("/box")

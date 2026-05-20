@@ -64,7 +64,11 @@ env = [
 # this. NaiveSandbox (dev) shares the wall budget between compile and run,
 # so we raise default_limits.wall_time; NativeSandbox (prod) will use the
 # per-phase compile_limits split.
-default_limits  = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# NOTE: native applies ONE limit set to compile+run (the per-phase compile_limits
+# split below is not yet wired into NativeSandbox). A cold `go build` of hello
+# world costs ~10 s CPU / ~255 MB in the sandbox, so default_limits must clear
+# that for the compile to succeed — hence the generous CPU/memory here.
+default_limits  = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 384, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits  = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 

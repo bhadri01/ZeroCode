@@ -16,28 +16,34 @@ COPY crates ./crates
 COPY migrations ./migrations
 COPY .sqlx ./.sqlx
 
-# Build the worker with the `native` sandbox feature enabled so the
-# worker can actually run submissions inside an OS-level sandbox.
+# Build the worker with the `native` sandbox feature enabled so submissions
+# run inside a real OS-level sandbox: cgroup v2 limits + PID/NET/IPC/UTS/MNT/
+# USER namespaces + dropped capabilities + seccomp + landlock, pivot_root'd
+# into the read-only runner rootfs.
 ENV SQLX_OFFLINE=true
-# `unsafe-naive`: dev sandbox. NaiveSandbox chroots into the runner rootfs
-# before exec'ing the compile/run command so toolchains find /usr/include,
-# /usr/share, etc. inside the rootfs rather than the host's debian-slim base.
-# This avoids the cgroup-delegation requirement of NativeSandbox which Docker
-# Desktop's Linux VM on macOS does not satisfy out of the box.
-RUN cargo build --release -p zerocode-worker --features unsafe-naive
+# NOTE: the `unsafe-naive` feature builds the dev-only NaiveSandbox, which runs
+# user code as host root with NO isolation ("never enable in production"). It
+# was used here previously only because Docker Desktop's Linux VM on macOS
+# doesn't delegate cgroup controllers out of the box. On a real Linux host the
+# worker-entrypoint.sh below sets up the delegated cgroup subtree, so prefer
+# `native`. Swap back to `unsafe-naive` only for macOS Docker Desktop dev.
+RUN cargo build --release -p zerocode-worker --features native
 
 FROM debian:trixie-slim AS worker
-# `mount` (from util-linux) is needed so NaiveSandbox can bind-mount /proc
-# and /dev into the runner rootfs before chroot. Already in this base, but
-# pin it explicitly so the dependency is obvious.
+# `mount`/util-linux + libseccomp2 are needed so the NativeSandbox can mount
+# /proc, pivot_root into the runner rootfs, and install its seccomp filter.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libseccomp2 iproute2 mount util-linux && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /src/target/release/zerocode-worker /usr/local/bin/zerocode-worker
 COPY runners/languages.toml /runners/languages.toml
+COPY deploy/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
+RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 ENV ZEROCODE_LANGUAGES_FILE=/runners/languages.toml
 # Run as root inside the container so the NativeSandbox can write to
 # /sys/fs/cgroup, unshare user namespaces, and pivot_root. The container
 # itself drops every capability except SYS_ADMIN (see compose), and the
 # sandbox per-submission drops everything before exec'ing user code.
-ENTRYPOINT ["/usr/local/bin/zerocode-worker"]
+# The entrypoint provisions the delegated cgroup subtree + scratch dir, then
+# exec's the worker binary as PID 1.
+ENTRYPOINT ["/usr/local/bin/worker-entrypoint.sh"]

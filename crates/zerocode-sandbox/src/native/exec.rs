@@ -22,6 +22,7 @@ use std::path::Path;
 
 use bytes::Bytes;
 use nix::sched::{CloneFlags, unshare};
+use nix::sys::signal::{self, SigHandler};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{
     ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, read, write,
@@ -89,8 +90,8 @@ pub fn run(
     let runner_rootfs = config.runner_rootfs.clone();
     let source_file = spec.source_file.clone();
     let env_strings = build_env(spec, limits);
-    let run_argv = build_argv(spec);
-    let compile_argv = build_compile_argv(spec);
+    let run_argv = build_argv(spec, limits);
+    let compile_argv = build_compile_argv(spec, limits);
 
     // SAFETY: fork is unsafe in any Rust runtime. Inside the child block we
     // restrict ourselves to async-signal-safe operations and execve.
@@ -218,12 +219,54 @@ fn run_child(
     let mut byte = [0u8; 1];
     read(start_rd, &mut byte).map_err(|e| SandboxError::Spawn(format!("start ack: {e}")))?;
 
-    // 3. Mount-propagation off so our tmpfs mounts don't leak to the host.
+    // 3. Fork into the new PID namespace. `unshare(CLONE_NEWPID)` only places
+    //    our *children* in the new pidns — this process stays in the old one.
+    //    The grandchild becomes PID 1 of the new namespace, which is required
+    //    both to mount a fresh `/proc` (the kernel binds a procfs instance to
+    //    the mounter's active pidns, and refuses the mount otherwise — fatal
+    //    inside Docker's locked-mount /proc) and so user code actually runs
+    //    under PID-namespace isolation. This intermediate process then mirrors
+    //    the grandchild's exit status back up to the worker.
+    match unsafe { fork() }.map_err(|e| SandboxError::Spawn(format!("pidns fork: {e}")))? {
+        ForkResult::Parent { child } => relay_grandchild_exit(child),
+        ForkResult::Child => run_sandbox_child(
+            runner_rootfs,
+            scratch_path,
+            source_file,
+            stdout_wr,
+            stderr_wr,
+            compile_wr,
+            compile_argv,
+            run_argv,
+            env_strings,
+            has_cached_binary,
+        ),
+    }
+}
+
+/// PID 1 of the new namespace: finishes sandbox setup and exec's user code.
+/// Runs in the grandchild forked by [`run_child`]. Any `Err` propagates to the
+/// `run()` child wrapper, which prints it and exits 127.
+#[allow(clippy::too_many_arguments)]
+fn run_sandbox_child(
+    runner_rootfs: &Path,
+    scratch_path: &Path,
+    source_file: &str,
+    stdout_wr: &OwnedFd,
+    stderr_wr: &OwnedFd,
+    compile_wr: &OwnedFd,
+    compile_argv: Option<&[CString]>,
+    run_argv: &[CString],
+    env_strings: &[CString],
+    has_cached_binary: bool,
+) -> Result<(), SandboxError> {
+    // 1. Mount-propagation off so our tmpfs mounts don't leak to the host.
     mounts::make_namespace_private()?;
 
-    // 4. The big one: rbind the runner rootfs, mount /box and /tmp tmpfs,
-    //    copy source + stdin, pivot_root, remount /proc, chdir /box. After
-    //    this call the child can no longer see anything from the host.
+    // 2. The big one: rbind the runner rootfs, mount /box and /tmp tmpfs,
+    //    copy source + stdin, pivot_root, mount a fresh /proc scoped to this
+    //    PID namespace, chdir /box. After this the child can no longer see
+    //    anything from the host.
     mounts::pivot_into_runner(
         runner_rootfs,
         scratch_path,
@@ -232,40 +275,40 @@ fn run_child(
         TMP_TMPFS_MB,
     )?;
 
-    // 5. Bring up loopback so 127.0.0.1 is reachable inside the NET ns.
+    // 3. Bring up loopback so 127.0.0.1 is reachable inside the NET ns.
     if let Err(e) = mounts::bring_loopback_up() {
         eprintln!("zerocode child lo up failed (continuing): {e}");
     }
 
-    // 6. Redirect stdin from /box/stdin. Done before stdout/stderr so any
+    // 4. Redirect stdin from /box/stdin. Done before stdout/stderr so any
     //    subsequent errors still surface via the original stderr.
     let stdin_file = std::fs::File::open("/box/stdin")
         .map_err(|e| SandboxError::MountSetup(format!("open /box/stdin: {e}")))?;
     dup2_stdin(&stdin_file).map_err(|e| SandboxError::Spawn(format!("dup2 stdin: {e}")))?;
 
-    // 7. Redirect stdout/stderr to the parent's pipes.
+    // 5. Redirect stdout/stderr to the parent's pipes.
     dup2_stdout(stdout_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stdout: {e}")))?;
     dup2_stderr(stderr_wr).map_err(|e| SandboxError::Spawn(format!("dup2 stderr: {e}")))?;
 
-    // 8. Drop every capability across all 5 capsets.
+    // 6. Drop every capability across all 5 capsets.
     drop_all_capabilities()?;
 
-    // 9. Lock NO_NEW_PRIVS so even if the child re-enters a setuid binary
+    // 7. Lock NO_NEW_PRIVS so even if the child re-enters a setuid binary
     //    (none should exist in the runner image, but defence in depth) it
     //    can't regain capabilities.
     nix::sys::prctl::set_no_new_privs()
         .map_err(|e| SandboxError::Spawn(format!("PR_SET_NO_NEW_PRIVS: {e}")))?;
 
-    // 10. Landlock — paths are inside the new root now. /box is RW; system
-    //     paths like /usr, /lib are RO.
+    // 8. Landlock — paths are inside the new root now. /box is RW; system
+    //    paths like /usr, /lib are RO.
     landlock_policy::apply(Path::new("/box"))?;
 
-    // 11. Seccomp. Must come AFTER NO_NEW_PRIVS or the kernel rejects the
-    //     filter for unprivileged tasks. The filter is inherited by any
-    //     fork() below, so the compile sub-child gets it too.
+    // 9. Seccomp. Must come AFTER NO_NEW_PRIVS or the kernel rejects the
+    //    filter for unprivileged tasks. The filter is inherited by any
+    //    fork() below, so the compile sub-child gets it too.
     seccomp::apply_default()?;
 
-    // 12. If this language has a compile step, run it as a sub-child first.
+    // 10. If this language has a compile step, run it as a sub-child first.
     //     On compile failure the outer child exits with COMPILE_FAILED_EXIT_CODE
     //     so the worker's triage tree knows to populate `compile_output` from
     //     stderr instead of treating it as a run-phase exit code.
@@ -279,9 +322,9 @@ fn run_child(
         }
     }
 
-    // 13. Run phase. argv stays heap-owned via the CString vec; execvpe takes
-    //     references. This is the last thing the outer child does — execvpe
-    //     replaces the process image so we never return here.
+    // 11. Run phase. argv stays heap-owned via the CString vec; execvpe takes
+    //     references. This is the last thing the child does — execvpe replaces
+    //     the process image so we never return here.
     let prog = run_argv
         .first()
         .ok_or_else(|| SandboxError::Spawn("empty run_cmd".into()))?
@@ -291,6 +334,31 @@ fn run_child(
     execvpe(&prog, &argv, &envp)
         .map_err(|e| SandboxError::Spawn(format!("execvpe {prog:?}: {e}")))?;
     Ok(())
+}
+
+/// The intermediate (old-pidns) process: wait for the sandbox grandchild and
+/// terminate with the *same* status, so the worker's `wait_with_timeout`
+/// observes the true outcome (exit code, or signal for segfault/CPU-TLE). If
+/// the worker wall-kills the cgroup, this process is SIGKILLed too and never
+/// reaches here. Never returns.
+fn relay_grandchild_exit(child: Pid) -> ! {
+    match waitpid(child, None) {
+        Ok(WaitStatus::Exited(_, code)) => std::process::exit(code),
+        Ok(WaitStatus::Signaled(_, sig, _)) => {
+            // Re-raise the same signal so the parent sees `Signaled(sig)` and
+            // triage maps it to RuntimeError / TimeLimitExceeded faithfully.
+            // Reset to the default disposition first (we inherited the worker's
+            // handlers across fork) so the raise actually terminates us.
+            unsafe {
+                let _ = signal::signal(sig, SigHandler::SigDfl);
+            }
+            let _ = signal::raise(sig);
+            std::process::exit(128 + sig as i32)
+        }
+        // StillAlive can't happen with a blocking wait; treat anything else as
+        // an internal failure the parent will surface.
+        _ => std::process::exit(127),
+    }
 }
 
 /// Fork a sub-child that execs the compile command and wait for it. If the
@@ -347,29 +415,34 @@ fn run_compile_phase(
 
 fn drop_all_capabilities() -> Result<(), SandboxError> {
     use caps::{CapSet, clear};
+    // Order matters: dropping the bounding set uses PR_CAPBSET_DROP, which
+    // requires *effective* CAP_SETPCAP. So clear Bounding (and Ambient) FIRST,
+    // while we still hold a full effective set, then drop the rest. Clearing
+    // Effective first would remove the capability that authorizes the bounding
+    // drop and PR_CAPBSET_DROP would fail with EPERM.
+    clear(None, CapSet::Bounding).map_err(|e| SandboxError::Spawn(format!("drop bnd: {e}")))?;
+    clear(None, CapSet::Ambient).map_err(|e| SandboxError::Spawn(format!("drop amb: {e}")))?;
     clear(None, CapSet::Effective).map_err(|e| SandboxError::Spawn(format!("drop eff: {e}")))?;
     clear(None, CapSet::Permitted).map_err(|e| SandboxError::Spawn(format!("drop perm: {e}")))?;
     clear(None, CapSet::Inheritable).map_err(|e| SandboxError::Spawn(format!("drop inh: {e}")))?;
-    clear(None, CapSet::Bounding).map_err(|e| SandboxError::Spawn(format!("drop bnd: {e}")))?;
-    clear(None, CapSet::Ambient).map_err(|e| SandboxError::Spawn(format!("drop amb: {e}")))?;
     Ok(())
 }
 
-fn build_argv(spec: &LanguageSpec) -> Vec<CString> {
+fn build_argv(spec: &LanguageSpec, limits: &ResourceLimits) -> Vec<CString> {
     spec.run_cmd
         .iter()
-        .filter_map(|s| CString::new(s.as_bytes()).ok())
+        .filter_map(|s| CString::new(substitute_limits(s, limits).into_bytes()).ok())
         .collect()
 }
 
-fn build_compile_argv(spec: &LanguageSpec) -> Option<Vec<CString>> {
+fn build_compile_argv(spec: &LanguageSpec, limits: &ResourceLimits) -> Option<Vec<CString>> {
     let cmd = spec.compile_cmd.as_ref()?;
     if cmd.is_empty() {
         return None;
     }
     Some(
         cmd.iter()
-            .filter_map(|s| CString::new(s.as_bytes()).ok())
+            .filter_map(|s| CString::new(substitute_limits(s, limits).into_bytes()).ok())
             .collect(),
     )
 }
@@ -480,7 +553,7 @@ mod tests {
             is_archived: false,
             tier: zerocode_core::SandboxTier::Native,
         };
-        let argv = build_argv(&spec);
+        let argv = build_argv(&spec, &ResourceLimits::default());
         assert_eq!(argv.len(), 2);
         assert_eq!(argv[0].to_bytes(), b"/usr/bin/python3.13");
         assert_eq!(argv[1].to_bytes(), b"main.py");

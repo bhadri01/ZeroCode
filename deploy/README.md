@@ -13,7 +13,9 @@ Everything you need to build and run ZeroCode in Docker. See also:
 | File | Purpose |
 |---|---|
 | `Dockerfile.service` | Builds the **API + migrate** image. Distroless / musl-static. Bundles the web UI from `web/`. |
-| `Dockerfile.worker`  | Builds the **worker** image. glibc-based (libseccomp + libcontainer need glibc). |
+| `Dockerfile.worker`  | Builds the **worker** image (`--features native`). glibc-based (libseccomp + libcontainer need glibc). |
+| `worker-entrypoint.sh` | Worker entrypoint — provisions the delegated cgroup subtree + scratch dir, then execs the worker. |
+| `apparmor/zerocode-worker` | AppArmor profile granting the worker `userns` + `mount` + `pivot_root`. Load it on AppArmor hosts (Ubuntu); see [`../docs/DEPLOY.md` §1](../docs/DEPLOY.md). |
 | `docker-compose.yml` | The full stack: Postgres, migrate, runner-rootfs init, API, worker. Works out of the box; has an optional Traefik integration commented at the bottom. |
 
 The runner-rootfs image (the filesystem containing language toolchains) lives
@@ -32,6 +34,13 @@ docker build -f deploy/Dockerfile.worker  -t zerocode-worker:dev  .
 ```
 
 ## Bring up the stack
+
+On AppArmor hosts (Ubuntu/Debian), load the worker profile first — the
+worker won't start under `apparmor=zerocode-worker` until it's in the kernel:
+
+```bash
+sudo apparmor_parser -r -W deploy/apparmor/zerocode-worker
+```
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
@@ -76,9 +85,10 @@ network layer (private subnet, firewall, reverse proxy with its own auth,
 VPN). Read [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for:
 
 - host kernel + cgroup v2 prerequisites
-- which Linux capabilities the worker needs (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`)
-- cgroup delegation under systemd
-- common failure modes (silent `/proc` bind-mount, etc.)
+- the AppArmor profile the worker needs on Ubuntu/Debian (`userns` + `mount`)
+- which Linux capabilities the worker needs (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`, `CAP_SETUID`, `CAP_SETGID`)
+- cgroup delegation under systemd and Docker
+- common failure modes (`uid_map` EPERM, `tmpfs /tmp: ENOENT`, etc.)
 
 ### Traefik (optional)
 

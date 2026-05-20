@@ -1,0 +1,58 @@
+# AppArmor profile for the ZeroCode native-sandbox worker.
+#
+# Why this exists:
+#   Ubuntu 23.10+/24.04 ships kernel.apparmor_restrict_unprivileged_userns=1,
+#   which blocks the per-job user-namespace uid_map setup the NativeSandbox
+#   performs — even for a container with CAP_SYS_ADMIN + apparmor=unconfined
+#   (write /proc/<child>/uid_map fails with EPERM). The sanctioned escape is an
+#   AppArmor profile that carries the explicit `userns` permission. We also
+#   grant `mount`/`umount`/`pivot_root` here because the stock `docker-default`
+#   profile DENIES mount, which is the original reason the worker had to run
+#   unconfined. This profile replaces `apparmor=unconfined` with a named, and
+#   therefore tightenable, boundary.
+#
+#   It starts permissive (broad `file`/`capability`) so the native happy path
+#   works first; narrow the `file` rules once verified.
+#
+# Load (on the host, needs root):
+#   sudo cp deploy/apparmor/zerocode-worker /etc/apparmor.d/zerocode-worker
+#   sudo apparmor_parser -r -W /etc/apparmor.d/zerocode-worker
+# Verify:
+#   sudo aa-status | grep zerocode-worker
+# Use (docker-compose.yml worker.security_opt):
+#   - apparmor=zerocode-worker
+#
+# If `apparmor_parser` rejects `userns,` your AppArmor is < 4.0 (pre-24.04) and
+# this approach is unavailable — fall back to the sysctl option.
+
+abi <abi/4.0>,
+
+#include <tunables/global>
+
+profile zerocode-worker flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # The load-bearing line for Ubuntu 24.04: permit user-namespace creation so
+  # the sandbox's uid_map/gid_map setup is allowed.
+  userns,
+
+  # Privileged operations the worker performs to build each sandbox.
+  capability,
+  mount,
+  umount,
+  pivot_root,
+
+  # Process management: subreaper, cgroup.kill, waitpid across the sandbox.
+  signal,
+  ptrace,
+
+  # Networking: Postgres, webhook delivery, the /metrics endpoint, plus the
+  # loopback the sandbox brings up inside the per-job netns.
+  network,
+  unix,
+
+  # Filesystem: broad for now. The worker reads/writes the runner rootfs,
+  # per-job scratch, cgroupfs and /proc, and execs arbitrary toolchains inside
+  # the pivoted sandbox. Tighten to explicit paths once the happy path holds.
+  file,
+}
