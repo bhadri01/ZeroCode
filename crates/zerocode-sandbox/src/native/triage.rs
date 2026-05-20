@@ -177,6 +177,7 @@ mod tests {
             stdout: Bytes::new(),
             stderr: Bytes::new(),
             compile_stderr: Bytes::new(),
+            compiled_binary: Bytes::new(),
             killed_by_wall_timeout: wall,
         }
     }
@@ -268,6 +269,7 @@ mod tests {
             stdout: Bytes::from_static(b"compiler-stdout-noise"),
             stderr: Bytes::new(),
             compile_stderr: Bytes::from_static(b"error[E0308]: mismatched types"),
+            compiled_binary: Bytes::new(),
             killed_by_wall_timeout: false,
         };
         let out = classify(

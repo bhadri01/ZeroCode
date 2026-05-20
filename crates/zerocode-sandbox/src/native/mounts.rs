@@ -179,20 +179,11 @@ pub fn pivot_into_runner(
         .map_err(|e| SandboxError::MountSetup(format!("chmod cached binary: {e}")))?;
     }
 
-    // 4b. Bind-mount the artifact exchange file so writes inside the sandbox
-    // to /box/.artifact pass through to scratch_dir/artifact on the host.
-    let artifact_host = scratch_dir.join("artifact");
-    let artifact_box = box_path.join(".artifact");
-    std::fs::write(&artifact_box, b"")
-        .map_err(|e| SandboxError::MountSetup(format!("touch .artifact: {e}")))?;
-    mount::<Path, Path, str, str>(
-        Some(artifact_host.as_path()),
-        &artifact_box,
-        None,
-        MsFlags::MS_BIND,
-        None,
-    )
-    .map_err(|e| SandboxError::MountSetup(format!("bind artifact exchange: {e}")))?;
+    // NOTE: the compiled binary is NOT exchanged via a file in /box. It used to
+    // be bind-mounted from scratch_dir/artifact, but that let the run phase
+    // overwrite it (compile-cache poisoning) and write unbounded data to host
+    // disk. It's now streamed to the parent over a CLOEXEC pipe at compile time,
+    // before user code runs (see exec.rs::send_artifact).
 
     // 5. put_old lives inside the box tmpfs so the post-pivot rmdir cleanup
     // never touches the read-only runner image. Each submission has its own

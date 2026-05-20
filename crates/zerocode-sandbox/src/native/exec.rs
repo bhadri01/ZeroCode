@@ -21,11 +21,12 @@ use std::os::fd::OwnedFd;
 use std::path::Path;
 
 use bytes::Bytes;
+use nix::fcntl::OFlag;
 use nix::sched::{CloneFlags, unshare};
 use nix::sys::signal::{self, SigHandler};
 use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{
-    ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, read, write,
+    ForkResult, Pid, dup2_stderr, dup2_stdin, dup2_stdout, execvpe, fork, pipe, pipe2, read, write,
 };
 use zerocode_core::{LanguageSpec, ResourceLimits};
 
@@ -41,6 +42,10 @@ use super::userns;
 
 const BOX_TMPFS_MB: u32 = 32;
 const TMP_TMPFS_MB: u32 = 64;
+/// Upper bound on the captured compile artifact. `/box/prog` lives in the
+/// 32 MB `/box` tmpfs, so a real binary never approaches this; the cap just
+/// bounds the parent's read buffer.
+const MAX_ARTIFACT: usize = 64 * 1024 * 1024;
 
 /// The child's outcome from the parent's perspective. Mapped to `Status` in
 /// `triage.rs`.
@@ -49,6 +54,12 @@ pub struct RawOutcome {
     pub stdout: Bytes,
     pub stderr: Bytes,
     pub compile_stderr: Bytes,
+    /// The freshly-compiled binary, streamed out over a CLOEXEC pipe by the
+    /// sandbox child *before* user code runs (empty for interpreted languages,
+    /// compile failures, and cache hits). Captured this way — rather than via a
+    /// file the run phase could touch — so user code cannot poison the compile
+    /// cache or write unbounded data to host disk.
+    pub compiled_binary: Bytes,
     pub killed_by_wall_timeout: bool,
 }
 
@@ -85,6 +96,12 @@ pub fn run(
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe ready: {e}")))?;
     let (start_rd, start_wr) =
         pipe().map_err(|e| SandboxError::Spawn(format!("pipe start: {e}")))?;
+    // Artifact pipe: the child streams the compiled binary out over this for
+    // the parent to cache. CLOEXEC so it is gone the instant execvpe() hands
+    // off to user code — user code can neither read nor write it (and /proc is
+    // landlock-blocked, so its fd number can't be discovered either).
+    let (artifact_rd, artifact_wr) =
+        pipe2(OFlag::O_CLOEXEC).map_err(|e| SandboxError::Spawn(format!("pipe artifact: {e}")))?;
 
     let scratch_path = scratch.path.clone();
     let runner_rootfs = config.runner_rootfs.clone();
@@ -102,6 +119,7 @@ pub fn run(
             drop(compile_wr);
             drop(start_rd);
             drop(ready_wr);
+            drop(artifact_wr);
 
             // Wait for the child to enter its new user namespace.
             let mut byte = [0u8; 1];
@@ -127,10 +145,11 @@ pub fn run(
             let _ = write(&start_wr, b"1");
             drop(start_wr);
 
-            // Read stdout/stderr/compile_stderr concurrently with a size cap.
+            // Read stdout/stderr/compile_stderr/artifact concurrently, capped.
             let stdout = std::thread::spawn(move || read_capped(stdout_rd, max_stdout));
             let stderr = std::thread::spawn(move || read_capped(stderr_rd, max_stderr));
             let compile_stderr = std::thread::spawn(move || read_capped(compile_rd, max_stderr));
+            let artifact = std::thread::spawn(move || read_capped(artifact_rd, MAX_ARTIFACT));
 
             // Wall-clock budget; on overrun we ask the cgroup to atomically
             // SIGKILL every process in the sandbox.
@@ -145,12 +164,16 @@ pub fn run(
             let compile_stderr = compile_stderr
                 .join()
                 .map_err(|_| SandboxError::Internal("compile stderr reader panicked".into()))?;
+            let compiled_binary = artifact
+                .join()
+                .map_err(|_| SandboxError::Internal("artifact reader panicked".into()))?;
 
             Ok(RawOutcome {
                 exit_status: status,
                 stdout,
                 stderr,
                 compile_stderr,
+                compiled_binary,
                 killed_by_wall_timeout,
             })
         }
@@ -160,6 +183,7 @@ pub fn run(
             drop(compile_rd);
             drop(ready_rd);
             drop(start_wr);
+            drop(artifact_rd);
 
             // Phase 2 child path: every step bails to exit(127) with a
             // message on stderr if it fails. We can't use ?-propagation here
@@ -175,6 +199,7 @@ pub fn run(
                 &stdout_wr,
                 &stderr_wr,
                 &compile_wr,
+                &artifact_wr,
                 compile_argv.as_deref(),
                 &run_argv,
                 &env_strings,
@@ -194,6 +219,7 @@ pub fn run(
 /// with a real program exit. Anything <253 is a real run-phase exit code.
 pub const COMPILE_FAILED_EXIT_CODE: i32 = 253;
 
+#[allow(clippy::too_many_arguments)]
 fn run_child(
     flags: &CloneFlags,
     ready_wr: &OwnedFd,
@@ -204,6 +230,7 @@ fn run_child(
     stdout_wr: &OwnedFd,
     stderr_wr: &OwnedFd,
     compile_wr: &OwnedFd,
+    artifact_wr: &OwnedFd,
     compile_argv: Option<&[CString]>,
     run_argv: &[CString],
     env_strings: &[CString],
@@ -236,6 +263,7 @@ fn run_child(
             stdout_wr,
             stderr_wr,
             compile_wr,
+            artifact_wr,
             compile_argv,
             run_argv,
             env_strings,
@@ -255,6 +283,7 @@ fn run_sandbox_child(
     stdout_wr: &OwnedFd,
     stderr_wr: &OwnedFd,
     compile_wr: &OwnedFd,
+    artifact_wr: &OwnedFd,
     compile_argv: Option<&[CString]>,
     run_argv: &[CString],
     env_strings: &[CString],
@@ -315,10 +344,13 @@ fn run_sandbox_child(
     if let Some(compile_argv) = compile_argv {
         if !compile_argv.is_empty() && !has_cached_binary {
             run_compile_phase(compile_argv, env_strings, compile_wr)?;
-            // Write the compiled binary to the exchange file so the parent can
-            // read it from scratch_dir/artifact after we exit. Best-effort —
-            // the cache is an optimisation, not a correctness requirement.
-            let _ = std::fs::copy("/box/prog", "/box/.artifact");
+            // Stream the freshly-compiled binary to the parent over the CLOEXEC
+            // artifact pipe, NOW — before execvpe() hands control to user code.
+            // The fd vanishes on exec, so user code can't tamper with what the
+            // parent caches (no cache poisoning) and nothing hits host disk (no
+            // unbounded write). Best-effort: caching is an optimisation, and a
+            // missing /box/prog (e.g. Java emits Main.class) just means no entry.
+            send_artifact(artifact_wr);
         }
     }
 
@@ -409,6 +441,26 @@ fn run_compile_phase(
                     std::process::exit(COMPILE_FAILED_EXIT_CODE);
                 }
             }
+        }
+    }
+}
+
+/// Stream the just-compiled `/box/prog` to the parent over the artifact pipe.
+/// Best-effort (caching is an optimisation): a missing binary is silently
+/// skipped, EINTR is retried so the write isn't truncated, and the size is
+/// bounded by the 32 MB `/box` tmpfs the binary lives in.
+fn send_artifact(artifact_wr: &OwnedFd) {
+    let bytes = match std::fs::read("/box/prog") {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let mut off = 0;
+    while off < bytes.len() {
+        match write(artifact_wr, &bytes[off..]) {
+            Ok(0) => break,
+            Ok(n) => off += n,
+            Err(nix::errno::Errno::EINTR) => {}
+            Err(_) => break,
         }
     }
 }

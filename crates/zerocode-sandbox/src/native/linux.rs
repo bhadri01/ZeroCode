@@ -40,8 +40,14 @@ pub fn execute(
     };
 
     let wall_elapsed = started_inst.elapsed();
-    let compiled_binary = if !has_cached_binary && job.language.compile_cmd.is_some() {
-        scratch.read_artifact().map(bytes::Bytes::from)
+    // The compiled binary arrived over the CLOEXEC artifact pipe (captured
+    // before user code ran). Empty for interpreted languages, compile failures,
+    // and cache hits.
+    let compiled_binary = if !has_cached_binary
+        && job.language.compile_cmd.is_some()
+        && !raw.compiled_binary.is_empty()
+    {
+        Some(raw.compiled_binary.clone())
     } else {
         None
     };
