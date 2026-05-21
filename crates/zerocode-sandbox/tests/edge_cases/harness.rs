@@ -140,7 +140,7 @@ pub const OCTAVE: u32 = 153;
 pub const SQL: u32 = 154;
 
 // v1.5 Batch G — modern compiled
-pub const ZIG: u32 = 160;
+// Zig (160) removed — compiler can't run in the sandbox (tmpfs rename EXDEV).
 pub const NIM: u32 = 161;
 pub const CRYSTAL: u32 = 162;
 pub const DART: u32 = 163;

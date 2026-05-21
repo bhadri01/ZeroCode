@@ -11,7 +11,7 @@ export function ArchitectureDiagram() {
     pg:       { x: 770,  y: 70,  w: 220, h: 88, l: 'Postgres', s: 'submissions · listen/notify' },
     worker:   { x: 770,  y: 492, w: 220, h: 88, l: 'Worker',   s: 'sqlx · moka cache' },
     sandbox:  { x: 1040, y: 286, w: 200, h: 88, l: 'Sandbox',  s: '8 isolation layers' },
-    runtime:  { x: 1080, y: 70,  w: 140, h: 88, l: 'Runtime',  s: '7 languages' },
+    runtime:  { x: 1080, y: 70,  w: 140, h: 88, l: 'Runtime',  s: '41 languages' },
   };
   const cx = (n: ArchNode) => n.x + n.w/2;
   const cy = (n: ArchNode) => n.y + n.h/2;

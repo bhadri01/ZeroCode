@@ -918,7 +918,10 @@ export function App() {
   const [metrics, setMetrics] = useState<RunMetrics>({ time: null, memory: null, exitCode: null, signal: null });
   const [limits, setLimits] = useState<RunLimits>(() => {
     const d = draft?.limits;
-    return { memoryMb: d?.memoryMb ?? 256, timeS: d?.timeS ?? 5 };
+    // Generous defaults so heavy languages (JVM, .NET, compiled) work out of
+    // the box. These are caps, not allocations — light languages still report
+    // their real (small) usage. cpu_time is capped to the ceiling at submit.
+    return { memoryMb: d?.memoryMb ?? 1024, timeS: d?.timeS ?? 30 };
   });
   const [token, setToken] = useState<string>(share?.token || ('zc_' + Math.random().toString(36).slice(2, 10)));
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
@@ -1087,7 +1090,10 @@ export function App() {
         language_id: lang.id,
         source_code: code,
         stdin,
-        limits: { cpu_time: limits.timeS, wall_time: limits.timeS, memory_mb: limits.memoryMb },
+        // The single time slider drives wall_time; cpu_time is capped to the
+        // API ceiling (30s) so a high wall budget for slow compiles doesn't
+        // push cpu_time over the ceiling (which would 422 the submission).
+        limits: { cpu_time: Math.min(limits.timeS, 30), wall_time: limits.timeS, memory_mb: limits.memoryMb },
         idempotency_key: idem,
       });
       tkn = ack.token;

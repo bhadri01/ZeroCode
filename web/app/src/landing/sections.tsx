@@ -650,7 +650,7 @@ export function GetStartedSection() {
             <SectionHeader
               kicker="ship it"
               title='Clone. Compose up. <span class="it">Submit.</span>'
-              sub="Everything runs in Docker — no system-wide installs, no language-toolchain juggling on the host. The runner image bundles every Core 7 toolchain so first submissions work the moment compose finishes pulling."
+              sub="Everything runs in Docker — no system-wide installs, no language-toolchain juggling on the host. The runner image bundles every toolchain for all 41 languages so first submissions work the moment compose finishes pulling."
             />
             <div className="zc-gs-cta">
               <a className="primary" href={GET_STARTED_HREF}>

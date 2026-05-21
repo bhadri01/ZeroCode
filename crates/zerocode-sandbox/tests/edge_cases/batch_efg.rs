@@ -1,7 +1,7 @@
 //! v1.5 Batches E/F/G edge cases:
 //!   E — C# (140), F# (141)
 //!   F — COBOL (150), Prolog (151), Swift (152), Octave (153), SQL (154)
-//!   G — Zig (160), Nim (161), Crystal (162), Dart (163), Julia (164)
+//!   G — Nim (161), Crystal (162), Dart (163), Julia (164)  [Zig/160 removed]
 //!
 //! Each language tests hello world.
 
@@ -127,23 +127,8 @@ async fn sql_hello() {
     assert!(stdout.contains("hello"));
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Zig (160)
-// ═══════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn zig_hello() {
-    let source = r#"const std = @import("std");
-pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("hello\n", .{});
-}
-"#;
-    let result = run(job(ZIG, source)).await;
-    assert!(matches!(result.status, Status::Accepted));
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    assert!(stdout.contains("hello"));
-}
+// Zig (160) removed — its compiler can't run in the sandbox (cross-directory
+// rename returns EXDEV in the per-submission tmpfs).
 
 // ═══════════════════════════════════════════════════════════════════════
 // Nim (161)

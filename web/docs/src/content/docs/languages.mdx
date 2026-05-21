@@ -1,14 +1,16 @@
 ---
 title: Language catalog
-description: The seven languages ZeroCode supports today — IDs, versions, and how to query the live registry.
+description: The 41 languages ZeroCode supports — IDs, versions, and how to query the live registry.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-ZeroCode ships with seven languages — the "Core 7" — chosen because they
-cover the contest / interview / sandbox workloads that drive most adoption,
-and because their toolchains fit cleanly into the runner image and the
-sandbox compile/run model.
+ZeroCode ships **41 languages**: the **Core 7** (the most-tuned, primary
+targets), **33 more** across Batches A–G, and the v2 `raw-wasm` tier. Numeric
+IDs are stable across releases — existing clients only need the integer, not
+the name.
+
+### Core 7
 
 | ID | Name | Version | Runtime kind |
 |---|---|---|---|
@@ -20,8 +22,79 @@ sandbox compile/run model.
 | 71 | Python | 3.13 | interpreted (single file) |
 | 73 | Rust | latest stable | compile-then-run (`-C panic=abort`) |
 
-Numeric IDs are stable across releases; existing clients only need to know
-the integer, not the name.
+### Batch A — interpreted
+
+| ID | Name | Version |
+|---|---|---|
+| 100 | Bash | 5.x |
+| 101 | Lua | 5.4 |
+| 102 | Perl | 5.x |
+| 103 | Ruby | 3.x |
+| 104 | R | 4.x |
+| 105 | PHP | 8.x |
+| 106 | TypeScript | tsx (Node) |
+
+### Batch B — compiled (GCC family)
+
+| ID | Name | Version |
+|---|---|---|
+| 110 | Fortran | gfortran-14 |
+| 111 | Pascal | fpc |
+| 112 | D | ldc |
+| 113 | Objective-C | clang |
+| 114 | Assembly | nasm (x86-64) |
+| 115 | Ada | gnat |
+
+### Batch C — JVM
+
+| ID | Name | Version |
+|---|---|---|
+| 120 | Kotlin | 2.x |
+| 121 | Scala | 3.x |
+| 122 | Groovy | 4.x |
+| 123 | Clojure | 1.x |
+
+### Batch D — functional / ML
+
+| ID | Name | Version |
+|---|---|---|
+| 130 | Haskell | ghc |
+| 131 | OCaml | 5.x |
+| 132 | Erlang | OTP 27 |
+| 133 | Elixir | 1.x |
+| 134 | Common Lisp | sbcl |
+
+### Batch E — .NET
+
+| ID | Name | Version |
+|---|---|---|
+| 140 | C# | .NET 9 |
+| 141 | F# | .NET 9 |
+
+### Batch F — niche
+
+| ID | Name | Version |
+|---|---|---|
+| 150 | COBOL | gnucobol |
+| 151 | Prolog | swipl |
+| 152 | Swift | 6.x |
+| 153 | Octave | 9.x |
+| 154 | SQL | sqlite3 |
+
+### Batch G — modern
+
+| ID | Name | Version |
+|---|---|---|
+| 161 | Nim | 2.x |
+| 162 | Crystal | 1.x |
+| 163 | Dart | 3.x |
+| 164 | Julia | 1.x |
+
+### v2 — WASM tier
+
+| ID | Name | Version | Notes |
+|---|---|---|---|
+| 200 | raw-wasm | WASI preview1 | submit a pre-compiled `.wasm` blob; runs under the wasmtime sandbox |
 
 <Aside>
   The runner image bundles every toolchain; the API never invokes them
@@ -50,19 +123,26 @@ The registry config lives at [`runners/languages.toml`](https://github.com/bhadr
 A typical entry:
 
 ```toml
+# Interpreted (no compile step):
 [[language]]
 id = 71
 name = "Python"
 version = "3.13"
-extension = "py"
-program = "/usr/bin/python3"
-args = ["main.py"]
+source_file = "main.py"          # written to /box/ before the run
+compile_cmd = []                  # empty = interpreted
+run_cmd = ["/usr/bin/python3.13", "main.py"]
+env = [["PYTHONUNBUFFERED", "1"]]
 
-[language.default_limits]
-memory_mb = 256
-cpu_time = 5
-wall_time = 5
-max_pids = 64
+# Compiled (compile-then-run in one sandbox; run_cmd executes ./prog):
+[[language]]
+id = 73
+name = "Rust"
+version = "1.x-latest"
+source_file = "main.rs"
+compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "main.rs", "-o", "prog"]
+run_cmd = ["./prog"]
+# Optional per-language overrides (else the API global default applies):
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 ```
 
 Adding a language is a `runners/languages.toml` entry + a runner image with
@@ -70,12 +150,19 @@ the toolchain installed + (for compiled languages) a compile-phase spec
 that produces `/box/prog`. Compile errors surface via the dedicated
 `compile_output` pipe and the `compile_error` status kind.
 
-## Future languages
+<Aside type="tip">
+  NativeSandbox applies `default_limits` to **both** the compile and run
+  phases, so compile-heavy languages (JVM, .NET, Haskell, Swift, Crystal)
+  set generous `default_limits` rather than relying on the small global
+  default. `${memory_mb}`, `${cpu_time}`, `${wall_time}`, `${max_pids}`, and
+  `${jvm_heap_mb}` placeholders in `env` values are substituted per
+  submission.
+</Aside>
 
-Wider coverage is on the roadmap but not shipping today — each language
-adds runner image weight, toolchain attack surface, and a maintenance
-burden. Tracked in
-[`TODO.md`](https://github.com/bhadri01/ZeroCode/blob/main/TODO.md) under
-the v1.5 section. Open an issue if you have a specific language you'd like
-to see prioritized; PRs adding a language come with `tests/edge_cases/<lang>.rs`
-coverage so we don't regress.
+## Adding more languages
+
+New languages come with a `tests/edge_cases/<lang>.rs` hello-world test so we
+don't regress, and (where natural) a playground starter. Each language adds
+runner-image weight and toolchain attack surface, so proposals start with an
+issue describing the use case. The expansion plan lives in
+[`docs/ROADMAP.md`](https://github.com/bhadri01/ZeroCode/blob/main/docs/ROADMAP.md).

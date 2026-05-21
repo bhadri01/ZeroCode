@@ -7,32 +7,88 @@
 # Build with:
 #   docker build -f runners/Dockerfile -t zerocode-runner:dev runners/
 #
-# *** CORE 7 SUPPORT ONLY (v1) ***
-#   - Python 3.13            (Debian trixie python3.13)
-#   - Node.js 22 LTS         (Debian trixie nodejs)
-#   - C   (gcc-14)           (Debian trixie gcc-14)
-#   - C++ (g++-14)           (Debian trixie g++-14)
-#   - Go  (latest stable)    (official go.dev tarball)
-#   - Rust (latest stable)   (rustup-init.sh)
-#   - Java 21 LTS            (Debian trixie openjdk-21-jdk-headless)
+# *** FULL v1.5 LANGUAGE SET (42 languages, ~3 GB monolithic image) ***
+# Core 7 (v1) + Batches A–G + the v2 raw-wasm tier. Source of truth for the
+# list and IDs is runners/languages.toml; this image must provide every
+# toolchain that file's compile_cmd/run_cmd reference. For slim, per-language
+# images covering only the Core 7, see runners/Dockerfile.slim.
+#
+#   Core 7 : Python 3.13, Node.js 22, C/C++ (gcc/g++-14), Go, Rust, Java 21
+#   Batch A: Bash, Lua, Perl, Ruby, R, PHP, TypeScript (tsx)
+#   Batch B: Fortran, Pascal (fpc), D (ldc), Objective-C (clang), Assembly
+#            (nasm), Ada (gnat)
+#   Batch C: Kotlin, Scala 3, Groovy, Clojure   (JVM)
+#   Batch D: Haskell (ghc), OCaml, Erlang, Elixir, Common Lisp (sbcl)
+#   Batch E: C#, F#   (.NET 9 SDK)
+#   Batch F: COBOL (gnucobol), Prolog (swipl), Swift, Octave, SQL (sqlite3)
+#   Batch G: Nim, Crystal, Dart, Julia  (Zig removed — sandbox tmpfs EXDEV)
+#   v2     : raw-wasm runs in-process via wasmtime — no toolchain needed here.
 
 FROM debian:trixie-slim
 
-# ---- base + Core 7 toolchains only ----
+# apt toolchains are split into per-batch layers (instead of one giant install)
+# so each batch caches independently and any package that drifts in/out of
+# Debian testing fails in isolation — the error names ≤7 packages, not 40, and
+# every batch before it stays cached. bash + perl ship in the base image; unzip
+# is needed to unpack the Kotlin/Dart archives below.
+
+# ---- base utilities + Core 7 ----
+# gcc/g++ (unversioned, alternatives → gcc-14) give a generic `cc` that ghc,
+# ldc, crystal and nim shell out to when linking; Core 7 C/C++/Rust use the
+# versioned gcc-14 directly.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl xz-utils locales tar gnupg \
+        ca-certificates curl xz-utils unzip locales tar gnupg \
         python3.13 python3.13-dev \
         nodejs npm \
-        gcc-14 g++-14 libc6-dev libstdc++-14-dev \
+        gcc gcc-14 g++ g++-14 libc6-dev libstdc++-14-dev \
         openjdk-21-jdk-headless \
-        && rm -rf /var/lib/apt/lists/* \
-    && sed -i '/^# C.UTF-8/s/^# //' /etc/locale.gen 2>/dev/null || true \
-    && update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8
+    && rm -rf /var/lib/apt/lists/*
+
+# C.UTF-8 is built into glibc — no locale-gen / update-locale needed (the latter
+# lives in /usr/sbin and isn't on the build PATH). Set it as the default locale.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# ---- Batch A — interpreted (bash + perl already in base) ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        lua5.4 ruby r-base-core php-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Batch B — compiled (GCC family) ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gfortran-14 fp-compiler ldc clang libobjc-14-dev nasm binutils gnat \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Batch C — JVM (Kotlin + Scala installed from upstream tarballs below) ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        groovy clojure \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Batch D — functional / ML ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ghc ocaml ocaml-findlib erlang-base erlang-dev elixir sbcl \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Batch F — niche (.NET + Swift installed from upstream below) ----
+# The GnuCOBOL dev lib name tracks the libcob SONAME, which bumps across
+# releases — try the known names in order so a trixie bump doesn't break us.
+# (The cobc compiler binary + pkg-config are added in a late layer below so
+# this and the heavy tarball layers stay cache-stable.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gnucobol4 swi-prolog octave sqlite3 \
+    && (apt-get install -y --no-install-recommends libcob4-dev \
+        || apt-get install -y --no-install-recommends libcob5-dev \
+        || apt-get install -y --no-install-recommends libcob-dev) \
+    && rm -rf /var/lib/apt/lists/*
 
 # /usr/bin/node fallback in case Debian only ships /usr/bin/nodejs.
 RUN if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then \
         ln -sf /usr/bin/nodejs /usr/bin/node; \
     fi
+
+# ---- TypeScript (tsx — Node-based TS runner, installed globally) ----
+# Lands at /usr/local/bin/tsx, which the id=106 run_cmd references directly.
+RUN npm install -g tsx && npm cache clean --force
 
 # ---- Go (latest stable from go.dev) ----
 ARG GO_VERSION=1.23.4
@@ -67,6 +123,155 @@ RUN mkdir -p /usr/local/lib/zerocode \
          -m jdk.compiler/com.sun.tools.javac.Main /tmp/Probe.java \
     && rm -f /tmp/Probe.java /tmp/Probe.class \
     && chmod -R a+rX /usr/local/lib/zerocode
+
+# =====================================================================
+# Upstream-tarball toolchains (no Debian package, or we want a pinned
+# version). Each lands under /usr/local or /usr/share (landlock-readable
+# inside the sandbox) with a /usr/bin or /usr/local/bin entrypoint that the
+# matching runners/languages.toml entry references.
+# =====================================================================
+
+# ---- Kotlin (Batch C, id 120) ----
+ARG KOTLIN_VERSION=2.1.0
+RUN curl -fsSL "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip" -o /tmp/kotlin.zip \
+    && mkdir -p /usr/local/kotlin && cd /usr/local/kotlin && unzip -q /tmp/kotlin.zip \
+    && ln -sf /usr/local/kotlin/kotlinc/bin/kotlinc /usr/bin/kotlinc \
+    && rm /tmp/kotlin.zip
+
+# ---- Scala 3 (Batch C, id 121) ----
+ARG SCALA_VERSION=3.5.2
+RUN curl -fsSL "https://github.com/scala/scala3/releases/download/${SCALA_VERSION}/scala3-${SCALA_VERSION}.tar.gz" -o /tmp/scala.tar.gz \
+    && tar -C /usr/local -xzf /tmp/scala.tar.gz \
+    && ln -sf /usr/local/scala3-${SCALA_VERSION}/bin/scalac /usr/bin/scalac \
+    && ln -sf /usr/local/scala3-${SCALA_VERSION}/bin/scala /usr/bin/scala \
+    && rm /tmp/scala.tar.gz
+
+# ---- .NET 9 SDK (Batch E, ids 140/141) ----
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
+    && ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
+    && dotnet --version
+
+# ---- .NET offline warmup ----
+# Sandboxed runs have NO network, so NuGet can't restore at submission time.
+# Pre-create a Release console project and restore its packages into a baked,
+# world-readable cache. The C# (id 140) compile_cmd copies this skeleton,
+# swaps in the user's Program.cs, and builds with `--no-restore` against
+# NUGET_PACKAGES=/usr/local/lib/zerocode/nuget. The skeleton's project name
+# is `app`, so the run phase executes `app.dll`.
+ENV NUGET_PACKAGES=/usr/local/lib/zerocode/nuget \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
+RUN mkdir -p /usr/local/lib/zerocode/nuget \
+    && cd /usr/local/lib/zerocode \
+    && HOME=/tmp dotnet new console -n app -o csharp-app \
+    && cd csharp-app \
+    && HOME=/tmp dotnet build -c Release -o bin \
+    && rm -rf bin \
+    && chmod -R a+rX /usr/local/lib/zerocode
+
+# ---- Swift (Batch F, id 152) ----
+# swift.org's debian12 build (Swift isn't packaged for trixie). The download
+# URL layout differs by arch: x86_64 has NO arch suffix and lives under the
+# bare `debian12/` dir; aarch64 uses a `debian12-aarch64/` dir + `-aarch64`
+# suffix. Both nest under a `swift-<ver>-RELEASE/` segment. Runtime libs come
+# from apt. `swiftc --version` is NOT masked — a bad URL/dep fails the build
+# loudly. NOTE: debian12 binary on trixie — validate before relying on it.
+ARG SWIFT_VERSION=6.0.3
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libcurl4 libxml2 libedit2 libncursesw6 libpython3.13 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then SWIFT_PLAT=debian12; SWIFT_FILE=swift-${SWIFT_VERSION}-RELEASE-debian12; \
+       else SWIFT_PLAT=debian12-aarch64; SWIFT_FILE=swift-${SWIFT_VERSION}-RELEASE-debian12-aarch64; fi \
+    && curl -fsSL --retry 5 --retry-all-errors \
+         "https://download.swift.org/swift-${SWIFT_VERSION}-release/${SWIFT_PLAT}/swift-${SWIFT_VERSION}-RELEASE/${SWIFT_FILE}.tar.gz" -o /tmp/swift.tar.gz \
+    && tar -C /usr/local -xzf /tmp/swift.tar.gz --strip-components=2 \
+    && rm /tmp/swift.tar.gz \
+    && swiftc --version
+
+# ---- Zig (Batch G, id 160) — REMOVED ----
+# Zig's compiler can't run in the sandbox: `zig build-exe` finalizes its cache
+# with a cross-directory rename, which the per-submission tmpfs rejects with
+# EXDEV. The language was dropped from runners/languages.toml; no toolchain here.
+
+# ---- Nim (Batch G, id 161) ----
+# Not taken from apt (intermittently absent from Debian testing). The official
+# prebuilt linux_x64 tarball ships a compiled bin/nim + its stdlib under lib/;
+# Nim resolves its stdlib relative to the real binary path, so the /usr/bin
+# symlink works. Nim shells out to `cc` to build the generated C (provided
+# above). NOTE: nim-lang.org only publishes a prebuilt x86_64 tarball —
+# arm64 needs a source build / choosenim.
+ARG NIM_VERSION=2.2.10
+RUN curl -fsSL "https://nim-lang.org/download/nim-${NIM_VERSION}-linux_x64.tar.xz" -o /tmp/nim.tar.xz \
+    && tar -C /usr/local -xJf /tmp/nim.tar.xz \
+    && ln -sf /usr/local/nim-${NIM_VERSION}/bin/nim /usr/bin/nim \
+    && rm /tmp/nim.tar.xz \
+    && nim --version
+
+# ---- Crystal (Batch G, id 162) ----
+# Crystal isn't in Debian main, and its vendor apt repo publishes no `trixie`
+# suite, so we install the official portable tarball from GitHub plus the
+# runtime libraries it links against (the -dev packages provide the .so symlinks
+# the compiler links user programs with). The tarball's bin/crystal wrapper
+# resolves its bundled stdlib relative to the (symlink-resolved) binary, so the
+# /usr/bin/crystal symlink is enough. The closing `crystal eval` is a full
+# compile+link smoke test. NOTE: the tarball is x86_64-only — arm64 needs a
+# source build.
+ARG CRYSTAL_VERSION=1.20.2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgc-dev libpcre2-dev libevent-dev libgmp-dev libyaml-dev libssl-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://github.com/crystal-lang/crystal/releases/download/${CRYSTAL_VERSION}/crystal-${CRYSTAL_VERSION}-1-linux-x86_64.tar.gz" -o /tmp/crystal.tar.gz \
+    && mkdir -p /usr/local/crystal \
+    && tar -C /usr/local/crystal --strip-components=1 -xzf /tmp/crystal.tar.gz \
+    && ln -sf /usr/local/crystal/bin/crystal /usr/bin/crystal \
+    && rm /tmp/crystal.tar.gz \
+    && crystal --version \
+    && echo 'puts "crystal ok"' | crystal eval
+
+# ---- Dart SDK (Batch G, id 163) ----
+ARG DART_VERSION=3.6.0
+RUN ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then DART_ARCH="x64"; else DART_ARCH="arm64"; fi \
+    && curl -fsSL "https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/dartsdk-linux-${DART_ARCH}-release.zip" -o /tmp/dart.zip \
+    && cd /usr/lib && unzip -q /tmp/dart.zip \
+    && ln -sf /usr/lib/dart-sdk/bin/dart /usr/bin/dart \
+    && rm /tmp/dart.zip
+
+# ---- Julia (Batch G, id 164) ----
+# Official binaries live only on julialang-s3 (GitHub releases host source
+# only). The S3 bucket intermittently 503s, so curl auto-retries 5xx. The path
+# uses a dir slug (x64 / aarch64) distinct from the tarball arch (x86_64 /
+# aarch64); the minor-version dir is ${JULIA_VERSION%.*} (e.g. 1.11).
+#
+# trixie's hardened glibc 2.41 loader refuses to load shared objects that
+# request an executable stack, and Julia's bundled libs (libopenlibm.so, …)
+# carry that flag. patchelf --clear-execstack strips it; `julia --version`
+# then validates the result.
+ARG JULIA_VERSION=1.11.2
+RUN apt-get update && apt-get install -y --no-install-recommends patchelf \
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH=$(dpkg --print-architecture) \
+    && if [ "$ARCH" = "amd64" ]; then JULIA_DIR=x64; JULIA_ARCH=x86_64; else JULIA_DIR=aarch64; JULIA_ARCH=aarch64; fi \
+    && curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+         "https://julialang-s3.julialang.org/bin/linux/${JULIA_DIR}/${JULIA_VERSION%.*}/julia-${JULIA_VERSION}-linux-${JULIA_ARCH}.tar.gz" -o /tmp/julia.tar.gz \
+    && tar -C /usr/local -xzf /tmp/julia.tar.gz \
+    && ln -sf /usr/local/julia-${JULIA_VERSION}/bin/julia /usr/local/bin/julia \
+    && rm /tmp/julia.tar.gz \
+    && find /usr/local/julia-${JULIA_VERSION} -type f -name '*.so*' \
+         -exec sh -c 'patchelf --clear-execstack "$1" 2>/dev/null || true' _ {} \; \
+    && julia --version
+
+# ---- Late fixes (kept at the end so the heavy tarball layers stay cached) ----
+# cobc ships in gnucobol3 (trixie's gnucobol4 is a 4.0~early stub with no
+# compiler binary). pkg-config is needed by Crystal and Swift to locate their
+# link-time libraries at compile time inside the sandbox.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gnucobol3 pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \

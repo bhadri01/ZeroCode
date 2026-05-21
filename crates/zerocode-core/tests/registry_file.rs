@@ -62,10 +62,10 @@ fn node_spec_carries_node_options_with_memory_placeholder() {
 fn compiled_languages_have_both_compile_and_run_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // Core 7 compiled + Batch B + Batch C compiled (Kotlin, Scala) + Batch D compiled (Haskell, OCaml, Erlang)
-    // + Batch E compiled (C#) + Batch F compiled (COBOL, Swift) + Batch G compiled (Zig, Nim, Crystal, Dart)
+    // + Batch E compiled (C#) + Batch F compiled (COBOL, Swift) + Batch G compiled (Nim, Crystal, Dart)
     for id in [
         48, 52, 60, 62, 73, 110, 111, 112, 113, 114, 115, 120, 121, 130, 131, 132, 140, 150, 152,
-        160, 161, 162, 163,
+        161, 162, 163,
     ] {
         let spec = reg
             .require(id)
@@ -134,26 +134,31 @@ fn rust_spec_uses_panic_abort() {
 }
 
 #[test]
-fn java_spec_carries_java_tool_options_with_jvm_heap_placeholder() {
+fn java_spec_caps_heap_and_stack_on_run_cmd() {
+    // The Java (id 62) run phase passes JVM limits as command-line flags rather
+    // than via JAVA_TOOL_OPTIONS: the JVM prints "Picked up JAVA_TOOL_OPTIONS:
+    // ..." to stderr whenever that var is set, which would leak into the
+    // user-visible output. (Wrapper-launched JVM batch languages — Kotlin,
+    // Scala, Groovy, Clojure — still use JAVA_TOOL_OPTIONS because their
+    // launchers can't take JVM flags directly; see batch_c_jvm_languages_present.)
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     let java = reg.require(62).expect("Java id 62 must be registered");
-    let tool_opts = java
-        .env
-        .iter()
-        .find(|(k, _)| k == "JAVA_TOOL_OPTIONS")
-        .map(|(_, v)| v.as_str())
-        .expect("Java spec must set JAVA_TOOL_OPTIONS");
+    let run = java.run_cmd.join(" ");
     assert!(
-        tool_opts.contains("${jvm_heap_mb}"),
-        "JAVA_TOOL_OPTIONS should reference ${{jvm_heap_mb}} for heap sizing: {tool_opts}"
+        run.contains("-Xmx${jvm_heap_mb}m"),
+        "Java run_cmd should cap heap via -Xmx${{jvm_heap_mb}}m: {run}"
     );
     assert!(
-        tool_opts.contains("ExitOnOutOfMemoryError"),
-        "JAVA_TOOL_OPTIONS should enable ExitOnOutOfMemoryError: {tool_opts}"
+        run.contains("-XX:+ExitOnOutOfMemoryError"),
+        "Java run_cmd should enable ExitOnOutOfMemoryError: {run}"
     );
     assert!(
-        tool_opts.contains("-Xss512k"),
-        "JAVA_TOOL_OPTIONS should cap thread stack size: {tool_opts}"
+        run.contains("-Xss512k"),
+        "Java run_cmd should cap thread stack size: {run}"
+    );
+    assert!(
+        !java.env.iter().any(|(k, _)| k == "JAVA_TOOL_OPTIONS"),
+        "Java should NOT set JAVA_TOOL_OPTIONS (it leaks a 'Picked up...' line to stderr)"
     );
 }
 
@@ -229,8 +234,8 @@ fn batch_a_languages_present_and_interpreted() {
 fn total_language_count() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
-    // + 5 Batch F + 5 Batch G + 1 v2 raw-wasm = 42
-    assert_eq!(reg.list().len(), 42, "expected 42 languages total");
+    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 1 v2 raw-wasm = 41
+    assert_eq!(reg.list().len(), 41, "expected 41 languages total");
 }
 
 #[test]
@@ -277,7 +282,7 @@ fn batch_b_compiled_languages_present() {
 }
 
 #[test]
-fn batch_c_jvm_languages_present() {
+fn batch_c_jvm_languages_cap_heap_without_tool_options() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     let batch_c = [
         (120, "Kotlin"),
@@ -290,8 +295,23 @@ fn batch_c_jvm_languages_present() {
             .require(id)
             .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
         assert_eq!(spec.name, name);
-        let has_jvm_opts = spec.env.iter().any(|(k, _)| k == "JAVA_TOOL_OPTIONS");
-        assert!(has_jvm_opts, "{name} should set JAVA_TOOL_OPTIONS");
+        // JAVA_TOOL_OPTIONS leaks a "Picked up JAVA_TOOL_OPTIONS: ..." banner to
+        // stderr — batch-C JVM langs must avoid it.
+        assert!(
+            !spec.env.iter().any(|(k, _)| k == "JAVA_TOOL_OPTIONS"),
+            "{name} should NOT use JAVA_TOOL_OPTIONS (it leaks a stderr banner)"
+        );
+        // Heap is still capped: via JAVA_OPTS (wrapper launchers read it) or via
+        // -Xmx on the run command (Kotlin runs `java` directly).
+        let java_opts = spec
+            .env
+            .iter()
+            .any(|(k, v)| k == "JAVA_OPTS" && v.contains("${jvm_heap_mb}"));
+        let xmx_in_run = spec.run_cmd.iter().any(|a| a.contains("-Xmx${jvm_heap_mb}m"));
+        assert!(
+            java_opts || xmx_in_run,
+            "{name} should cap heap via JAVA_OPTS env or -Xmx on run_cmd"
+        );
     }
 }
 
@@ -324,7 +344,6 @@ fn batch_efg_languages_present() {
         (152, "Swift"),
         (153, "Octave"),
         (154, "SQL"),
-        (160, "Zig"),
         (161, "Nim"),
         (162, "Crystal"),
         (163, "Dart"),

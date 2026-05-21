@@ -61,7 +61,11 @@ async fn main() -> Result<()> {
         limit_ceiling: zerocode_core::ResourceLimits {
             cpu_time: 30.0,
             wall_time: 60.0,
-            memory_mb: 1024,
+            // 2048 MB ceiling: the .NET SDK (dotnet build / fsi) needs more than
+            // 1 GB to initialize CoreCLR + MSBuild; the JVM/heavy compilers are
+            // comfortable well under this. Per-submission usage is still bounded
+            // by each language's default_limits (and any client override).
+            memory_mb: 2048,
             max_pids: 256,
             max_stdout: 256 * 1024,
             max_stderr: 256 * 1024,

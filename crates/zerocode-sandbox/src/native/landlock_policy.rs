@@ -32,8 +32,19 @@ pub fn apply(scratch_dir: &Path) -> Result<(), SandboxError> {
 
     // Build the rule lists outside the call so we can fold path-open errors
     // into the landlock RulesetError type the API expects.
+    //
+    // `/proc` (read-only): runtimes that determine their main-thread stack via
+    // pthread_getattr_np read /proc/self/maps; libgc reads /proc/stat. Without
+    // a landlock rule for /proc these get EACCES — which surfaced as Crystal
+    // and Dart aborting at startup ("pthread_getattr_np: Permission denied" /
+    // "Failed to retrieve stack bounds"). The sandbox already mounts a fresh
+    // PID-namespaced procfs, so this only exposes the sandbox's own processes.
+    //
+    // `/var` (read-only): some toolchains store data outside /usr and symlink to
+    // it — e.g. GHC's /usr/lib/ghc/lib/package.conf.d -> /var/lib/ghc/...; the
+    // package db read failed with EACCES until /var was allow-listed.
     let ro_rules: Vec<Result<PathBeneath<PathFd>, landlock::RulesetError>> =
-        ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"]
+        ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/proc", "/var"]
             .iter()
             .filter_map(|p| PathFd::new(p).ok())
             .map(|fd| Ok(PathBeneath::new(fd, ro)))

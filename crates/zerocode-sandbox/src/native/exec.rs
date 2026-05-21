@@ -40,10 +40,16 @@ use super::scratch::Scratch;
 use super::seccomp;
 use super::userns;
 
-const BOX_TMPFS_MB: u32 = 32;
-const TMP_TMPFS_MB: u32 = 64;
+// These are the tmpfs `size=` ceilings, not allocations — actual pages used
+// count against the cgroup `memory.max`, which is the real per-submission
+// bound. They're generous (rather than the old 32/64 MB) so compilers with
+// large intermediate caches fit: Zig's compiler_rt cache alone exceeds 32 MB
+// and otherwise fails with NoSpaceLeft. A job still can't exceed its memory
+// budget — it just OOMs cleanly against the cgroup instead.
+const BOX_TMPFS_MB: u32 = 512;
+const TMP_TMPFS_MB: u32 = 512;
 /// Upper bound on the captured compile artifact. `/box/prog` lives in the
-/// 32 MB `/box` tmpfs, so a real binary never approaches this; the cap just
+/// `/box` tmpfs, so a real binary never approaches this; the cap just
 /// bounds the parent's read buffer.
 const MAX_ARTIFACT: usize = 64 * 1024 * 1024;
 

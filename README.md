@@ -37,8 +37,10 @@ LISTEN/NOTIFY-dispatched worker pool, and a built-in browser playground.
 
 ## Supported languages
 
-The Core 7 ship today; each one has a stable numeric ID so existing
-self-hosted-sandbox clients (Judge0-shaped) drop in by ID alone.
+41 languages ship today, each with a stable numeric ID so existing
+self-hosted-sandbox clients (Judge0-shaped) drop in by ID alone. The
+**Core 7** below are the primary, most-tuned targets; **Batches A–G** add 33
+more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 
 | ID | Language | Version       | Type             |
 |----|----------|---------------|------------------|
@@ -49,6 +51,22 @@ self-hosted-sandbox clients (Judge0-shaped) drop in by ID alone.
 | 48 | C        | gcc-14, C17   | compile-then-run |
 | 52 | C++      | g++-14, C++23 | compile-then-run |
 | 62 | Java     | OpenJDK 21 LTS| javac → java     |
+
+<details>
+<summary><strong>Batches A–G</strong> (33 more languages)</summary>
+
+| Batch | IDs | Languages |
+|-------|-----|-----------|
+| A — interpreted        | 100–106 | Bash, Lua, Perl, Ruby, R, PHP, TypeScript (tsx) |
+| B — GCC-family compiled| 110–115 | Fortran, Pascal, D, Objective-C, Assembly, Ada |
+| C — JVM                | 120–123 | Kotlin, Scala, Groovy, Clojure |
+| D — functional / ML    | 130–134 | Haskell, OCaml, Erlang, Elixir, Common Lisp |
+| E — .NET               | 140–141 | C#, F# |
+| F — niche              | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) |
+| G — modern             | 161–164 | Nim, Crystal, Dart, Julia |
+| v2 — WASM tier         | 200     | raw-wasm (pre-compiled `.wasm`, runs under WasmSandbox) |
+
+</details>
 
 Source of truth: [`runners/languages.toml`](runners/languages.toml).
 Live registry: `GET /v1/languages`. The expansion plan lives in

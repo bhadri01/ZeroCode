@@ -37,6 +37,30 @@ import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution';
 import 'monaco-editor/esm/vs/basic-languages/go/go.contribution';
 import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
+// v1.5 batch languages — Monaco ships Monarch grammars for these; the
+// token-based Monokai theme styles them automatically. Languages without a
+// native Monaco grammar (Fortran, Ada, Assembly, Haskell, Erlang, COBOL,
+// Prolog, Octave, Nim, …) map to the closest family or 'plaintext' in
+// data.ts's `cm` field.
+import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution';
+import 'monaco-editor/esm/vs/basic-languages/lua/lua.contribution';
+import 'monaco-editor/esm/vs/basic-languages/perl/perl.contribution';
+import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution';
+import 'monaco-editor/esm/vs/basic-languages/r/r.contribution';
+import 'monaco-editor/esm/vs/basic-languages/php/php.contribution';
+import 'monaco-editor/esm/vs/basic-languages/pascal/pascal.contribution';
+import 'monaco-editor/esm/vs/basic-languages/objective-c/objective-c.contribution';
+import 'monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution';
+import 'monaco-editor/esm/vs/basic-languages/scala/scala.contribution';
+import 'monaco-editor/esm/vs/basic-languages/clojure/clojure.contribution';
+import 'monaco-editor/esm/vs/basic-languages/elixir/elixir.contribution';
+import 'monaco-editor/esm/vs/basic-languages/scheme/scheme.contribution';
+import 'monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution';
+import 'monaco-editor/esm/vs/basic-languages/fsharp/fsharp.contribution';
+import 'monaco-editor/esm/vs/basic-languages/swift/swift.contribution';
+import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution';
+import 'monaco-editor/esm/vs/basic-languages/dart/dart.contribution';
+import 'monaco-editor/esm/vs/basic-languages/julia/julia.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 
 import { editorTheme, themeName } from './monaco-theme';
@@ -48,6 +72,51 @@ declare global {
     MonacoEnvironment?: monaco.Environment;
   }
 }
+// Monaco ships no grammar for x86 assembly or Ada, so register compact Monarch
+// tokenizers. They emit the same standard token types (keyword, string, number,
+// comment, type, …) the Monokai theme already styles.
+function registerExtraGrammars() {
+  if (monaco.languages.getLanguages().some((l) => l.id === 'asm')) return;
+
+  monaco.languages.register({ id: 'asm' });
+  monaco.languages.setMonarchTokensProvider('asm', {
+    defaultToken: '',
+    ignoreCase: true,
+    tokenizer: {
+      root: [
+        [/;.*$/, 'comment'],
+        [/^\s*[A-Za-z_.$][\w.$]*:/, 'type'], // labels
+        [/\b(section|global|extern|default|bits|org|db|dw|dd|dq|dt|resb|resw|resd|resq|equ|times|align|byte|word|dword|qword|ptr)\b/, 'keyword.directive'],
+        [/\b(mov|movzx|movsx|lea|push|pop|add|sub|mul|imul|div|idiv|inc|dec|and|or|xor|not|neg|shl|shr|sar|sal|rol|ror|cmp|test|jmp|je|jne|jz|jnz|jg|jge|jl|jle|ja|jae|jb|jbe|jc|jnc|call|ret|loop|syscall|int|enter|leave|nop|cdq|cqo|cbw|cwde)\b/, 'keyword'],
+        [/\b(r[abcd]x|r[sd]i|r[bs]p|r8|r9|r1[0-5]|e[abcd]x|e[sd]i|e[bs]p|[abcd]x|[abcd][lh]|[sd]il|[bs]pl)\b/, 'variable.predefined'],
+        [/0[xX][0-9a-fA-F]+|\d+/, 'number'],
+        [/"[^"]*"|'[^']*'/, 'string'],
+        [/[[\]]/, 'delimiter.square'],
+        [/[,:+\-*]/, 'delimiter'],
+      ],
+    },
+  });
+
+  monaco.languages.register({ id: 'ada' });
+  monaco.languages.setMonarchTokensProvider('ada', {
+    defaultToken: '',
+    ignoreCase: true,
+    tokenizer: {
+      root: [
+        [/--.*$/, 'comment'],
+        [/\b(procedure|function|package|body|is|begin|end|with|use|if|then|else|elsif|case|when|loop|while|for|in|out|access|return|declare|type|subtype|constant|record|array|of|new|null|and|or|not|xor|mod|rem|abs|others|exception|raise|do|exit|goto|pragma|renames|generic|task|protected|entry|select|accept|delay|abort|terminate|requeue|private|limited|aliased|tagged|abstract|overriding)\b/, 'keyword'],
+        [/\b(Integer|Natural|Positive|Float|Boolean|Character|String|Wide_String|Long_Integer|Long_Float|Long_Long_Integer|Duration|Short_Integer)\b/, 'type'],
+        [/\b(True|False|null)\b/, 'constant.language'],
+        [/"[^"]*"/, 'string'],
+        [/'.'/, 'string'],
+        [/\b\d+(_\d+)*(\.\d+(_\d+)*)?([eE][+-]?\d+)?\b/, 'number'],
+        [/:=|=>|\.\.|\/=|[<>]=?|\*\*|[-+*/&]/, 'operator'],
+        [/[;:,.()]/, 'delimiter'],
+      ],
+    },
+  });
+}
+
 if (typeof window !== 'undefined' && !window.MonacoEnvironment) {
   window.MonacoEnvironment = {
     getWorker(_workerId: string, _label: string) {
@@ -55,27 +124,22 @@ if (typeof window !== 'undefined' && !window.MonacoEnvironment) {
     },
   };
   monaco.editor.defineTheme(themeName, editorTheme);
+  registerExtraGrammars();
 }
 
 // Map our internal CmLang IDs (named for the CodeMirror era) to Monaco's
 // canonical language IDs. Kept stable so the rest of the app doesn't need
 // to change.
 function langId(l: CmLang): string {
-  switch (l) {
-    case 'python':     return 'python';
-    // Use Monaco's dedicated JS grammar, not the TS one. Both extend the
-    // same Monarch tokenizer, but TS sets `defaultToken: "invalid"` with a
-    // `.ts` postfix — so JS-only syntax (BigInt `0n`, certain regexps) gets
-    // marked invalid and the Monokai theme renders it red/underlined,
-    // making the file look untheme'd.
-    case 'javascript': return 'javascript';
-    case 'rust':       return 'rust';
-    case 'go':         return 'go';
-    case 'cpp':        return 'cpp';
-    case 'c':          return 'c';
-    case 'java':       return 'java';
-    default:           return 'plaintext';
-  }
+  // Every CmLang value is either a Monaco language id registered by the
+  // imports above or 'plaintext' (a Monaco built-in), so the mapping is
+  // identity. Unknown ids would fall back to plaintext in Monaco anyway.
+  //
+  // Note: Node.js uses 'javascript' (not 'typescript') on purpose — the TS
+  // grammar sets `defaultToken: "invalid"`, so JS-only syntax (BigInt `0n`,
+  // some regexps) renders red/underlined. TypeScript (id 106) uses the
+  // 'typescript' grammar for its own type annotations.
+  return l;
 }
 
 export interface EditorHandle {

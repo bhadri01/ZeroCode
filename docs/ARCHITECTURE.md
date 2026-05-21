@@ -281,9 +281,11 @@ The separation is a deliberate security boundary.
 
 - **Dockerfile:** `runners/Dockerfile`
 - **Base:** `debian:trixie-slim`
-- **Contents:** all 41 language toolchains across Core 7 + Batches A-G.
+- **Contents:** toolchains for all 41 languages across Core 7 + Batches A-G
+  (the v2 raw-wasm tier runs in-process via wasmtime and needs no toolchain).
   Includes apt-installed packages plus tarball installs for Go, Rust, Kotlin,
-  Scala, .NET 9, Swift 6, Zig, Dart, and Julia. Pre-creates `/box` and `/tmp`.
+  Scala, .NET 9, Swift 6, Nim, Crystal, Dart, and Julia. Pre-creates
+  `/box` and `/tmp`.
 - **Not run as a container.** The worker bind-mounts an extracted copy of this
   image's filesystem as the read-only rootfs that every sandboxed submission
   is `pivot_root`'d into.
@@ -298,7 +300,9 @@ worker image has no language toolchains.
 ## 7. Supported languages (41)
 
 Loaded from `runners/languages.toml` at boot. ID space: 1-99 for core v1
-languages; 100+ for v1.5 expansion.
+languages; 100-164 for the v1.5 expansion (Batches A-G; id 160 / Zig is
+unused — removed because its compiler can't run in the sandbox); 200 for the
+v2 raw-wasm tier.
 
 ### Core 7 (v1)
 
@@ -312,7 +316,7 @@ languages; 100+ for v1.5 expansion.
 | 71 | Python | 3.13 | `main.py` | (none) | `python3.13 main.py` | `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1` |
 | 73 | Rust | 1.x-latest | `main.rs` | `rustc -O -C panic=abort main.rs -o prog` | `./prog` | -- |
 
-### v1.5 expansion (34 languages)
+### v1.5 expansion (33 languages)
 
 | Batch | IDs | Languages | Type |
 |-------|-----|-----------|------|
@@ -322,11 +326,12 @@ languages; 100+ for v1.5 expansion.
 | D — Functional | 130–134 | Haskell, OCaml, Erlang, Elixir, Common Lisp | Mixed |
 | E — .NET | 140–141 | C#, F# | Compiled (.NET 9) |
 | F — Niche | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) | Mixed |
-| G — Modern | 160–164 | Zig, Nim, Crystal, Dart, Julia | Mixed |
+| G — Modern | 161–164 | Nim, Crystal, Dart, Julia | Mixed |
 
-JVM-family languages (Batch C) share Java's `JAVA_TOOL_OPTIONS` profile with
-`${jvm_heap_mb}` substitution and elevated `default_limits` / `compile_limits`.
-.NET languages set `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+JVM-family languages (Batch C) cap the heap via `${jvm_heap_mb}` — Kotlin on
+the `java` command line, Scala/Groovy/Clojure via `JAVA_OPTS` — avoiding the
+"Picked up JAVA_TOOL_OPTIONS" stderr banner. .NET languages set
+`DOTNET_gcServer=0` + `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
 
 **Limit substitution:** env values may contain `${memory_mb}`, `${cpu_time}`,
 `${wall_time}`, `${max_pids}`, and `${jvm_heap_mb}` placeholders. These are
