@@ -1,23 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { toggleTheme, getTheme, type Theme } from '../shared/theme';
-import { fetchRepoStars, formatStars } from '../shared/github';
 import { HIDE_DOCS, GET_STARTED_HREF } from '../shared/flags';
-
-const GITHUB_REPO = 'bhadri01/ZeroCode';
-
-function useGitHubStars(repo: string): string | null {
-  const [stars, setStars] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchRepoStars(repo).then(r => {
-      if (cancelled) return;
-      setStars(r.stars != null ? formatStars(r.stars) : null);
-    });
-    return () => { cancelled = true; };
-  }, [repo]);
-  return stars;
-}
 
 function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(() => getTheme());
@@ -69,7 +53,6 @@ function ThemeToggle() {
 export function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const stars = useGitHubStars(GITHUB_REPO);
 
   useEffect(() => {
     const onScroll = () => {
@@ -157,7 +140,6 @@ export function Nav() {
         }
         @media (max-width: 920px) { .zc-nav-links { display: none; } }
         @media (max-width: 480px) {
-          .zc-star span:not(.sep):not(.count) { display: none; }
           .zc-cta-primary span.cta-label { display: none; }
         }
 
@@ -220,16 +202,6 @@ export function Nav() {
         }
         .zc-nav-links a:hover::after { transform: scaleX(1); }
         .zc-nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-        .zc-star {
-          display: inline-flex; align-items: center; gap: 8px;
-          padding: 6px 10px; border: 1px solid var(--line-2);
-          border-radius: 6px; font-family: var(--f-mono); font-size: 12px;
-          color: var(--fg-1); transition: border-color .15s ease, color .15s ease, background .15s ease;
-          background: color-mix(in oklab, var(--bg-1) 50%, transparent);
-        }
-        .zc-star:hover { border-color: var(--line-strong); color: var(--fg); background: color-mix(in oklab, var(--bg-2) 70%, transparent); }
-        .zc-star .sep { color: var(--fg-3); }
-        .zc-star .count { color: var(--accent); }
         .zc-cta-primary {
           display: inline-flex; align-items: center; gap: 8px;
           padding: 7px 12px; border-radius: 6px;
@@ -240,7 +212,6 @@ export function Nav() {
           transition: transform .15s ease, filter .15s ease, box-shadow .2s ease;
           box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--accent) 70%, transparent);
         }
-        .zc-star { white-space: nowrap; }
         .zc-cta-primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 10px 22px -6px color-mix(in oklab, var(--accent) 80%, transparent); }
         .zc-cta-primary:active { transform: translateY(1px); }
       `}</style>
@@ -264,11 +235,6 @@ export function Nav() {
         </div>
         <div className="zc-nav-right">
           <ThemeToggle />
-          <a className="zc-star" href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 .25l2.39 4.84 5.34.78-3.86 3.77.91 5.31L8 12.42 3.22 14.95l.91-5.31L.27 5.87l5.34-.78L8 .25z"/></svg>
-            <span>github</span>
-            {stars != null && <><span className="sep">·</span><span className="count">{stars}</span></>}
-          </a>
           <a className="zc-cta-primary" href={GET_STARTED_HREF}>
             <span className="cta-label">get started</span>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 5h8M5 1l4 4-4 4"/></svg>
@@ -306,7 +272,6 @@ export function Nav() {
         <a href="#batch" onClick={() => setMenuOpen(false)}>test cases<span className="arrow">→</span></a>
         {!HIDE_DOCS && <a href="/docs/" onClick={() => setMenuOpen(false)}>docs<span className="arrow">→</span></a>}
         <a href="/playground.html" onClick={() => setMenuOpen(false)}>playground<span className="arrow">→</span></a>
-        <a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>github<span className="arrow">↗</span></a>
         <a className="cta" href={GET_STARTED_HREF} onClick={() => setMenuOpen(false)}>get started →</a>
       </div>
     )}

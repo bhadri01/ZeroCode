@@ -231,7 +231,7 @@ export function Hero() {
 
         <motion.div className="zc-hero-meta" variants={HERO_CHILD}>
           <span><b>8</b> isolation layers</span>
-          <span><b>7</b> languages</span>
+          <span><b>41</b> languages</span>
           <span><b>&lt; 5 ms</b> dispatch p99</span>
           <span><b>71</b> tests · <b>0</b> CVEs</span>
         </motion.div>

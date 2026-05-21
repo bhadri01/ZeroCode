@@ -15,7 +15,8 @@ export type CmLang =
   | 'kotlin' | 'scala' | 'clojure' | 'elixir' | 'scheme' | 'csharp' | 'fsharp'
   | 'swift' | 'sql' | 'dart' | 'julia'
   // Custom Monarch grammars registered in Editor.tsx (no Monaco basic-language).
-  | 'asm' | 'ada' | 'plaintext';
+  | 'asm' | 'ada' | 'erlang' | 'fortran' | 'haskell'
+  | 'cobol' | 'prolog' | 'octave' | 'plaintext';
 
 export interface Lang {
   id: number;
@@ -245,7 +246,7 @@ console.log(n + " squared = " + n * n);
   // ── v1.5 Batch B — compiled (GCC family) ────────────────────────────
   {
     id: 110, name: 'Fortran', version: 'gfortran-14', ext: 'f90', family: 'c', core: false,
-    accent: '#734F96', cm: 'plaintext',
+    accent: '#734F96', cm: 'fortran',
     snippet: `program square
   integer :: n
   read(*,*) n
@@ -457,7 +458,7 @@ println(n.toString() + " squared = " + (n * n))
   // ── v1.5 Batch D — functional / ML ──────────────────────────────────
   {
     id: 130, name: 'Haskell', version: 'ghc', ext: 'hs', family: 'hs', core: false,
-    accent: '#5E5086', cm: 'plaintext',
+    accent: '#5E5086', cm: 'haskell',
     snippet: `main :: IO ()
 main = do
   n <- readLn :: IO Integer
@@ -478,7 +479,7 @@ main = do
   },
   {
     id: 132, name: 'Erlang', version: 'otp-27', ext: 'erl', family: 'hs', core: false,
-    accent: '#A90533', cm: 'plaintext',
+    accent: '#A90533', cm: 'erlang',
     snippet: `-module(main).
 -export([main/0]).
 
@@ -537,7 +538,7 @@ printfn "%d squared = %d" n (n * n)
   // ── v1.5 Batch F — niche ────────────────────────────────────────────
   {
     id: 150, name: 'COBOL', version: 'gnucobol', ext: 'cob', family: 'c', core: false,
-    accent: '#005CA5', cm: 'plaintext',
+    accent: '#005CA5', cm: 'cobol',
     snippet: `       IDENTIFICATION DIVISION.
        PROGRAM-ID. HELLO.
        PROCEDURE DIVISION.
@@ -549,7 +550,7 @@ printfn "%d squared = %d" n (n * n)
   },
   {
     id: 151, name: 'Prolog', version: 'swipl', ext: 'pl', family: 'hs', core: false,
-    accent: '#74283C', cm: 'plaintext',
+    accent: '#74283C', cm: 'prolog',
     snippet: `:- initialization(main).
 main :-
     N = 7,
@@ -572,7 +573,7 @@ print(String(n) + " squared = " + String(n * n))
   },
   {
     id: 153, name: 'Octave', version: '9.x', ext: 'm', family: 'py', core: false,
-    accent: '#0790C0', cm: 'plaintext',
+    accent: '#0790C0', cm: 'octave',
     snippet: `n = str2double(fgetl(stdin));
 printf("%d squared = %d\\n", n, n * n);
 `,

@@ -9,7 +9,6 @@
  *   IsolationSection  — full-width canvas around the 8-layer ring diagram
  *   HowItWorks        — 3-step lifecycle, horizontal on desktop, stacked on mobile
  *   SpeedSection      — one big stat + a latency budget breakdown
- *   GetStartedSection — three terminal commands + CTA
  *   Footer            — minimal columns
  *
  * Mobile-first throughout: every grid collapses to a single column under
@@ -18,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { LayerDiagram, LAYERS } from './layer-diagram';
-import { HIDE_DOCS, GET_STARTED_HREF } from '../shared/flags';
+import { HIDE_DOCS } from '../shared/flags';
 import {
   EASE_OUT, Parallax, Reveal, Stagger, StaggerItem,
   motion, useReducedMotion,
@@ -26,8 +25,6 @@ import {
 import {
   animate, useInView, useMotionValue, useTransform,
 } from 'motion/react';
-
-const GITHUB_REPO = 'bhadri01/ZeroCode';
 
 /* ─── Shared section header ────────────────────────────────────────────── */
 interface SectionHeaderProps {
@@ -572,110 +569,6 @@ export function SpeedSection() {
   );
 }
 
-/* ─── Get started (CTA + terminal) ────────────────────────────────────── */
-export function GetStartedSection() {
-  return (
-    <section className="zc-gs" id="get-started">
-      <style>{`
-        .zc-gs {
-          padding: clamp(72px, 11vw, 140px) clamp(20px, 5vw, 64px);
-          background:
-            radial-gradient(900px 600px at 88% 110%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 65%),
-            var(--bg-1);
-          border-top: 1px solid var(--line);
-        }
-        .zc-gs-inner { max-width: 1180px; margin: 0 auto; }
-        .zc-gs-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(280px, 560px);
-          gap: clamp(28px, 5vw, 60px);
-          align-items: start;
-        }
-        .zc-gs-cta {
-          display: flex; gap: 12px; flex-wrap: wrap;
-          margin-top: clamp(20px, 3vw, 28px);
-        }
-        .zc-gs-cta a {
-          display: inline-flex; align-items: center; gap: 8px;
-          padding: 12px 20px; border-radius: 8px;
-          font: 500 14px var(--f-sans); text-decoration: none;
-          min-height: 44px;
-          transition: transform .12s ease, filter .12s ease, border-color .12s ease, color .12s ease, background .12s ease;
-        }
-        .zc-gs-cta .primary {
-          background: var(--accent); color: var(--bg);
-          border: 1px solid var(--accent);
-          box-shadow: 0 4px 24px -8px color-mix(in oklab, var(--accent) 60%, transparent);
-        }
-        .zc-gs-cta .primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
-        .zc-gs-cta .ghost {
-          color: var(--fg-1);
-          border: 1px solid var(--line-2);
-          background: color-mix(in oklab, var(--bg) 60%, transparent);
-        }
-        .zc-gs-cta .ghost:hover { color: var(--fg); border-color: var(--line-strong); background: var(--bg); }
-
-        .zc-gs-cmds {
-          background: var(--bg-2);
-          border: 1px solid var(--line);
-          border-radius: 12px;
-          padding: 0;
-          /* Whole block scrolls together horizontally on narrow screens so the
-             user reads the commands as one flow, not seven independent rails. */
-          overflow-x: auto;
-          overflow-y: hidden;
-          -webkit-overflow-scrolling: touch;
-          box-shadow: 0 20px 60px -30px rgba(0,0,0,0.45);
-        }
-        .zc-gs-cmds .row {
-          display: flex; align-items: baseline; gap: 10px;
-          padding: 14px 18px;
-          border-bottom: 1px solid var(--line);
-          font: 13px var(--f-mono); color: var(--fg-1);
-          line-height: 1.5;
-          white-space: nowrap;
-          min-width: max-content;
-        }
-        .zc-gs-cmds .row:last-child { border-bottom: 0; }
-        .zc-gs-cmds .pr { color: var(--accent); user-select: none; flex-shrink: 0; }
-        .zc-gs-cmds .com { color: var(--fg-3); font-style: italic; }
-        @media (max-width: 880px) {
-          .zc-gs-grid { grid-template-columns: 1fr; }
-          .zc-gs-cta a { flex: 1; justify-content: center; }
-        }
-      `}</style>
-      <div className="zc-gs-inner">
-        <div className="zc-gs-grid">
-          <div>
-            <SectionHeader
-              kicker="ship it"
-              title='Clone. Compose up. <span class="it">Submit.</span>'
-              sub="Everything runs in Docker — no system-wide installs, no language-toolchain juggling on the host. The runner image bundles every toolchain for all 41 languages so first submissions work the moment compose finishes pulling."
-            />
-            <div className="zc-gs-cta">
-              <a className="primary" href={GET_STARTED_HREF}>
-                {HIDE_DOCS ? 'Open the playground →' : 'Read the quickstart →'}
-              </a>
-              <a className="ghost" href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">
-                View on GitHub
-              </a>
-            </div>
-          </div>
-          <Reveal className="zc-gs-cmds" aria-hidden="true" delay={0.08}>
-            <div className="row"><span className="com"># clone the repo</span></div>
-            <div className="row"><span className="pr">$</span>git clone https://github.com/{GITHUB_REPO}</div>
-            <div className="row"><span className="com"># bring up the stack</span></div>
-            <div className="row"><span className="pr">$</span>docker compose -f deploy/docker-compose.yml up -d</div>
-            <div className="row"><span className="com"># submit your first program — no API key needed</span></div>
-            <div className="row"><span className="pr">$</span>curl -X POST localhost:8080/v1/submissions?wait=true \</div>
-            <div className="row" style={{ paddingLeft: 36 }}>-d '{`{"language_id":71,"source_code":"print(123)"}`}'</div>
-          </Reveal>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ─── Footer (minimal) ────────────────────────────────────────────────── */
 export function Footer() {
   return (
@@ -689,7 +582,7 @@ export function Footer() {
         .zc-foot-inner {
           max-width: 1180px; margin: 0 auto;
           display: grid;
-          grid-template-columns: 1.4fr repeat(3, 1fr);
+          grid-template-columns: 1.4fr repeat(2, 1fr);
           gap: clamp(24px, 4vw, 48px);
         }
         .zc-foot-brand {
@@ -757,14 +650,6 @@ export function Footer() {
             <li><a href="/v1/openapi.json">OpenAPI 3.1</a></li>
             {!HIDE_DOCS && <li><a href="/docs/sdks">Clients & SDKs</a></li>}
             {!HIDE_DOCS && <li><a href="/docs/observability">Observability</a></li>}
-          </ul>
-        </div>
-        <div className="zc-foot-col">
-          <h4>Project</h4>
-          <ul>
-            <li><a href={`https://github.com/${GITHUB_REPO}`} target="_blank" rel="noreferrer">GitHub</a></li>
-            <li><a href={`https://github.com/${GITHUB_REPO}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer">Changelog</a></li>
-            <li><a href={`https://github.com/${GITHUB_REPO}/issues`} target="_blank" rel="noreferrer">Issues</a></li>
             {!HIDE_DOCS && <li><a href="/docs/deployment">Deployment</a></li>}
           </ul>
         </div>

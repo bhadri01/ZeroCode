@@ -336,10 +336,21 @@ id = 120
 name = "Kotlin"
 version = "2.x"
 source_file = "main.kt"
-compile_cmd = ["/usr/bin/kotlinc", "main.kt", "-include-runtime", "-d", "prog.jar"]
+# `-J` forwards JVM flags to kotlinc itself. kotlinc spins up a full JVM that
+# loads the entire Kotlin compiler, which dominated the submission's peak memory.
+# Cap its heap/metaspace/code-cache and use SerialGC + C1-only JIT (one GC
+# thread, no C2) — the same tuning as the javac compile (id 62).
+compile_cmd = [
+    "/usr/bin/kotlinc",
+    "-J-XX:+UseSerialGC", "-J-XX:TieredStopAtLevel=1",
+    "-J-Xmx512m", "-J-XX:MaxMetaspaceSize=256m", "-J-XX:ReservedCodeCacheSize=64m",
+    "main.kt", "-include-runtime", "-d", "prog.jar",
+]
 # JVM flags on the java command line (not JAVA_TOOL_OPTIONS) so the JVM doesn't
-# print "Picked up JAVA_TOOL_OPTIONS: ..." to stderr.
-run_cmd = ["/usr/bin/java", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:+ExitOnOutOfMemoryError", "-jar", "prog.jar"]
+# print "Picked up JAVA_TOOL_OPTIONS: ..." to stderr. SerialGC + a capped
+# reserved code cache mirror the Java (id 62) run and keep the run footprint
+# small; full tiered JIT is kept so compute-heavy solutions still get C2.
+run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-jar", "prog.jar"]
 env = []
 # NativeSandbox applies default_limits to BOTH compile and run (compile_limits
 # is not yet wired), and `kotlinc -include-runtime` building a fat jar is the
@@ -354,17 +365,23 @@ name = "Scala"
 version = "3.x"
 source_file = "main.scala"
 compile_cmd = ["/usr/bin/scalac", "main.scala"]
-# Run with the classic launcher (scala_legacy): the default Scala 3 `scala` is
-# the Scala-CLI runner, which tries to fetch the compiler/toolchain over the
-# network and can't run offline in the sandbox. scala_legacy runs the compiled
-# class with scala3-library already on the classpath.
-run_cmd = ["/usr/local/scala3-3.5.2/bin/scala_legacy", "main"]
+# Run the compiled class directly with `java`, mirroring the plain-Java entry.
+# We can't use the default Scala 3 `scala` (the Scala-CLI runner that fetches
+# the toolchain over the network and can't run offline), and the classic
+# `scala_legacy` launcher invokes the deprecated dotty.tools.MainGenericRunner,
+# which prints a "MainGenericRunner ... deprecated since Scala 3.5.0" warning to
+# stderr on every run. Running java directly avoids both: scala.jar bundles the
+# scala3 + scala2.13 standard library, so `-cp .:scala.jar main` runs offline
+# and warning-free. JVM flags go inline here because plain java (unlike the
+# wrapper scripts) does NOT read JAVA_OPTS.
+run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-cp", ".:/usr/local/scala3-3.5.2/lib/scala.jar", "main"]
 env = [
-    # Wrapper launchers (scala/groovy/clojure) read JAVA_OPTS and pass it to
-    # java — unlike JAVA_TOOL_OPTIONS, it doesn't trigger the "Picked up ..."
-    # stderr banner. If a launcher ignores it, the JVM's container-aware
-    # defaults still bound the heap to the cgroup.
-    ["JAVA_OPTS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+    # JAVA_OPTS bounds the scalac wrapper during the compile phase (scalac reads
+    # JAVA_OPTS and passes it to java — unlike JAVA_TOOL_OPTIONS, it doesn't
+    # trigger the "Picked up ..." stderr banner). SerialGC + C1-only JIT keep
+    # scalac's cold-start footprint down. The run phase uses java directly with
+    # the flags inline above, so it ignores this.
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
 # scalac cold-start + compile is JVM-heavy; default_limits covers compile+run.
 default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
@@ -483,16 +500,15 @@ id = 140
 name = "C#"
 version = ".NET 9"
 source_file = "main.cs"
-# Copy the user's source over a pre-built, pre-restored console project, then
-# build offline against the baked NuGet cache. Output assembly is `app.dll`.
-# .NET creates named mutexes (e.g. NuGet's "NuGet-Migrations") backed by files
-# under $TMPDIR/.dotnet/shm; the PAL stats that dir and aborts if it's missing,
-# so pre-create it in the fresh per-submission /tmp.
-# `dotnet build`'s normal progress goes to stdout, which the sandbox merges
-# into the submission's stdout — redirect it to /dev/null so only the program's
-# own output shows. Build *errors* still reach compile_output via stderr.
-compile_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/.dotnet/shm && cp -r /usr/local/lib/zerocode/csharp-app /tmp/app && cp main.cs /tmp/app/Program.cs && cd /tmp/app && dotnet build -c Release -o /box/bin --no-restore --nologo -v q >/dev/null"]
-run_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/.dotnet/shm && cd /box/bin && dotnet app.dll"]
+# Compile the single source file with the Roslyn compiler (csc) directly via the
+# baked csharp/build.sh — NOT `dotnet build`. MSBuild peaks ~130 MB and ~3 s even
+# for a hello-world, and since the compile phase shares the submission cgroup it
+# dominated both the reported memory and the wall time; csc does the same job in
+# under a second in a fraction of the memory. The output assembly is `app.dll`
+# (+ app.runtimeconfig.json) under /box/bin. build.sh routes csc's diagnostics to
+# stderr so compile errors reach compile_output and never leak into stdout.
+compile_cmd = ["/bin/sh", "/usr/local/lib/zerocode/csharp/build.sh"]
+run_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/.dotnet/shm && cd /box/bin && exec dotnet app.dll"]
 env = [
     ["HOME", "/tmp"],
     ["DOTNET_CLI_HOME", "/tmp"],
@@ -507,9 +523,10 @@ env = [
     # otherwise leaks into the submission's stdout.
     ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
 ]
-# `dotnet build` (offline, --no-restore) covers compile+run under default_limits.
-default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 1536, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
-compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 2048, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# csc + `dotnet app.dll` covers compile+run. Limits stay generous (the cgroup is
+# shared across both phases) but well below the old MSBuild-era headroom.
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -529,6 +546,11 @@ env = [
     # Workstation GC (see C# note) — avoids CoreCLR 0x8007000E at startup.
     ["DOTNET_gcServer", "0"],
     ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
+    # `dotnet fsi` loads the SDK, which runs a workload manifest integrity check
+    # and prints "An issue was encountered verifying workloads…" to stderr. It's
+    # a warning, not an error (the script still runs), but it leaks into the
+    # submission's captured stderr — skip the check to keep output clean.
+    ["DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK", "1"],
 ]
 # `dotnet fsi` JITs and starts a full .NET runtime — generous startup headroom.
 default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 1536, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
@@ -543,7 +565,11 @@ id = 150
 name = "COBOL"
 version = "gnucobol"
 source_file = "main.cob"
-compile_cmd = ["/usr/bin/cobc", "-x", "-O2", "-o", "prog", "main.cob"]
+# The trailing object links the libxml2 version-skew silencer (built into the
+# runner image by runners/Dockerfile) into the binary, suppressing libcob's
+# spurious "compiled against libxml 212 using older 209" warning on every run
+# (Debian trixie libxml2 skew). See runners/cob_xml_quiet.c.
+compile_cmd = ["/usr/bin/cobc", "-x", "-O2", "-o", "prog", "main.cob", "/usr/local/lib/zerocode/cobol/cob_xml_quiet.o"]
 run_cmd = ["./prog"]
 env = []
 is_archived = false

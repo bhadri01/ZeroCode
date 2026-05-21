@@ -157,10 +157,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
 # ---- .NET offline warmup ----
 # Sandboxed runs have NO network, so NuGet can't restore at submission time.
 # Pre-create a Release console project and restore its packages into a baked,
-# world-readable cache. The C# (id 140) compile_cmd copies this skeleton,
-# swaps in the user's Program.cs, and builds with `--no-restore` against
-# NUGET_PACKAGES=/usr/local/lib/zerocode/nuget. The skeleton's project name
-# is `app`, so the run phase executes `app.dll`.
+# world-readable cache. C# (id 140) no longer uses this skeleton — it compiles
+# with Roslyn (csc) directly via csharp-build.sh (installed in the late-fixes
+# section below), which avoids MSBuild's ~130 MB / ~3 s hello-world overhead.
+# The restored cache is kept only so F# (id 141, `dotnet fsi`) has a populated
+# NUGET_PACKAGES to fall back on.
 ENV NUGET_PACKAGES=/usr/local/lib/zerocode/nuget \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1
@@ -272,6 +273,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends patchelf \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gnucobol3 pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# C# (id 140) Roslyn-direct compile script. Kept here in the late-fixes section
+# so iterating on it doesn't bust the heavy toolchain tarball layers above.
+# See csharp-build.sh for why this replaces `dotnet build` (MSBuild).
+RUN mkdir -p /usr/local/lib/zerocode/csharp
+COPY csharp-build.sh /usr/local/lib/zerocode/csharp/build.sh
+RUN chmod 0755 /usr/local/lib/zerocode/csharp/build.sh
+
+# COBOL (id 150) libxml2 version-skew silencer. libcob links libxml2 and calls
+# xmlCheckVersion() at startup; on trixie the runtime lib (really 2.9.14, "209")
+# is older than gnucobol's build headers (2.12, "212"), so it prints a harmless
+# but noisy warning to stderr on every run. We compile a no-op override to an
+# object and link it into every COBOL binary (see runners/languages.toml's
+# compile_cmd): because libcob references the symbol, the linker exports our
+# definition into the executable's .dynsym, interposing libcob's call on every
+# execution path — direct, naive and native — with no LD_PRELOAD. See
+# cob_xml_quiet.c for the full rationale.
+COPY cob_xml_quiet.c /usr/local/lib/zerocode/cobol/cob_xml_quiet.c
+RUN gcc -c -fPIC -O2 \
+        -o /usr/local/lib/zerocode/cobol/cob_xml_quiet.o \
+        /usr/local/lib/zerocode/cobol/cob_xml_quiet.c
 
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \

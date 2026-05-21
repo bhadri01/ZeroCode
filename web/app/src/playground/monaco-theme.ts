@@ -218,6 +218,18 @@ export const editorTheme: monaco.editor.IStandaloneThemeData = {
     { token: 'invalid',                       foreground: C.error, fontStyle: 'underline' },
     { token: 'invalid.illegal',               foreground: C.error, fontStyle: 'underline' },
     { token: 'invalid.deprecated',            foreground: C.error, fontStyle: 'strikethrough' },
+
+    /* ───── Bash / shell overrides (token names end in `.shell`) ──────
+     * Our enhanced shell grammar (Editor.tsx) tags builtins as
+     * `type.identifier` and `$var` references as `variable`. The generic
+     * rules above would paint those blue-italic (like a type) and plain
+     * white. These `.shell`-suffixed rules win by longest-prefix match, so
+     * only Bash is affected: commands read as commands (green) and variable
+     * references stand out (orange), while special `$1/$@/$?` keep the
+     * generic purple `variable.predefined`. */
+    { token: 'type.identifier.shell',         foreground: C.green },
+    { token: 'variable.shell',                foreground: C.orange },
+    { token: 'string.heredoc.delimiter.shell', foreground: C.orange },
   ],
   colors: {
     /* ───── Editor surface ───────────────────────────────────────── */
