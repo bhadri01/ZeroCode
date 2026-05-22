@@ -400,7 +400,7 @@ env = [
     # java — unlike JAVA_TOOL_OPTIONS, it doesn't trigger the "Picked up ..."
     # stderr banner. If a launcher ignores it, the JVM's container-aware
     # defaults still bound the heap to the cgroup.
-    ["JAVA_OPTS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
 default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
@@ -419,7 +419,7 @@ env = [
     # java — unlike JAVA_TOOL_OPTIONS, it doesn't trigger the "Picked up ..."
     # stderr banner. If a launcher ignores it, the JVM's container-aware
     # defaults still bound the heap to the cgroup.
-    ["JAVA_OPTS", "-Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:+ExitOnOutOfMemoryError"],
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
 # Clojure's JVM + runtime classload startup is slow; give it extra CPU/wall.
 default_limits = { cpu_time = 15.0, wall_time = 35.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
@@ -458,7 +458,10 @@ name = "Erlang"
 version = "otp-27"
 source_file = "main.erl"
 compile_cmd = ["/usr/bin/erlc", "main.erl"]
-run_cmd = ["/usr/bin/erl", "-noshell", "-s", "main", "main", "-s", "init", "stop"]
+# +S 1:1 / +SDcpu 1:1 / +SDio 1 — run with a single normal, dirty-CPU and IO
+# scheduler instead of one per core. The BEAM otherwise reserves run-queue +
+# stack memory per scheduler, which dominated the tiny-program footprint.
+run_cmd = ["/usr/bin/erl", "+S", "1:1", "+SDcpu", "1:1", "+SDio", "1", "-noshell", "-s", "main", "main", "-s", "init", "stop"]
 env = []
 is_archived = false
 
@@ -469,7 +472,12 @@ version = "1.x"
 source_file = "main.exs"
 compile_cmd = []
 run_cmd = ["/usr/bin/elixir", "main.exs"]
-env = []
+env = [
+    # Forward emulator flags to the `erl` that `elixir` launches: a single
+    # normal/dirty-CPU/IO scheduler instead of one per core (see the Erlang
+    # note) — the per-scheduler reservations dominated the small footprint.
+    ["ELIXIR_ERL_OPTIONS", "+S 1:1 +SDcpu 1:1 +SDio 1"],
+]
 default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
@@ -545,6 +553,10 @@ env = [
     ["NUGET_PACKAGES", "/usr/local/lib/zerocode/nuget"],
     # Workstation GC (see C# note) — avoids CoreCLR 0x8007000E at startup.
     ["DOTNET_gcServer", "0"],
+    # Make the GC give committed pages back to the OS aggressively (0–9 scale),
+    # trading a little CPU for a lower resident footprint — fsi's baseline is the
+    # bulk of F#'s memory, so this is the main lever short of compiling to a dll.
+    ["DOTNET_GCConserveMemory", "9"],
     ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
     # `dotnet fsi` loads the SDK, which runs a workload manifest integrity check
     # and prints "An issue was encountered verifying workloads…" to stderr. It's
@@ -681,6 +693,10 @@ name = "Julia"
 version = "1.x"
 source_file = "main.jl"
 compile_cmd = []
+# NOTE: tried -O0 --compile=min -t 1 to shrink the footprint — it backfired
+# (RSS jumped ~68MB → ~270MB, likely the interpreter path retaining more), so
+# we keep plain startup. Julia's memory is floored by its sysimage + JIT; the
+# real lever would be a trimmed custom sysimage (PackageCompiler), not flags.
 run_cmd = ["/usr/local/bin/julia", "--startup-file=no", "main.jl"]
 env = [
     ["HOME", "/tmp"],
