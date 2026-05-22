@@ -234,8 +234,67 @@ fn batch_a_languages_present_and_interpreted() {
 fn total_language_count() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
-    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 1 v2 raw-wasm = 41
-    assert_eq!(reg.list().len(), 41, "expected 41 languages total");
+    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 13 Batch H + 7 Batch I
+    // + 1 v2 raw-wasm = 61
+    assert_eq!(reg.list().len(), 61, "expected 61 languages total");
+}
+
+#[test]
+fn batch_h_practical_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let batch_h = [
+        (170, "Racket"),
+        (171, "Raku"),
+        (172, "AWK"),
+        (173, "CoffeeScript"),
+        (174, "Forth"),
+        (175, "Smalltalk"),
+        (176, "Emacs Lisp"),
+        (177, "Verilog"),
+        (178, "LLVM IR"),
+        (179, "V"),
+        (180, "FreeBASIC"),
+        (181, "PowerShell"),
+        (182, "Pony"),
+    ];
+    for (id, name) in batch_h {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name, "id {id} name mismatch");
+    }
+    // Verilog (177), V (179), FreeBASIC (180) and Pony (182) are compiled.
+    for id in [177, 179, 180, 182] {
+        assert!(
+            reg.require(id).unwrap().is_compiled(),
+            "id {id} should be a compiled language"
+        );
+    }
+}
+
+#[test]
+fn batch_i_esoteric_languages_present() {
+    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
+    let batch_i = [
+        (300, "Brainfuck"),
+        (301, "GolfScript"),
+        (302, "CJam"),
+        (303, "Vyxal"),
+        (304, "Jelly"),
+        (305, "Samarium"),
+        (306, "Paradoc"),
+    ];
+    for (id, name) in batch_i {
+        let spec = reg
+            .require(id)
+            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
+        assert_eq!(spec.name, name, "id {id} name mismatch");
+        // All Batch I languages are interpreted (no compile step).
+        assert!(
+            !spec.is_compiled(),
+            "{name} (id {id}) should be interpreted"
+        );
+    }
 }
 
 #[test]

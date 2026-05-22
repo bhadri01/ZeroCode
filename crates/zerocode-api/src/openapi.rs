@@ -16,7 +16,7 @@ use utoipa::{OpenApi, ToSchema};
 #[openapi(
     info(
         title = "ZeroCode API",
-        description = "Sandboxed code execution service. Submit source code for any of 41 supported languages, get stdout/stderr/exit metadata back. See `/v1/about` for runtime version and `/v1/languages` for the active language registry.",
+        description = "Sandboxed code execution service. Submit source code for any registered language, get stdout/stderr/exit metadata back. See `/v1/about` for runtime version and `/v1/languages` for the active language registry.",
         version = env!("CARGO_PKG_VERSION"),
         contact(name = "ZeroCode", url = "https://github.com/anthropics/zerocode"),
         license(name = "Apache-2.0 OR MIT"),

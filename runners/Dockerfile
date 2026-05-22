@@ -7,8 +7,8 @@
 # Build with:
 #   docker build -f runners/Dockerfile -t zerocode-runner:dev runners/
 #
-# *** FULL v1.5 LANGUAGE SET (42 languages, ~3 GB monolithic image) ***
-# Core 7 (v1) + Batches A–G + the v2 raw-wasm tier. Source of truth for the
+# *** FULL LANGUAGE SET (62 languages, ~3+ GB monolithic image) ***
+# Core 7 (v1) + Batches A–I + the v2 raw-wasm tier. Source of truth for the
 # list and IDs is runners/languages.toml; this image must provide every
 # toolchain that file's compile_cmd/run_cmd reference. For slim, per-language
 # images covering only the Core 7, see runners/Dockerfile.slim.
@@ -22,6 +22,11 @@
 #   Batch E: C#, F#   (.NET 9 SDK)
 #   Batch F: COBOL (gnucobol), Prolog (swipl), Swift, Octave, SQL (sqlite3)
 #   Batch G: Nim, Crystal, Dart, Julia  (Zig removed — sandbox tmpfs EXDEV)
+#   Batch H: Racket, Raku, AWK (gawk), CoffeeScript, Forth (gforth), Smalltalk
+#            (gst), Emacs Lisp, Verilog (iverilog), LLVM IR (lli), V, FreeBASIC,
+#            PowerShell, Pony   (tarball toolchains marked VALIDATE)
+#   Batch I: Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium, Paradoc
+#            (esoteric / code-golf — best-effort, all marked VALIDATE)
 #   v2     : raw-wasm runs in-process via wasmtime — no toolchain needed here.
 
 FROM debian:trixie-slim
@@ -294,6 +299,94 @@ COPY cob_xml_quiet.c /usr/local/lib/zerocode/cobol/cob_xml_quiet.c
 RUN gcc -c -fPIC -O2 \
         -o /usr/local/lib/zerocode/cobol/cob_xml_quiet.o \
         /usr/local/lib/zerocode/cobol/cob_xml_quiet.c
+
+# =====================================================================
+# Batch H — Practical parity languages (ids 170–182)
+#
+# apt/npm installs are high-confidence. The upstream-tarball toolchains (V,
+# FreeBASIC, PowerShell, Pony) mirror the Nim/Crystal/Dart/Julia pattern and
+# are marked VALIDATE — they are x86_64-oriented and a bad URL/arch fails the
+# build loudly; confirm on a real build before relying on them.
+# =====================================================================
+
+# ---- apt: Racket, Raku, AWK, Forth, Smalltalk, Emacs (batch), Verilog, LLVM ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        racket rakudo gawk gforth gnu-smalltalk emacs-nox iverilog llvm \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- CoffeeScript (id 173) — npm global, runs on Node (Core 7) ----
+RUN npm install -g coffeescript && npm cache clean --force
+
+# ---- V (id 179) — official prebuilt release ----  [VALIDATE: amd64 only]
+ARG V_VERSION=0.4.9
+RUN curl -fsSL "https://github.com/vlang/v/releases/download/${V_VERSION}/v_linux.zip" -o /tmp/v.zip \
+    && cd /usr/local && unzip -q /tmp/v.zip && rm /tmp/v.zip \
+    && ln -sf /usr/local/v/v /usr/local/bin/v \
+    && chmod -R a+rX /usr/local/v \
+    && HOME=/tmp v version
+
+# ---- FreeBASIC (id 180) — SourceForge release ----  [VALIDATE: url/arch]
+ARG FBC_VERSION=1.10.1
+RUN curl -fsSL "https://downloads.sourceforge.net/fbc/FreeBASIC-${FBC_VERSION}-linux-x86_64.tar.gz" -o /tmp/fbc.tar.gz \
+    && mkdir -p /tmp/fbc && tar -C /tmp/fbc --strip-components=1 -xzf /tmp/fbc.tar.gz \
+    && (cd /tmp/fbc && ./install.sh -i /usr/local) \
+    && rm -rf /tmp/fbc /tmp/fbc.tar.gz \
+    && fbc --version
+
+# ---- PowerShell (id 181) — Microsoft release tarball ----  [VALIDATE: x64 only]
+ARG PWSH_VERSION=7.4.6
+RUN apt-get update && apt-get install -y --no-install-recommends libicu76 libssl3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/microsoft/powershell/7 \
+    && curl -fsSL "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VERSION}/powershell-${PWSH_VERSION}-linux-x64.tar.gz" -o /tmp/pwsh.tar.gz \
+    && tar -C /opt/microsoft/powershell/7 -xzf /tmp/pwsh.tar.gz \
+    && chmod -R a+rX /opt/microsoft/powershell/7 \
+    && ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh \
+    && rm /tmp/pwsh.tar.gz \
+    && HOME=/tmp pwsh --version
+
+# ---- Pony (id 182) — ponylang release ----  [VALIDATE: url/arch]
+ARG PONYC_VERSION=0.58.7
+RUN curl -fsSL "https://github.com/ponylang/ponyc/releases/download/${PONYC_VERSION}/ponyc-x86-64-unknown-linux-ubuntu24.04.tar.gz" -o /tmp/ponyc.tar.gz \
+    && mkdir -p /usr/local/ponyc && tar -C /usr/local/ponyc --strip-components=1 -xzf /tmp/ponyc.tar.gz \
+    && ln -sf /usr/local/ponyc/bin/ponyc /usr/bin/ponyc \
+    && chmod -R a+rX /usr/local/ponyc \
+    && rm /tmp/ponyc.tar.gz \
+    && ponyc --version
+
+# =====================================================================
+# Batch I — Esoteric / code-golf languages (ids 300–306)
+#
+# Best-effort parity with Piston's golfing tier. ALL marked VALIDATE — confirm
+# package names/entrypoints against a real build + sandbox smoke test before
+# relying on them.
+# =====================================================================
+
+# ---- Brainfuck (id 300) — apt ----  [VALIDATE: package name `bf`]
+RUN apt-get update && apt-get install -y --no-install-recommends bf \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- GolfScript (id 301) — single Ruby file (Ruby from Batch A) ----  [VALIDATE]
+RUN mkdir -p /usr/local/lib/zerocode/golfscript \
+    && curl -fsSL "http://www.golfscript.com/golfscript/golfscript.rb" \
+         -o /usr/local/lib/zerocode/golfscript/golfscript.rb \
+    && chmod -R a+rX /usr/local/lib/zerocode/golfscript
+
+# ---- CJam (id 302) — interpreter jar (JVM from Core 7) ----  [VALIDATE: url]
+ARG CJAM_VERSION=0.6.5
+RUN mkdir -p /usr/local/lib/zerocode/cjam \
+    && curl -fsSL "https://downloads.sourceforge.net/project/cjam/cjam-${CJAM_VERSION}.jar" \
+         -o /usr/local/lib/zerocode/cjam/cjam.jar \
+    && chmod -R a+rX /usr/local/lib/zerocode/cjam
+
+# ---- Python golfing langs: Vyxal, Jelly, Samarium, Paradoc ----  [VALIDATE: names]
+# trixie's Python is externally-managed (PEP 668); --break-system-packages lets
+# pip install into the site-packages the sandbox's python3 reads.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir --break-system-packages \
+         vyxal jellylanguage samarium paradoc \
+    && (chmod -R a+rX /usr/local/lib/python3* 2>/dev/null || true)
 
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \

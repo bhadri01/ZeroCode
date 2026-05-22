@@ -8,6 +8,11 @@
 #   140–141 v1.5 Batch E:       .NET (C#, F#)
 #   150–154 v1.5 Batch F:       niche (COBOL, Prolog, Swift, Octave, SQL)
 #   161–164 v1.5 Batch G:       modern (Nim, Crystal, Dart, Julia)  [160 Zig removed]
+#   170–182 Batch H:           practical parity w/ Piston (Racket, Raku, AWK, CoffeeScript,
+#                              Forth, Smalltalk, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC,
+#                              PowerShell, Pony) — tarball toolchains marked VALIDATE
+#   300–306 Batch I:           esoteric / code-golf (Brainfuck, GolfScript, CJam, Vyxal,
+#                              Jelly, Samarium, Paradoc) — best-effort, all VALIDATE
 #   200     v2 WASM tier:       raw-wasm (bring-your-own .wasm, runs under WasmSandbox)
 #
 # Substitutions available in env values:
@@ -688,6 +693,282 @@ env = [
 ]
 # Julia's first-run JIT + stdlib precompile is heavy on both CPU and memory.
 default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 1024, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# Batch H — Practical parity with Piston (ids 170–182)
+#
+# apt/npm installs (Racket, Raku, AWK, CoffeeScript, Forth, Smalltalk, Emacs,
+# Verilog, LLVM IR) are high-confidence. The upstream-tarball toolchains (V,
+# FreeBASIC, PowerShell, Pony) follow the Nim/Crystal/Dart/Julia pattern and
+# are marked VALIDATE in runners/Dockerfile — confirm URLs/arch on a real
+# build, and run a sandbox smoke test, before relying on them.
+# ======================================================================
+
+[[language]]
+id = 170
+name = "Racket"
+version = "8.x"
+source_file = "main.rkt"
+compile_cmd = []
+run_cmd = ["/usr/bin/racket", "main.rkt"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 171
+name = "Raku"
+version = "rakudo"
+source_file = "main.raku"
+compile_cmd = []
+# Rakudo (MoarVM) compiles the program on each run; modest startup headroom.
+run_cmd = ["/usr/bin/raku", "main.raku"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 172
+name = "AWK"
+version = "gawk"
+source_file = "main.awk"
+compile_cmd = []
+# `-f main.awk` runs the program; the submission stdin becomes the data stream.
+run_cmd = ["/usr/bin/gawk", "-f", "main.awk"]
+env = []
+is_archived = false
+
+[[language]]
+id = 173
+name = "CoffeeScript"
+version = "2.x"
+source_file = "main.coffee"
+compile_cmd = []
+# `coffee` transpiles + runs on Node (Core 7). Same V8 hardening as Node.js (id 63).
+run_cmd = ["/usr/local/bin/coffee", "main.coffee"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 174
+name = "Forth"
+version = "gforth"
+source_file = "main.fth"
+compile_cmd = []
+# gforth runs the file to EOF and exits (no REPL when handed a script path).
+run_cmd = ["/usr/bin/gforth", "main.fth"]
+env = []
+is_archived = false
+
+[[language]]
+id = 175
+name = "Smalltalk"
+version = "gnu-smalltalk"
+source_file = "main.st"
+compile_cmd = []
+run_cmd = ["/usr/bin/gst", "main.st"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 176
+name = "Emacs Lisp"
+version = "emacs"
+source_file = "main.el"
+compile_cmd = []
+# Batch-mode elisp: load + evaluate the script, no UI. Emacs startup is heavy.
+run_cmd = ["/usr/bin/emacs", "--batch", "--no-init-file", "--script", "main.el"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 177
+name = "Verilog"
+version = "iverilog"
+source_file = "main.v"
+# Icarus Verilog: compile to a vvp object, then run it under the vvp runtime.
+compile_cmd = ["/usr/bin/iverilog", "-o", "prog", "main.v"]
+run_cmd = ["/usr/bin/vvp", "prog"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 178
+name = "LLVM IR"
+version = "lli"
+source_file = "main.ll"
+compile_cmd = []
+# lli JIT-executes textual LLVM IR. VALIDATE: Debian may ship a versioned
+# binary (e.g. lli-19) rather than /usr/bin/lli — adjust the path if so.
+run_cmd = ["/usr/bin/lli", "main.ll"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 179
+name = "V"
+version = "0.4.x"
+source_file = "main.v"
+# V shells out to a C compiler (gcc, Core 7) for the final link.
+compile_cmd = ["/usr/local/bin/v", "-o", "prog", "main.v"]
+run_cmd = ["./prog"]
+env = [
+    ["HOME", "/tmp"],
+    ["VMODULES", "/tmp/.vmodules"],
+    ["XDG_CACHE_HOME", "/tmp/.cache"],
+]
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 180
+name = "FreeBASIC"
+version = "1.x"
+source_file = "main.bas"
+# fbc -x names the output executable; links via the system C toolchain.
+compile_cmd = ["/usr/local/bin/fbc", "-x", "prog", "main.bas"]
+run_cmd = ["./prog"]
+env = []
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 181
+name = "PowerShell"
+version = "7.x"
+source_file = "main.ps1"
+compile_cmd = []
+# pwsh boots a full .NET runtime — generous startup headroom. -NoProfile keeps
+# stdout clean; HOME + telemetry pinned to writable /tmp. Workstation GC (see
+# the C#/F# notes) avoids CoreCLR reserving a heap segment per CPU.
+run_cmd = ["/usr/local/bin/pwsh", "-NoProfile", "-NonInteractive", "-File", "main.ps1"]
+env = [
+    ["HOME", "/tmp"],
+    ["POWERSHELL_TELEMETRY_OPTOUT", "1"],
+    ["POWERSHELL_UPDATECHECK", "Off"],
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_gcServer", "0"],
+]
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 182
+name = "Pony"
+version = "ponyc"
+source_file = "main.pony"
+# ponyc compiles the package directory (/box); -b names the binary. The LLVM
+# backend is CPU/memory heavy. VALIDATE: a single-file program with no external
+# deps compiles offline; corral-style deps would need network (blocked).
+compile_cmd = ["/usr/bin/ponyc", "-b", "prog", "."]
+run_cmd = ["./prog"]
+env = []
+default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# Batch I — Esoteric / code-golf languages (ids 300–306)
+#
+# Best-effort parity with Piston's golfing tier. Brainfuck is apt-based;
+# GolfScript/CJam are single-file/jar downloads; the rest are PyPI packages.
+# ALL are marked VALIDATE — confirm package names + entrypoints against a real
+# runner build plus a sandbox smoke test (these drift). Deeper from-source
+# esoterics (LOLCODE, Befunge-93, Cow, Dragon, Emojicode, Rockstar, Pyth, Japt,
+# MATL, BQN, Brachylog, Husk, Retina, 05AB1E, Forte, Yeethon) are NOT included:
+# they need per-language build scripts ported from Piston and individual
+# verification.
+# ======================================================================
+
+[[language]]
+id = 300
+name = "Brainfuck"
+version = "bf"
+source_file = "main.bf"
+compile_cmd = []
+run_cmd = ["/usr/bin/bf", "main.bf"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 301
+name = "GolfScript"
+version = "1.0"
+source_file = "main.gs"
+compile_cmd = []
+# golfscript.rb (baked into the runner image) takes the program as ARGV[0] and
+# reads the submission stdin as input. Runs on Ruby (Batch A).
+run_cmd = ["/usr/bin/ruby", "/usr/local/lib/zerocode/golfscript/golfscript.rb", "main.gs"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 302
+name = "CJam"
+version = "0.6.x"
+source_file = "main.cjam"
+compile_cmd = []
+# Runs the CJam interpreter jar on a JVM (Core 7 Java).
+run_cmd = ["/usr/bin/java", "-jar", "/usr/local/lib/zerocode/cjam/cjam.jar", "main.cjam"]
+env = []
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 303
+name = "Vyxal"
+version = "2.x"
+source_file = "main.vy"
+compile_cmd = []
+# `python3 -m vyxal` — installed from PyPI into the runner image.
+run_cmd = ["/usr/bin/python3", "-m", "vyxal", "main.vy"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 304
+name = "Jelly"
+version = "0.x"
+source_file = "main.jelly"
+compile_cmd = []
+# `jelly` console script from the `jellylanguage` PyPI package. VALIDATE the
+# subcommand: historically `jelly fromfile <path>`.
+run_cmd = ["/usr/local/bin/jelly", "fromfile", "main.jelly"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 305
+name = "Samarium"
+version = "0.x"
+source_file = "main.sm"
+compile_cmd = []
+run_cmd = ["/usr/local/bin/samarium", "main.sm"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 306
+name = "Paradoc"
+version = "0.x"
+source_file = "main.prdc"
+compile_cmd = []
+run_cmd = ["/usr/bin/python3", "-m", "paradoc", "main.prdc"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 # ======================================================================
