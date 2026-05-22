@@ -234,9 +234,9 @@ fn batch_a_languages_present_and_interpreted() {
 fn total_language_count() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
-    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 13 Batch H + 7 Batch I
-    // + 1 v2 raw-wasm = 61
-    assert_eq!(reg.list().len(), 61, "expected 61 languages total");
+    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 12 Batch H (Smalltalk/175
+    // removed) + 7 Batch I + 1 v2 raw-wasm = 60
+    assert_eq!(reg.list().len(), 60, "expected 60 languages total");
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn batch_h_practical_languages_present() {
         (172, "AWK"),
         (173, "CoffeeScript"),
         (174, "Forth"),
-        (175, "Smalltalk"),
+        // (175, "Smalltalk") removed — gnu-smalltalk dropped from Debian.
         (176, "Emacs Lisp"),
         (177, "Verilog"),
         (178, "LLVM IR"),

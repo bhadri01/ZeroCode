@@ -281,11 +281,11 @@ The separation is a deliberate security boundary.
 
 - **Dockerfile:** `runners/Dockerfile`
 - **Base:** `debian:trixie-slim`
-- **Contents:** toolchains for all 41 languages across Core 7 + Batches A-G
+- **Contents:** toolchains for all 60 languages across Core 7 + Batches A-I
   (the v2 raw-wasm tier runs in-process via wasmtime and needs no toolchain).
   Includes apt-installed packages plus tarball installs for Go, Rust, Kotlin,
-  Scala, .NET 9, Swift 6, Nim, Crystal, Dart, and Julia. Pre-creates
-  `/box` and `/tmp`.
+  Scala, .NET 9, Swift 6, Nim, Crystal, Dart, Julia, V, FreeBASIC, PowerShell,
+  and Pony. Pre-creates `/box` and `/tmp`.
 - **Not run as a container.** The worker bind-mounts an extracted copy of this
   image's filesystem as the read-only rootfs that every sandboxed submission
   is `pivot_root`'d into.
@@ -297,12 +297,14 @@ namespace is isolated). The service image has no shell to exec into. The
 worker image has no language toolchains.
 
 
-## 7. Supported languages (41)
+## 7. Supported languages (60)
 
 Loaded from `runners/languages.toml` at boot. ID space: 1-99 for core v1
 languages; 100-164 for the v1.5 expansion (Batches A-G; id 160 / Zig is
-unused — removed because its compiler can't run in the sandbox); 200 for the
-v2 raw-wasm tier.
+unused — removed because its compiler can't run in the sandbox); 170-182 for
+Batch H (practical / Piston parity; id 175 / Smalltalk unused — gnu-smalltalk
+was dropped from Debian); 300-306 for Batch I (esoteric / code-golf); 200 for
+the v2 raw-wasm tier.
 
 ### Core 7 (v1)
 
@@ -316,7 +318,7 @@ v2 raw-wasm tier.
 | 71 | Python | 3.13 | `main.py` | (none) | `python3.13 main.py` | `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1` |
 | 73 | Rust | 1.x-latest | `main.rs` | `rustc -O -C panic=abort main.rs -o prog` | `./prog` | -- |
 
-### v1.5 expansion (33 languages)
+### Batch expansion (52 languages)
 
 | Batch | IDs | Languages | Type |
 |-------|-----|-----------|------|
@@ -327,6 +329,8 @@ v2 raw-wasm tier.
 | E — .NET | 140–141 | C#, F# | Compiled (.NET 9) |
 | F — Niche | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) | Mixed |
 | G — Modern | 161–164 | Nim, Crystal, Dart, Julia | Mixed |
+| H — Practical | 170–182 | Racket, Raku, AWK, CoffeeScript, Forth, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC, PowerShell, Pony | Mixed |
+| I — Esoteric | 300–306 | Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium, Paradoc | Interpreted |
 
 JVM-family languages (Batch C) cap the heap via `${jvm_heap_mb}` — Kotlin on
 the `java` command line, Scala/Groovy/Clojure via `JAVA_OPTS` — avoiding the

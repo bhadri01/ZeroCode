@@ -1,8 +1,12 @@
 /*
- * Playground language catalog — Core 7 with sample snippets, accent colors,
- * and offline-demo expected output. Language IDs must match
- * runners/languages.toml so submissions resolve server-side. The API probe
- * replaces `version` with what the server actually reports.
+ * Playground language catalog — the Core 7 plus every batch language
+ * (A–I), each with a sample snippet, accent color, and offline-demo
+ * expected output. Language IDs must match runners/languages.toml so
+ * submissions resolve server-side. The API probe replaces `version` with
+ * what the server actually reports.
+ *
+ * raw-wasm (id 200) is intentionally absent — it takes a pre-compiled
+ * `.wasm` blob, not editable source, so it has no playground starter.
  */
 
 export type Family = 'py' | 'c' | 'rb' | 'hs' | 'sh';
@@ -634,6 +638,204 @@ println(n, " squared = ", n * n)
 `,
     sampleStdin: '7\n', output: ['7 squared = 49'],
     metrics: { time: 0.3, memory: 50.0, exit: 0 },
+  },
+
+  // ── Batch H — practical parity w/ Piston ─────────────────────────────
+  {
+    id: 170, name: 'Racket', version: '8.x', ext: 'rkt', family: 'hs', core: false,
+    accent: '#3E5BA9', cm: 'scheme',
+    snippet: `#lang racket
+;; Read an integer from stdin and print its square.
+(define n (string->number (string-trim (read-line))))
+(printf "~a squared = ~a\\n" n (* n n))
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.4, memory: 90.0, exit: 0 },
+  },
+  {
+    id: 171, name: 'Raku', version: 'rakudo', ext: 'raku', family: 'rb', core: false,
+    accent: '#C7407A', cm: 'perl',
+    snippet: `# Read an integer from stdin and print its square.
+my $n = get.Int;
+say "$n squared = { $n * $n }";
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.3, memory: 70.0, exit: 0 },
+  },
+  {
+    id: 172, name: 'AWK', version: 'gawk', ext: 'awk', family: 'sh', core: false,
+    accent: '#1E8FA8', cm: 'shell',
+    snippet: `# Read an integer from stdin and print its square.
+{ print $1, "squared =", $1 * $1 }
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.01, memory: 2.0, exit: 0 },
+  },
+  {
+    id: 173, name: 'CoffeeScript', version: '2.x', ext: 'coffee', family: 'c', core: false,
+    accent: '#6F4E37', cm: 'plaintext',
+    snippet: `# Read an integer from stdin and print its square.
+fs = require 'fs'
+n = parseInt fs.readFileSync(0, 'utf8').trim(), 10
+console.log "#{n} squared = #{n * n}"
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.18, memory: 40.0, exit: 0 },
+  },
+  {
+    id: 174, name: 'Forth', version: 'gforth', ext: 'fth', family: 'c', core: false,
+    accent: '#C24A2B', cm: 'plaintext',
+    snippet: `\\ Compute and print 7 squared.
+: main  7 dup 0 .r ."  squared = " dup * 0 .r cr ;
+main
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.01, memory: 2.0, exit: 0 },
+  },
+  {
+    id: 176, name: 'Emacs Lisp', version: 'emacs', ext: 'el', family: 'hs', core: false,
+    accent: '#7F5AB6', cm: 'scheme',
+    snippet: `;; Read an integer from stdin and print its square.
+(let ((n (string-to-number (read-from-minibuffer ""))))
+  (princ (format "%d squared = %d\\n" n (* n n))))
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.3, memory: 30.0, exit: 0 },
+  },
+  {
+    id: 177, name: 'Verilog', version: 'iverilog', ext: 'v', family: 'c', core: false,
+    accent: '#1EA64A', cm: 'plaintext',
+    snippet: `module main;
+  integer n;
+  initial begin
+    n = 7;
+    $display("%0d squared = %0d", n, n * n);
+  end
+endmodule
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.05, memory: 6.0, exit: 0 },
+  },
+  {
+    id: 178, name: 'LLVM IR', version: 'lli', ext: 'll', family: 'c', core: false,
+    accent: '#2C6FBB', cm: 'asm',
+    snippet: `; Print "7 squared = 49" via libc printf.
+@.s = private unnamed_addr constant [16 x i8] c"7 squared = %d\\0A\\00"
+declare i32 @printf(ptr, ...)
+define i32 @main() {
+  %r = call i32 (ptr, ...) @printf(ptr @.s, i32 49)
+  ret i32 0
+}
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.05, memory: 8.0, exit: 0 },
+  },
+  {
+    id: 179, name: 'V', version: '0.4.x', ext: 'v', family: 'c', core: false,
+    accent: '#5D87BF', cm: 'go',
+    snippet: `import os
+
+fn main() {
+	n := os.input('').int()
+	println('\${n} squared = \${n * n}')
+}
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.02, memory: 3.0, exit: 0 },
+  },
+  {
+    id: 180, name: 'FreeBASIC', version: '1.x', ext: 'bas', family: 'c', core: false,
+    accent: '#1D4E89', cm: 'plaintext',
+    snippet: `Dim s As String
+Line Input s
+Dim n As Integer = Val(s)
+Print n & " squared = " & (n * n)
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.01, memory: 2.0, exit: 0 },
+  },
+  {
+    id: 181, name: 'PowerShell', version: '7.x', ext: 'ps1', family: 'sh', core: false,
+    accent: '#5391FE', cm: 'shell',
+    snippet: `# Read an integer from stdin and print its square.
+$n = [int][Console]::In.ReadLine()
+Write-Output "$n squared = $($n * $n)"
+`,
+    sampleStdin: '7\n', output: ['7 squared = 49'],
+    metrics: { time: 0.5, memory: 70.0, exit: 0 },
+  },
+  {
+    id: 182, name: 'Pony', version: 'ponyc', ext: 'pony', family: 'c', core: false,
+    accent: '#B05CF0', cm: 'plaintext',
+    snippet: `actor Main
+  new create(env: Env) =>
+    let n: I64 = 7
+    env.out.print(n.string() + " squared = " + (n * n).string())
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.02, memory: 3.0, exit: 0 },
+  },
+
+  // ── Batch I — esoteric / code-golf (best-effort) ─────────────────────
+  {
+    id: 300, name: 'Brainfuck', version: 'bf', ext: 'bf', family: 'c', core: false,
+    accent: '#6B5B95', cm: 'plaintext',
+    snippet: `++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>
+---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
+`,
+    sampleStdin: '', output: ['Hello World!'],
+    metrics: { time: 0.01, memory: 1.6, exit: 0 },
+  },
+  {
+    id: 301, name: 'GolfScript', version: '1.0', ext: 'gs', family: 'rb', core: false,
+    accent: '#4A8C4A', cm: 'plaintext',
+    snippet: `# The stack is printed at exit.
+"7 squared = "7 7*
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.06, memory: 8.0, exit: 0 },
+  },
+  {
+    id: 302, name: 'CJam', version: '0.6.x', ext: 'cjam', family: 'c', core: false,
+    accent: '#C0703A', cm: 'plaintext',
+    snippet: `"7 squared = "7 7*
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.3, memory: 40.0, exit: 0 },
+  },
+  {
+    id: 303, name: 'Vyxal', version: '2.x', ext: 'vy', family: 'py', core: false,
+    accent: '#7D5BA6', cm: 'plaintext',
+    snippet: `\`7 squared = 49\`
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.3, memory: 30.0, exit: 0 },
+  },
+  {
+    id: 304, name: 'Jelly', version: '0.x', ext: 'jelly', family: 'py', core: false,
+    accent: '#C13B8A', cm: 'plaintext',
+    snippet: `7²
+`,
+    sampleStdin: '', output: ['49'],
+    metrics: { time: 0.3, memory: 30.0, exit: 0 },
+  },
+  {
+    id: 305, name: 'Samarium', version: '0.x', ext: 'sm', family: 'py', core: false,
+    accent: '#C0392B', cm: 'plaintext',
+    snippet: `=> * {
+    "Hello, World!"!;
+}
+`,
+    sampleStdin: '', output: ['Hello, World!'],
+    metrics: { time: 0.3, memory: 30.0, exit: 0 },
+  },
+  {
+    id: 306, name: 'Paradoc', version: '0.x', ext: 'prdc', family: 'py', core: false,
+    accent: '#2C8C99', cm: 'plaintext',
+    snippet: `"7 squared = 49"
+`,
+    sampleStdin: '', output: ['7 squared = 49'],
+    metrics: { time: 0.3, memory: 30.0, exit: 0 },
   },
 ];
 

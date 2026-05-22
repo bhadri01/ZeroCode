@@ -37,9 +37,9 @@ LISTEN/NOTIFY-dispatched worker pool, and a built-in browser playground.
 
 ## Supported languages
 
-41 languages ship today, each with a stable numeric ID so existing
+60 languages ship today, each with a stable numeric ID so existing
 self-hosted-sandbox clients (Judge0-shaped) drop in by ID alone. The
-**Core 7** below are the primary, most-tuned targets; **Batches A–G** add 33
+**Core 7** below are the primary, most-tuned targets; **Batches A–I** add 52
 more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 
 | ID | Language | Version       | Type             |
@@ -53,7 +53,7 @@ more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 | 62 | Java     | OpenJDK 21 LTS| javac → java     |
 
 <details>
-<summary><strong>Batches A–G</strong> (33 more languages)</summary>
+<summary><strong>Batches A–I</strong> (52 more languages)</summary>
 
 | Batch | IDs | Languages |
 |-------|-----|-----------|
@@ -64,6 +64,8 @@ more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 | E — .NET               | 140–141 | C#, F# |
 | F — niche              | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) |
 | G — modern             | 161–164 | Nim, Crystal, Dart, Julia |
+| H — practical          | 170–182 | Racket, Raku, AWK, CoffeeScript, Forth, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC, PowerShell, Pony |
+| I — esoteric / golf    | 300–306 | Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium, Paradoc |
 | v2 — WASM tier         | 200     | raw-wasm (pre-compiled `.wasm`, runs under WasmSandbox) |
 
 </details>
@@ -165,7 +167,7 @@ ZeroCode/
 │   └── zerocode-worker/          # Job consumer + sandbox executor
 │
 ├── runners/                      # Sandbox rootfs (language toolchains)
-│   ├── Dockerfile                # Full Core 7 image (~1.2 GB)
+│   ├── Dockerfile                # Full image — all 60 language toolchains
 │   ├── Dockerfile.slim           # Per-language slim images
 │   └── languages.toml            # Per-language compile/run specs
 │
@@ -179,7 +181,7 @@ ZeroCode/
 │   └── docs/                     # User docs site (Astro + Starlight)
 │
 ├── migrations/                   # sqlx SQL migrations
-├── tests/edge_cases/             # 71+ adversarial integration tests
+├── tests/edge_cases/             # 130+ adversarial integration tests
 ├── scripts/                      # Build / smoke-test / load-test helpers
 └── docs/                         # Internal documentation
     ├── ARCHITECTURE.md           # System design
@@ -242,7 +244,7 @@ cargo clippy --workspace -- -D warnings
 cargo fmt --all
 ```
 
-Coverage today: 71+ edge-case tests targeting infinite loops, memory
+Coverage today: 130+ edge-case tests targeting infinite loops, memory
 bombs, fork bombs, output floods, sandbox-escape attempts (symlink,
 ptrace, mount), signal handling, and per-language runtime quirks.
 

@@ -246,6 +246,79 @@ run 164 Julia   <<'SRC'
 println("hello")
 SRC
 
+run 170 Racket       <<'SRC'
+#lang racket
+(displayln "hello")
+SRC
+run 171 Raku         <<'SRC'
+say "hello";
+SRC
+run 172 AWK          <<'SRC'
+BEGIN { print "hello" }
+SRC
+run 173 CoffeeScript <<'SRC'
+console.log "hello"
+SRC
+run 174 Forth        <<'SRC'
+." hello" cr
+SRC
+run 176 "Emacs Lisp" <<'SRC'
+(princ "hello\n")
+SRC
+run 177 Verilog      <<'SRC'
+module main;
+  initial $display("hello");
+endmodule
+SRC
+run 178 "LLVM IR"    <<'SRC'
+@.s = private unnamed_addr constant [6 x i8] c"hello\00"
+declare i32 @puts(ptr)
+define i32 @main() {
+  call i32 @puts(ptr @.s)
+  ret i32 0
+}
+SRC
+run 179 V            <<'SRC'
+fn main() {
+	println('hello')
+}
+SRC
+run 180 FreeBASIC    <<'SRC'
+Print "hello"
+SRC
+run 181 PowerShell   <<'SRC'
+Write-Output "hello"
+SRC
+run 182 Pony         <<'SRC'
+actor Main
+  new create(env: Env) =>
+    env.out.print("hello")
+SRC
+
+run 300 Brainfuck "Hello World!" <<'SRC'
+++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
+SRC
+run 301 GolfScript <<'SRC'
+"hello"
+SRC
+run 302 CJam       <<'SRC'
+"hello"
+SRC
+run 303 Vyxal      <<'SRC'
+`hello`
+SRC
+run 304 Jelly "49" <<'SRC'
+7²
+SRC
+run 305 Samarium   <<'SRC'
+=> * {
+    "hello"!;
+}
+SRC
+run 306 Paradoc    <<'SRC'
+"hello"
+SRC
+
 hr
 printf "${BOLD}PASS ${GREEN}%d${RESET}${BOLD}   FAIL ${RED}%d${RESET}${BOLD}   total CPU %ss${RESET}\n" \
   "$PASS" "$FAIL" "$TOTAL_CPU"

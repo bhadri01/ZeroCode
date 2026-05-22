@@ -22,9 +22,10 @@
 #   Batch E: C#, F#   (.NET 9 SDK)
 #   Batch F: COBOL (gnucobol), Prolog (swipl), Swift, Octave, SQL (sqlite3)
 #   Batch G: Nim, Crystal, Dart, Julia  (Zig removed — sandbox tmpfs EXDEV)
-#   Batch H: Racket, Raku, AWK (gawk), CoffeeScript, Forth (gforth), Smalltalk
-#            (gst), Emacs Lisp, Verilog (iverilog), LLVM IR (lli), V, FreeBASIC,
-#            PowerShell, Pony   (tarball toolchains marked VALIDATE)
+#   Batch H: Racket, Raku, AWK (gawk), CoffeeScript, Forth (gforth, pinned from
+#            bookworm), Emacs Lisp, Verilog (iverilog), LLVM IR (lli), V,
+#            FreeBASIC, PowerShell, Pony   (tarball toolchains marked VALIDATE)
+#            [Smalltalk dropped — gnu-smalltalk removed from Debian; id 175 unused]
 #   Batch I: Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium, Paradoc
 #            (esoteric / code-golf — best-effort, all marked VALIDATE)
 #   v2     : raw-wasm runs in-process via wasmtime — no toolchain needed here.
@@ -309,10 +310,22 @@ RUN gcc -c -fPIC -O2 \
 # build loudly; confirm on a real build before relying on them.
 # =====================================================================
 
-# ---- apt: Racket, Raku, AWK, Forth, Smalltalk, Emacs (batch), Verilog, LLVM ----
+# ---- apt: Racket, Raku, AWK, Emacs (batch), Verilog, LLVM ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        racket rakudo gawk gforth gnu-smalltalk emacs-nox iverilog llvm \
+        racket rakudo gawk emacs-nox iverilog llvm \
     && rm -rf /var/lib/apt/lists/*
+
+# ---- Bookworm-pinned packages (both dropped from trixie): gforth (Forth, id
+#      174) and libtinfo5 (the FreeBASIC `fbc` binary links libtinfo.so.5 with
+#      ncurses-5 versioned symbols; trixie only ships ncurses 6). Both verified
+#      to install + run cleanly on the trixie base. The bookworm source +
+#      preference are removed afterwards so later apt steps stay on trixie. ----
+RUN echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list.d/bookworm.list \
+    && printf 'Package: *\nPin: release n=trixie\nPin-Priority: 700\n\nPackage: gforth gforth-lib gforth-common libtinfo5\nPin: release n=bookworm\nPin-Priority: 750\n' > /etc/apt/preferences.d/bookworm \
+    && apt-get update && apt-get install -y --no-install-recommends gforth libtinfo5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/apt/sources.list.d/bookworm.list /etc/apt/preferences.d/bookworm \
+    && gforth -e bye
 
 # ---- CoffeeScript (id 173) — npm global, runs on Node (Core 7) ----
 RUN npm install -g coffeescript && npm cache clean --force
@@ -334,14 +347,18 @@ RUN curl -fsSL "https://downloads.sourceforge.net/fbc/FreeBASIC-${FBC_VERSION}-l
     && fbc --version
 
 # ---- PowerShell (id 181) — Microsoft release tarball ----  [VALIDATE: x64 only]
+# Installed under /usr/local (NOT /opt): the sandbox's landlock policy only
+# allows read/exec on /bin /etc /lib /usr /var, so an /opt install fails with
+# EACCES at exec time.
 ARG PWSH_VERSION=7.4.6
-RUN apt-get update && apt-get install -y --no-install-recommends libicu76 libssl3 \
+RUN apt-get update && apt-get install -y --no-install-recommends libicu76 libssl3t64 \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /opt/microsoft/powershell/7 \
+    && mkdir -p /usr/local/microsoft/powershell/7 \
     && curl -fsSL "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VERSION}/powershell-${PWSH_VERSION}-linux-x64.tar.gz" -o /tmp/pwsh.tar.gz \
-    && tar -C /opt/microsoft/powershell/7 -xzf /tmp/pwsh.tar.gz \
-    && chmod -R a+rX /opt/microsoft/powershell/7 \
-    && ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh \
+    && tar -C /usr/local/microsoft/powershell/7 -xzf /tmp/pwsh.tar.gz \
+    && chmod -R a+rX /usr/local/microsoft/powershell/7 \
+    && chmod a+x /usr/local/microsoft/powershell/7/pwsh \
+    && ln -sf /usr/local/microsoft/powershell/7/pwsh /usr/local/bin/pwsh \
     && rm /tmp/pwsh.tar.gz \
     && HOME=/tmp pwsh --version
 
@@ -362,8 +379,8 @@ RUN curl -fsSL "https://github.com/ponylang/ponyc/releases/download/${PONYC_VERS
 # relying on them.
 # =====================================================================
 
-# ---- Brainfuck (id 300) — apt ----  [VALIDATE: package name `bf`]
-RUN apt-get update && apt-get install -y --no-install-recommends bf \
+# ---- Brainfuck (id 300) — `beef` interpreter (`bf` isn't packaged in trixie) ----
+RUN apt-get update && apt-get install -y --no-install-recommends beef \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- GolfScript (id 301) — single Ruby file (Ruby from Batch A) ----  [VALIDATE]
@@ -375,18 +392,29 @@ RUN mkdir -p /usr/local/lib/zerocode/golfscript \
 # ---- CJam (id 302) — interpreter jar (JVM from Core 7) ----  [VALIDATE: url]
 ARG CJAM_VERSION=0.6.5
 RUN mkdir -p /usr/local/lib/zerocode/cjam \
-    && curl -fsSL "https://downloads.sourceforge.net/project/cjam/cjam-${CJAM_VERSION}.jar" \
+    && curl -fsSL "https://downloads.sourceforge.net/project/cjam/cjam-${CJAM_VERSION}/cjam-${CJAM_VERSION}.jar" \
          -o /usr/local/lib/zerocode/cjam/cjam.jar \
     && chmod -R a+rX /usr/local/lib/zerocode/cjam
 
-# ---- Python golfing langs: Vyxal, Jelly, Samarium, Paradoc ----  [VALIDATE: names]
+# ---- Python golfing langs ----  [VALIDATE]
+# Vyxal + Samarium are on PyPI. Jelly isn't published to PyPI — install from its
+# GitHub tarball (provides the `jelly` console script). Paradoc has no setup.py,
+# so it's extracted below and reached via PYTHONPATH (set in languages.toml).
 # trixie's Python is externally-managed (PEP 668); --break-system-packages lets
 # pip install into the site-packages the sandbox's python3 reads.
 RUN apt-get update && apt-get install -y --no-install-recommends python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages \
-         vyxal jellylanguage samarium paradoc \
+         vyxal samarium \
+         "https://github.com/DennisMitchell/jellylanguage/archive/refs/heads/master.tar.gz" \
     && (chmod -R a+rX /usr/local/lib/python3* 2>/dev/null || true)
+
+# ---- Paradoc (id 306) — not pip-installable (no setup.py); extract the package
+#      tree under /usr/local (landlock-allowed; /opt is not) and expose it via
+#      PYTHONPATH=/usr/local/lib/paradoc-master (set in languages.toml) ----
+RUN curl -fsSL "https://github.com/betaveros/paradoc/archive/refs/heads/master.tar.gz" \
+      | tar -xz -C /usr/local/lib \
+    && chmod -R a+rX /usr/local/lib/paradoc-master
 
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \

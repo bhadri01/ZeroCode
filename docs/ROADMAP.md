@@ -12,8 +12,9 @@ Legend: `[ ]` planned · `[~]` in progress
   and NativeSandbox (production with cgroups v2, landlock, seccomp,
   pivot_root, capability drop, no-new-privs).
 - **v1.5 — language expansion**: Core 7 (Python, Node, Rust, Go, C, C++,
-  Java) plus 34 additional languages across Batches A–G (interpreted,
-  native GCC family, JVM family, functional/ML, .NET, niche, modern).
+  Java) plus 53 additional languages across Batches A–I (interpreted,
+  native GCC family, JVM family, functional/ML, .NET, niche, modern,
+  Piston-parity practical, and esoteric / code-golf).
 - **Web surface**: embedded landing + playground (Vite + React) and
   Astro/Starlight docs site, served by the API.
 - **Operational**: Prometheus `/metrics`, multi-arch images (amd64 +
@@ -82,9 +83,9 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the version-by-version log.
 
 - **[ ] Extract a shared `zerocode-db` crate** if duplication between
   `api/db.rs` and `worker/db.rs` continues to grow
-- **[ ] Generalise per-language slim runner images** to v1.5 batches
+- **[ ] Generalise per-language slim runner images** to the batch tiers
   (today slim images cover Core 7 only; the full image still bundles
-  every Batch A–G language)
+  every Batch A–I language)
 - **[ ] CI smoke test against a built UI** — `web/` typechecks + builds
   on PR today, but doesn't exercise the assembled bundle against a
   running API

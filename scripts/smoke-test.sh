@@ -166,7 +166,7 @@ else
 fi
 
 # ---- 4d. Languages endpoint ------------------------------------------------
-test_name="GET /v1/languages returns 41+ entries"
+test_name="GET /v1/languages returns 60+ entries"
 response=$(curl -sf -w "\n%{http_code}" \
   -X GET "${API_BASE}/v1/languages" \
   2>&1) || true
@@ -176,7 +176,7 @@ body=$(echo "$response" | sed '$d')
 
 if [[ "$http_code" == "200" ]]; then
   count=$(echo "$body" | jq 'length' 2>/dev/null)
-  if [[ -n "$count" ]] && (( count >= 41 )); then
+  if [[ -n "$count" ]] && (( count >= 60 )); then
     pass "$test_name (got ${count})"
   else
     fail "$test_name" "expected >= 41 entries, got ${count:-null}"

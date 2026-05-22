@@ -240,6 +240,81 @@ check 164 Julia   <<'SRC'
 println("hello")
 SRC
 
+printf "\nBatch H — practical (Piston parity)\n"
+check 170 Racket       <<'SRC'
+#lang racket
+(displayln "hello")
+SRC
+check 171 Raku         <<'SRC'
+say "hello";
+SRC
+check 172 AWK          <<'SRC'
+BEGIN { print "hello" }
+SRC
+check 173 CoffeeScript <<'SRC'
+console.log "hello"
+SRC
+check 174 Forth        <<'SRC'
+." hello" cr
+SRC
+check 176 "Emacs Lisp" <<'SRC'
+(princ "hello\n")
+SRC
+check 177 Verilog      <<'SRC'
+module main;
+  initial $display("hello");
+endmodule
+SRC
+check 178 "LLVM IR"    <<'SRC'
+@.s = private unnamed_addr constant [6 x i8] c"hello\00"
+declare i32 @puts(ptr)
+define i32 @main() {
+  call i32 @puts(ptr @.s)
+  ret i32 0
+}
+SRC
+check 179 V            <<'SRC'
+fn main() {
+	println('hello')
+}
+SRC
+check 180 FreeBASIC    <<'SRC'
+Print "hello"
+SRC
+check 181 PowerShell   <<'SRC'
+Write-Output "hello"
+SRC
+check 182 Pony         <<'SRC'
+actor Main
+  new create(env: Env) =>
+    env.out.print("hello")
+SRC
+
+printf "\nBatch I — esoteric / code-golf (best-effort, VALIDATE)\n"
+check 300 Brainfuck "Hello World!" <<'SRC'
+++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
+SRC
+check 301 GolfScript <<'SRC'
+"hello"
+SRC
+check 302 CJam       <<'SRC'
+"hello"
+SRC
+check 303 Vyxal      <<'SRC'
+`hello`
+SRC
+check 304 Jelly "49" <<'SRC'
+7²
+SRC
+check 305 Samarium   <<'SRC'
+=> * {
+    "hello"!;
+}
+SRC
+check 306 Paradoc    <<'SRC'
+"hello"
+SRC
+
 printf "\n%s===================================%s\n" "$DIM" "$RESET"
 printf "PASS: ${GREEN}%d${RESET}   FAIL: ${RED}%d${RESET}\n" "$PASS" "$FAIL"
 if (( FAIL > 0 )); then

@@ -9,8 +9,9 @@
 #   150–154 v1.5 Batch F:       niche (COBOL, Prolog, Swift, Octave, SQL)
 #   161–164 v1.5 Batch G:       modern (Nim, Crystal, Dart, Julia)  [160 Zig removed]
 #   170–182 Batch H:           practical parity w/ Piston (Racket, Raku, AWK, CoffeeScript,
-#                              Forth, Smalltalk, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC,
+#                              Forth, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC,
 #                              PowerShell, Pony) — tarball toolchains marked VALIDATE
+#                              [175 Smalltalk removed — gnu-smalltalk gone from Debian]
 #   300–306 Batch I:           esoteric / code-golf (Brainfuck, GolfScript, CJam, Vyxal,
 #                              Jelly, Samarium, Paradoc) — best-effort, all VALIDATE
 #   200     v2 WASM tier:       raw-wasm (bring-your-own .wasm, runs under WasmSandbox)
@@ -714,11 +715,13 @@ is_archived = false
 # ======================================================================
 # Batch H — Practical parity with Piston (ids 170–182)
 #
-# apt/npm installs (Racket, Raku, AWK, CoffeeScript, Forth, Smalltalk, Emacs,
-# Verilog, LLVM IR) are high-confidence. The upstream-tarball toolchains (V,
-# FreeBASIC, PowerShell, Pony) follow the Nim/Crystal/Dart/Julia pattern and
-# are marked VALIDATE in runners/Dockerfile — confirm URLs/arch on a real
-# build, and run a sandbox smoke test, before relying on them.
+# apt/npm installs (Racket, Raku, AWK, CoffeeScript, Emacs, Verilog, LLVM IR)
+# are high-confidence; Forth (gforth) is pinned from bookworm (dropped from
+# trixie). The upstream-tarball toolchains (V, FreeBASIC, PowerShell, Pony)
+# follow the Nim/Crystal/Dart/Julia pattern and are marked VALIDATE in
+# runners/Dockerfile — confirm URLs/arch on a real build, and run a sandbox
+# smoke test, before relying on them. (id 175 Smalltalk removed — gnu-smalltalk
+# is no longer in Debian.)
 # ======================================================================
 
 [[language]]
@@ -781,16 +784,8 @@ run_cmd = ["/usr/bin/gforth", "main.fth"]
 env = []
 is_archived = false
 
-[[language]]
-id = 175
-name = "Smalltalk"
-version = "gnu-smalltalk"
-source_file = "main.st"
-compile_cmd = []
-run_cmd = ["/usr/bin/gst", "main.st"]
-env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
-is_archived = false
+# Smalltalk (id 175) removed — gnu-smalltalk was dropped from Debian (not in
+# trixie or bookworm) and has no clean toolchain. id 175 left unused.
 
 [[language]]
 id = 176
@@ -883,9 +878,11 @@ name = "Pony"
 version = "ponyc"
 source_file = "main.pony"
 # ponyc compiles the package directory (/box); -b names the binary. The LLVM
-# backend is CPU/memory heavy. VALIDATE: a single-file program with no external
-# deps compiles offline; corral-style deps would need network (blocked).
-compile_cmd = ["/usr/bin/ponyc", "-b", "prog", "."]
+# backend is CPU/memory heavy. `--link-ldcmd=lld` because ponyc defaults to the
+# `gold` linker, which isn't packaged in trixie (lld ships with the LLVM/clang
+# toolchain). VALIDATE: a single-file program with no external deps compiles
+# offline; corral-style deps would need network (blocked).
+compile_cmd = ["/usr/bin/ponyc", "--link-ldcmd=lld", "-b", "prog", "."]
 run_cmd = ["./prog"]
 env = []
 default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
@@ -907,10 +904,11 @@ is_archived = false
 [[language]]
 id = 300
 name = "Brainfuck"
-version = "bf"
+version = "beef"
 source_file = "main.bf"
 compile_cmd = []
-run_cmd = ["/usr/bin/bf", "main.bf"]
+# `beef` is the Brainfuck interpreter packaged in trixie (`bf` was dropped).
+run_cmd = ["/usr/bin/beef", "main.bf"]
 env = []
 default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
@@ -958,9 +956,10 @@ name = "Jelly"
 version = "0.x"
 source_file = "main.jelly"
 compile_cmd = []
-# `jelly` console script from the `jellylanguage` PyPI package. VALIDATE the
-# subcommand: historically `jelly fromfile <path>`.
-run_cmd = ["/usr/local/bin/jelly", "fromfile", "main.jelly"]
+# `jelly` console script (installed from the jellylanguage GitHub tarball).
+# `fu` = read the program file as UTF-8 (vs `f`, which uses Jelly's code page and
+# mangles multi-byte atoms like `²` written by a UTF-8 editor).
+run_cmd = ["/usr/local/bin/jelly", "fu", "main.jelly"]
 env = [["HOME", "/tmp"]]
 default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
@@ -982,8 +981,11 @@ name = "Paradoc"
 version = "0.x"
 source_file = "main.prdc"
 compile_cmd = []
+# Paradoc isn't pip-installable (no setup.py); the runner image extracts it to
+# /usr/local/lib/paradoc-master (landlock-allowed; /opt is not), reached via
+# PYTHONPATH so `python3 -m paradoc` resolves.
 run_cmd = ["/usr/bin/python3", "-m", "paradoc", "main.prdc"]
-env = [["HOME", "/tmp"]]
+env = [["HOME", "/tmp"], ["PYTHONPATH", "/usr/local/lib/paradoc-master"]]
 default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 

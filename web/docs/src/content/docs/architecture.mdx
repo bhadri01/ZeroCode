@@ -81,7 +81,7 @@ failed before the run phase started."
 |---|---|---|---|
 | `zerocode-service` | distroless static | `deploy/Dockerfile.service` | API + migrate binaries (musl static) + built web bundle at `/srv/web` |
 | `zerocode-worker` | debian-trixie-slim (glibc) | `deploy/Dockerfile.worker` | Worker binary; needs glibc + libseccomp |
-| `zerocode-runner` | debian-trixie-slim | `runners/Dockerfile` | All 41 languages' toolchains — Core 7 (Python 3.13, Node 22, Rust, Go 1.23+, gcc/g++ 14, OpenJDK 21) + Batches A–G (Ruby, PHP, Kotlin, Scala, .NET 9, Swift, Haskell, Crystal, Dart, Julia, …) |
+| `zerocode-runner` | debian-trixie-slim | `runners/Dockerfile` | All 60 languages' toolchains — Core 7 (Python 3.13, Node 22, Rust, Go 1.23+, gcc/g++ 14, OpenJDK 21) + Batches A–I (Ruby, PHP, Kotlin, Scala, .NET 9, Swift, Haskell, Crystal, Dart, Julia, Racket, PowerShell, Brainfuck, …) |
 
 Per-language slim runner variants and a multi-stage `Dockerfile.slim` exist
 in the repo as experimental targets — production deploys today use the
