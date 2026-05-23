@@ -440,12 +440,12 @@ async fn populate_result_cache(state: &AppState, key: &CacheKey, sub: &Submissio
 pub struct CachedSubmissionView {
     pub cached: bool,
     pub status: serde_json::Value,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub stdout: Vec<u8>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub stderr: Vec<u8>,
+    #[serde(skip_serializing_if = "Payload::is_empty")]
+    pub stdout: Payload,
+    #[serde(skip_serializing_if = "Payload::is_empty")]
+    pub stderr: Payload,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub compile_output: Option<Vec<u8>>,
+    pub compile_output: Option<Payload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     pub time: f64,
@@ -458,9 +458,9 @@ impl From<zerocode_cache::CachedOutcome> for CachedSubmissionView {
         Self {
             cached: true,
             status: c.status_json,
-            stdout: c.stdout,
-            stderr: c.stderr,
-            compile_output: c.compile_output,
+            stdout: Payload::from(c.stdout),
+            stderr: Payload::from(c.stderr),
+            compile_output: c.compile_output.map(Payload::from),
             exit_code: c.exit_code,
             time: c.cpu_time,
             wall_time: c.wall_time,
@@ -865,6 +865,14 @@ mod ops_tests {
             obj.get("cached"),
             Some(&serde_json::Value::Bool(true)),
             "CachedSubmissionView must have cached=true",
+        );
+
+        // Regression: cache hits must serialize stdout as a UTF-8 string (like the
+        // fresh path), not a raw byte array `[111,117,116,10]`.
+        assert_eq!(
+            obj.get("stdout"),
+            Some(&serde_json::Value::String("out\n".to_string())),
+            "cached stdout must be a UTF-8 string, not a byte array",
         );
     }
 
