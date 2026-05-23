@@ -68,22 +68,24 @@ env = [
     # install dir from /proc/self/exe, which dies inside chroot'd sandboxes
     # with "go binary is trimmed and GOROOT is not set".
     ["GOROOT", "/usr/local/go"],
-    ["GOCACHE", "/tmp/.go-cache"],
+    # Read-only stdlib build cache baked into the runner image (see
+    # runners/Dockerfile). GOTMPDIR (writable tmpfs) takes the user package's
+    # compile output, so the cache itself need not be writable. -trimpath MUST
+    # match the bake's flags or the content-hash cache keys won't hit.
+    ["GOCACHE", "/var/cache/go-build"],
     ["GOTMPDIR", "/tmp"],
+    ["GOFLAGS", "-trimpath"],
     ["GOMAXPROCS", "1"],
     ["GOMEMLIMIT", "${memory_mb}MiB"],
 ]
-# `go build` of a hello world routinely takes 2–6 s on Docker Desktop's
-# Linux VM (compiler + linker + stdlib link). The default 5 s wall trips
-# this. NaiveSandbox (dev) shares the wall budget between compile and run,
-# so we raise default_limits.wall_time; NativeSandbox (prod) will use the
-# per-phase compile_limits split.
-# NOTE: native applies ONE limit set to compile+run (the per-phase compile_limits
-# split below is not yet wired into NativeSandbox). A cold `go build` of hello
-# world costs ~10 s CPU / ~255 MB in the sandbox, so default_limits must clear
-# that for the compile to succeed — hence the generous CPU/memory here.
-default_limits  = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 384, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
-compile_limits  = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# With the prewarmed read-only stdlib cache (runners/Dockerfile), `go build` of a
+# typical program is ~0.3 s instead of ~11 s, so the old cold-build allowances
+# (15 s CPU / 30 s wall / 384–512 MB) are gone. A warm build of a json+sort
+# program fits in 256 MB at GOMAXPROCS=1.
+# NOTE: native applies ONE limit set to compile+run (per-phase compile_limits is
+# not yet wired into NativeSandbox), so default_limits must cover both phases.
+default_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]

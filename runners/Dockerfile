@@ -416,6 +416,57 @@ RUN curl -fsSL "https://github.com/betaveros/paradoc/archive/refs/heads/master.t
       | tar -xz -C /usr/local/lib \
     && chmod -R a+rX /usr/local/lib/paradoc-master
 
+# =====================================================================
+# Image slimming — drop toolchain components a single-file "compile + run"
+# submission never touches. Placed last so it only DELETES files and never
+# busts a cached toolchain layer above (same philosophy as the late-fixes
+# section). Saves ~1.5 GB, almost all from the Swift toolchain, which ships a
+# full IDE/debugger/package-manager stack on top of the compiler.
+#
+# Kept (do NOT remove): swiftc -> swift-driver, swift-frontend, the bundled
+# clang/lld used for linking, and /usr/local/lib/swift/linux (the runtime libs
+# ./prog resolves at run time). Everything below is IDE tooling (SourceKit/
+# clangd), the LLDB debugger, SwiftPM, the doc compiler, the static-stdlib SDK
+# (languages.toml id 152 links dynamically, no -static-stdlib), and the
+# embedded-Swift cross-compile modules for arm/riscv/wasm targets this x86_64
+# Linux runner can never use. Scala's scala-cli.jar is unused too: id 121
+# compiles with scalac and runs with plain `java` (see languages.toml).
+# A swiftc compile+link smoke test runs afterward so a wrong path fails loudly.
+RUN set -eux \
+    && rm -rf \
+        /usr/local/bin/sourcekit-lsp \
+        /usr/local/bin/clangd \
+        /usr/local/bin/swift-format \
+        /usr/local/bin/docc \
+        /usr/local/bin/swift-package \
+        /usr/local/bin/swift-build-tool \
+        /usr/local/bin/swift-build-sdk-interfaces \
+        /usr/local/bin/lldb \
+        /usr/local/bin/lldb-server \
+        /usr/local/bin/lldb-dap \
+        /usr/local/bin/lldb-argdumper \
+        /usr/local/lib/libsourcekitdInProc.so \
+        /usr/local/lib/liblldb.so* \
+        /usr/local/lib/swift/embedded \
+        /usr/local/lib/swift_static \
+    && rm -f /usr/local/scala3-*/bin/scala-cli.jar \
+    && rm -rf /usr/share/doc/* /usr/share/info/* \
+    && printf 'print("swift slim ok")\n' > /tmp/slimcheck.swift \
+    && swiftc -O -o /tmp/slimcheck /tmp/slimcheck.swift \
+    && rm -f /tmp/slimcheck.swift /tmp/slimcheck
+
+# Pre-warm the Go build cache with the full standard library. A cold `go build`
+# of hello-world recompiles all of stdlib (~11 s, single-threaded under
+# GOMAXPROCS=1); with this warm cache it drops to ~0.3 s. At runtime the sandbox
+# sets GOCACHE=/var/cache/go-build (read-only) and GOTMPDIR=/tmp, so Go reads
+# cached stdlib entries from here and writes the user package's compile output to
+# the writable tmpfs — a read-only cache is sufficient. GOFLAGS here MUST match
+# the runtime build (-trimpath) or the content-hash cache keys won't hit.
+RUN mkdir -p /var/cache/go-build \
+    && GOROOT=/usr/local/go GOCACHE=/var/cache/go-build GOFLAGS=-trimpath \
+       /usr/local/go/bin/go build std \
+    && chmod -R a+rX /var/cache/go-build
+
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \
     chmod 1777 /tmp && \
