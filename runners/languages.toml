@@ -189,6 +189,7 @@ name = "Bash"
 version = "5.x"
 source_file = "main.sh"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/bin/bash", "main.sh"]
 env = []
 is_archived = false
@@ -199,6 +200,7 @@ name = "Lua"
 version = "5.4"
 source_file = "main.lua"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/usr/bin/lua5.4", "main.lua"]
 env = []
 is_archived = false
@@ -209,6 +211,7 @@ name = "Perl"
 version = "5.x"
 source_file = "main.pl"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/usr/bin/perl", "main.pl"]
 env = []
 is_archived = false
@@ -413,7 +416,7 @@ env = [
     # defaults still bound the heap to the cgroup.
     ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
-default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -433,7 +436,7 @@ env = [
     ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
 # Clojure's JVM + runtime classload startup is slow; give it extra CPU/wall.
-default_limits = { cpu_time = 15.0, wall_time = 35.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 15.0, wall_time = 35.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 # ======================================================================
@@ -491,7 +494,7 @@ env = [
     # note) — the per-scheduler reservations dominated the small footprint.
     ["ELIXIR_ERL_OPTIONS", "+S 1:1 +SDcpu 1:1 +SDio 1"],
 ]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -500,6 +503,7 @@ name = "Common Lisp"
 version = "sbcl"
 source_file = "main.lisp"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 96, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/usr/bin/sbcl", "--script", "main.lisp"]
 env = []
 is_archived = false
@@ -578,7 +582,7 @@ env = [
     ["DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK", "1"],
 ]
 # `dotnet fsi` JITs and starts a full .NET runtime — generous startup headroom.
-default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 1536, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 # ======================================================================
@@ -605,6 +609,7 @@ name = "Prolog"
 version = "swipl"
 source_file = "main.pl"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 96, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/usr/bin/swipl", "-q", "-t", "halt", "-f", "main.pl"]
 env = []
 is_archived = false
@@ -642,6 +647,7 @@ name = "SQL"
 version = "sqlite3"
 source_file = "main.sql"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 run_cmd = ["/usr/bin/sqlite3", "-cmd", ".read main.sql"]
 env = []
 is_archived = false
@@ -720,7 +726,7 @@ env = [
     ["JULIA_DEPOT_PATH", "/tmp/.julia"],
 ]
 # Julia's first-run JIT + stdlib precompile is heavy on both CPU and memory.
-default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 1024, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 # ======================================================================
@@ -743,7 +749,7 @@ source_file = "main.rkt"
 compile_cmd = []
 run_cmd = ["/usr/bin/racket", "main.rkt"]
 env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 384, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -755,7 +761,7 @@ compile_cmd = []
 # Rakudo (MoarVM) compiles the program on each run; modest startup headroom.
 run_cmd = ["/usr/bin/raku", "main.raku"]
 env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -764,6 +770,7 @@ name = "AWK"
 version = "gawk"
 source_file = "main.awk"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 # `-f main.awk` runs the program; the submission stdin becomes the data stream.
 run_cmd = ["/usr/bin/gawk", "-f", "main.awk"]
 env = []
@@ -781,7 +788,7 @@ env = [
     ["NODE_NO_WARNINGS", "1"],
     ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
 ]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -790,6 +797,7 @@ name = "Forth"
 version = "gforth"
 source_file = "main.fth"
 compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 # gforth runs the file then would drop into its interactive REPL (printing the
 # startup banner to stdout). `-e bye` evaluates `bye` right after the script so
 # it exits cleanly before the banner — keeps stdout to just the program output.
@@ -811,7 +819,7 @@ compile_cmd = []
 # (00debian.el, 50gforth.el, …) don't print "Loading …" lines to stderr.
 run_cmd = ["/usr/bin/emacs", "--batch", "--no-init-file", "--no-site-file", "--script", "main.el"]
 env = [["HOME", "/tmp"]]
-default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -836,7 +844,7 @@ compile_cmd = []
 # binary (e.g. lli-19) rather than /usr/bin/lli — adjust the path if so.
 run_cmd = ["/usr/bin/lli", "main.ll"]
 env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -884,7 +892,7 @@ env = [
     ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
     ["DOTNET_gcServer", "0"],
 ]
-default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 384, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -927,7 +935,7 @@ compile_cmd = []
 # `beef` is the Brainfuck interpreter packaged in trixie (`bf` was dropped).
 run_cmd = ["/usr/bin/beef", "main.bf"]
 env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 64, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -940,7 +948,7 @@ compile_cmd = []
 # reads the submission stdin as input. Runs on Ruby (Batch A).
 run_cmd = ["/usr/bin/ruby", "/usr/local/lib/zerocode/golfscript/golfscript.rb", "main.gs"]
 env = []
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 96, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -952,7 +960,7 @@ compile_cmd = []
 # Runs the CJam interpreter jar on a JVM (Core 7 Java).
 run_cmd = ["/usr/bin/java", "-jar", "/usr/local/lib/zerocode/cjam/cjam.jar", "main.cjam"]
 env = []
-default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -964,7 +972,7 @@ compile_cmd = []
 # `python3 -m vyxal` — installed from PyPI into the runner image.
 run_cmd = ["/usr/bin/python3", "-m", "vyxal", "main.vy"]
 env = [["HOME", "/tmp"]]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -978,7 +986,7 @@ compile_cmd = []
 # mangles multi-byte atoms like `²` written by a UTF-8 editor).
 run_cmd = ["/usr/local/bin/jelly", "fu", "main.jelly"]
 env = [["HOME", "/tmp"]]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -989,7 +997,7 @@ source_file = "main.sm"
 compile_cmd = []
 run_cmd = ["/usr/local/bin/samarium", "main.sm"]
 env = [["HOME", "/tmp"]]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -1005,7 +1013,7 @@ compile_cmd = []
 # (an invalid `\ ` escape in a docstring) — otherwise it leaks to stderr.
 run_cmd = ["/usr/bin/python3", "-W", "ignore", "-m", "paradoc", "main.prdc"]
 env = [["HOME", "/tmp"], ["PYTHONPATH", "/usr/local/lib/paradoc-master"]]
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 # ======================================================================
