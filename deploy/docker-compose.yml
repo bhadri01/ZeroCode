@@ -88,6 +88,14 @@ services:
       # via env var if you want stricter behaviour.
       ZEROCODE_GOVERNOR_RPS: ${ZEROCODE_GOVERNOR_RPS:-10000}
       ZEROCODE_GOVERNOR_BURST: ${ZEROCODE_GOVERNOR_BURST:-10000}
+      # Connection pools: short-txn query pool + dedicated listener pool for
+      # wait=true / SSE LISTEN connections (so long LISTENs don't starve queries).
+      # Keep query + listener + worker pools under Postgres max_connections (100).
+      ZEROCODE_DB_POOL: ${ZEROCODE_DB_POOL:-24}
+      ZEROCODE_LISTENER_POOL: ${ZEROCODE_LISTENER_POOL:-48}
+      # Load shedding: reject new submissions with 503 + Retry-After once queue
+      # depth exceeds this (sits below the readiness gate of 10000; 0 disables).
+      ZEROCODE_SUBMIT_QUEUE_LIMIT: ${ZEROCODE_SUBMIT_QUEUE_LIMIT:-5000}
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:
@@ -128,8 +136,16 @@ services:
       # this id). Set it explicitly only if you want a stable, named single
       # worker.
       ZEROCODE_RUNNER_ROOTFS: /var/lib/zerocode/runner-rootfs
-      # Per-IP rate limiting lives on the API; per-worker concurrency is bounded
-      # by ZEROCODE_MAX_PARALLEL (defaults to the container's CPU count).
+      # Optional per-worker knobs (uncomment to override the built-in defaults —
+      # do NOT leave them set to an empty string, clap rejects that):
+      #   ZEROCODE_MAX_PARALLEL    bounds job COUNT          (default: CPU count)
+      #   ZEROCODE_MEMORY_BUDGET_MB bounds summed in-flight memory so a burst of
+      #                            heavy JVM/.NET jobs can't OOM the host
+      #                            (default: 60% of MemAvailable)
+      #   ZEROCODE_WORKER_DB_POOL  worker Postgres pool      (default: parallelism + 4)
+      # ZEROCODE_MAX_PARALLEL: "4"
+      # ZEROCODE_MEMORY_BUDGET_MB: "3072"
+      # ZEROCODE_WORKER_DB_POOL: "8"
       RUST_LOG: info,zerocode=debug
     depends_on:
       migrate:

@@ -35,7 +35,9 @@ pub async fn stream(
         return Err(ApiError::NotFound);
     }
 
-    let event_stream = subscribe(state.pool(), token)
+    // LISTEN connection from the dedicated listener pool so long-lived SSE
+    // sessions don't consume query-pool connections.
+    let event_stream = subscribe(state.listener_pool(), token)
         .await
         .map_err(|e| ApiError::Internal(format!("subscribe failed: {e}")))?;
 

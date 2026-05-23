@@ -31,18 +31,26 @@ pub struct Runner {
     sandbox: Arc<dyn Sandbox>,
     compile_cache: Arc<CompileCache>,
     parallelism: Arc<Semaphore>,
+    /// Memory admission: a job reserves `memory_mb` permits here before running,
+    /// so the summed memory cap of concurrent sandboxes can't exceed the budget
+    /// (prevents host OOM under a burst of heavy JVM/.NET jobs). Bounds memory;
+    /// `parallelism` bounds count. Both must clear before a job executes.
+    memory: Arc<Semaphore>,
+    mem_budget: usize,
     shutdown: Arc<tokio::sync::Notify>,
     http_client: reqwest::Client,
     webhook_secret: Arc<String>,
 }
 
 impl Runner {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pool: PgPool,
         worker_id: String,
         languages: LanguageRegistry,
         sandbox: Arc<dyn Sandbox>,
         max_parallel: usize,
+        memory_budget_mb: u32,
         webhook_secret: String,
     ) -> Self {
         let http_client = reqwest::Client::builder()
@@ -52,6 +60,10 @@ impl Runner {
             .expect("build reqwest client");
 
         let compile_cache = Arc::new(CompileCache::new(pool.clone()));
+        // Clamp the budget into Tokio's permit ceiling; never below 1.
+        let mem_budget = (memory_budget_mb as usize)
+            .max(1)
+            .min(Semaphore::MAX_PERMITS);
         Self {
             pool,
             worker_id,
@@ -59,6 +71,8 @@ impl Runner {
             sandbox,
             compile_cache,
             parallelism: Arc::new(Semaphore::new(max_parallel.max(1))),
+            memory: Arc::new(Semaphore::new(mem_budget)),
+            mem_budget,
             shutdown: Arc::new(tokio::sync::Notify::new()),
             http_client,
             webhook_secret: Arc::new(webhook_secret),
@@ -73,6 +87,7 @@ impl Runner {
         tracing::info!(
             worker_id = %self.worker_id,
             parallelism = self.parallelism.available_permits(),
+            memory_budget_mb = self.mem_budget,
             "runner starting"
         );
 
@@ -140,8 +155,19 @@ impl Runner {
             let compile_cache = self.compile_cache.clone();
             let http = self.http_client.clone();
             let secret = self.webhook_secret.clone();
+            let memory = self.memory.clone();
+            let mem_budget = self.mem_budget;
 
             tokio::spawn(async move {
+                // Reserve this job's memory cap before executing. If the budget
+                // is exhausted by other in-flight jobs we wait here (holding the
+                // count permit) until memory frees — bounding peak host memory.
+                // Clamp so a single oversized job can't exceed (and deadlock on)
+                // the whole budget.
+                let want = (claim.limits.memory_mb as usize).clamp(1, mem_budget) as u32;
+                let _mem = memory.acquire_many_owned(want).await.ok();
+                metrics::gauge!("zerocode_sandbox_memory_reserved_mb").increment(want as f64);
+
                 metrics::gauge!("zerocode_active_sandboxes").increment(1.0);
                 let start = Instant::now();
                 let result = process(
@@ -156,6 +182,7 @@ impl Runner {
                 .await;
                 let elapsed = start.elapsed().as_secs_f64();
                 metrics::gauge!("zerocode_active_sandboxes").decrement(1.0);
+                metrics::gauge!("zerocode_sandbox_memory_reserved_mb").decrement(want as f64);
                 metrics::histogram!("zerocode_sandbox_duration_seconds").record(elapsed);
 
                 if let Err(e) = result {
@@ -166,6 +193,7 @@ impl Runner {
                         tracing::error!(error = %write_err, %token, "could not write failure row");
                     }
                 }
+                drop(_mem);
                 drop(permit);
             });
         }

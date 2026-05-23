@@ -120,6 +120,17 @@ pub async fn create(
         }
     }
 
+    // Load shedding: once the queue is saturated, reject genuinely-new work with
+    // 503 + Retry-After rather than letting it pile on unbounded latency. Cache
+    // hits and idempotent retries already returned above, so only fresh
+    // submissions are shed. Threshold (ZEROCODE_SUBMIT_QUEUE_LIMIT) sits below
+    // the readiness gate; 0 disables.
+    let shed_limit = state.submit_queue_limit();
+    if shed_limit > 0 && state.cached_queue_depth() > shed_limit {
+        metrics::counter!("zerocode_submissions_shed_total").increment(1);
+        return Err(ApiError::Backpressure { retry_after_secs: 5 });
+    }
+
     // Insert + notify.
     let token = Token::new();
     let new = NewSubmission {
@@ -141,11 +152,12 @@ pub async fn create(
         .map_err(|e| ApiError::Internal(format!("pg_notify failed: {e}")))?;
     metrics::counter!("zerocode_submissions_created_total", "language_id" => req.language_id.to_string()).increment(1);
 
-    // ?wait=true: hold the connection until the submission finishes or 30s
-    // elapses. Uses LISTEN/NOTIFY so we wake as soon as the worker publishes
-    // the finished event instead of polling.
+    // ?wait=true: block until the submission finishes or 30s elapses. The
+    // LISTEN connection comes from the dedicated listener pool (not the query
+    // pool), so many concurrent waiters don't starve queries; if that pool is
+    // saturated, subscribe fails and we fall back to polling the query pool.
     if params.wait.unwrap_or(false) {
-        if let Some(sub) = wait_for_completion(state.pool(), token).await? {
+        if let Some(sub) = wait_for_completion(state.pool(), state.listener_pool(), token).await? {
             if sub.is_done() {
                 populate_result_cache(&state, &cache_key, &sub).await;
             }
@@ -163,12 +175,27 @@ pub async fn create(
         .into_response())
 }
 
-async fn wait_for_completion(pool: &sqlx::PgPool, token: Token) -> ApiResult<Option<Submission>> {
+async fn wait_for_completion(
+    query_pool: &sqlx::PgPool,
+    listener_pool: &sqlx::PgPool,
+    token: Token,
+) -> ApiResult<Option<Submission>> {
     use tokio_stream::StreamExt;
 
     // Try LISTEN/NOTIFY first — wakes us as soon as the worker publishes
-    // the finished event (sub-5ms latency vs 200ms polling).
-    let listener_result = zerocode_stream::events::subscribe(pool, token).await;
+    // the finished event (sub-5ms latency vs 200ms polling). The LISTEN
+    // connection is taken from the dedicated listener pool.
+    let listener_result = zerocode_stream::events::subscribe(listener_pool, token).await;
+
+    // Race guard: the worker may have published Finished between our INSERT and
+    // the LISTEN taking effect. Do one fetch up front so we don't wait 30s for
+    // an event that already fired.
+    if let Some(sub) = db::fetch_submission(query_pool, token).await? {
+        if sub.is_done() {
+            return Ok(Some(sub));
+        }
+    }
+    let pool = query_pool;
 
     match listener_result {
         Ok(mut stream) => {
@@ -196,7 +223,9 @@ async fn wait_for_completion(pool: &sqlx::PgPool, token: Token) -> ApiResult<Opt
             }
         }
         Err(_) => {
-            // LISTEN failed — fall back to polling.
+            // LISTEN failed (listener pool saturated, or DB hiccup) — degrade
+            // to polling the query pool rather than erroring the request.
+            metrics::counter!("zerocode_wait_listener_fallback_total").increment(1);
             let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
             let mut interval = tokio::time::interval(WAIT_POLL_INTERVAL);
             interval.tick().await;

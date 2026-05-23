@@ -29,6 +29,9 @@ pub enum ApiError {
     #[error("service unavailable")]
     Unavailable,
 
+    #[error("backpressure: submission queue saturated")]
+    Backpressure { retry_after_secs: u64 },
+
     #[error(transparent)]
     Core(#[from] CoreError),
 
@@ -49,6 +52,7 @@ impl ApiError {
             ApiError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ApiError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ApiError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::Backpressure { .. } => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Core(e) => core_status(e),
             ApiError::Db(_) | ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -85,7 +89,15 @@ impl IntoResponse for ApiError {
             _ => json!({ "error": self.to_string() }),
         };
 
-        (status, Json(body)).into_response()
+        let mut resp = (status, Json(body)).into_response();
+        // Tell well-behaved clients when to retry a shed request.
+        if let ApiError::Backpressure { retry_after_secs } = &self {
+            if let Ok(v) = axum::http::HeaderValue::from_str(&retry_after_secs.to_string()) {
+                resp.headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, v);
+            }
+        }
+        resp
     }
 }
 

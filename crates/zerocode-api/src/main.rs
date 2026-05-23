@@ -87,6 +87,24 @@ async fn main() -> Result<()> {
         .await
         .context("seeding language rows")?;
 
+    // Background queue-depth sampler: one cheap COUNT/sec feeds an atomic the
+    // submit hot path reads for load shedding (no per-request COUNT). Exits with
+    // the process on graceful shutdown.
+    {
+        let pool = state.pool().clone();
+        let cell = state.queue_depth_cell();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+            loop {
+                tick.tick().await;
+                if let Ok(d) = db::queue_depth(&pool).await {
+                    cell.store(d, std::sync::atomic::Ordering::Relaxed);
+                    metrics::gauge!("zerocode_queue_depth").set(d as f64);
+                }
+            }
+        });
+    }
+
     let listener = tokio::net::TcpListener::bind(&args.bind)
         .await
         .with_context(|| format!("binding {}", args.bind))?;

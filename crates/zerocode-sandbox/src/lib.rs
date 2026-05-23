@@ -15,6 +15,9 @@ use zerocode_core::{LanguageSpec, ResourceLimits, Signal, Status, Token};
 
 pub mod kernel_check;
 
+/// Compile-artifact (de)serialization for the compile cache — tar pack/unpack.
+pub mod artifact;
+
 #[cfg(feature = "unsafe-naive")]
 pub mod naive;
 

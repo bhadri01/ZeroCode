@@ -38,6 +38,9 @@ bytes = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
+# Compile-artifact cache packs the post-compile /box dir into a tar blob so
+# multi-file outputs (JVM .class/.jar, .NET bin/) cache like single binaries.
+tar = "0.4"
 
 # v2 WASM tier — feature-gated.
 wasmtime = { workspace = true, optional = true }
@@ -47,6 +50,7 @@ wasmtime-wasi = { workspace = true, optional = true }
 # `wat` lets the WasmSandbox unit tests embed inline `.wat` text instead of
 # checking compiled `.wasm` bytes into the repo.
 wat = "1"
+tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 # Linux primitives. macOS dev hosts skip these entirely; the `native` module

@@ -350,13 +350,13 @@ fn run_sandbox_child(
     if let Some(compile_argv) = compile_argv {
         if !compile_argv.is_empty() && !has_cached_binary {
             run_compile_phase(compile_argv, env_strings, compile_wr)?;
-            // Stream the freshly-compiled binary to the parent over the CLOEXEC
-            // artifact pipe, NOW — before execvpe() hands control to user code.
-            // The fd vanishes on exec, so user code can't tamper with what the
-            // parent caches (no cache poisoning) and nothing hits host disk (no
-            // unbounded write). Best-effort: caching is an optimisation, and a
-            // missing /box/prog (e.g. Java emits Main.class) just means no entry.
-            send_artifact(artifact_wr);
+            // Stream the freshly-compiled artifact (a tar of /box minus the
+            // source + stdin) to the parent over the CLOEXEC artifact pipe NOW —
+            // before execvpe() hands control to user code. The fd vanishes on
+            // exec, so user code can't tamper with what the parent caches (no
+            // cache poisoning) and nothing hits host disk. Best-effort: caching
+            // is an optimisation; a pack error just means no cache entry.
+            send_artifact(artifact_wr, source_file);
         }
     }
 
@@ -451,12 +451,15 @@ fn run_compile_phase(
     }
 }
 
-/// Stream the just-compiled `/box/prog` to the parent over the artifact pipe.
-/// Best-effort (caching is an optimisation): a missing binary is silently
-/// skipped, EINTR is retried so the write isn't truncated, and the size is
-/// bounded by the 32 MB `/box` tmpfs the binary lives in.
-fn send_artifact(artifact_wr: &OwnedFd) {
-    let bytes = match std::fs::read("/box/prog") {
+/// Stream the just-compiled artifact (tar of `/box` minus source + stdin) to
+/// the parent over the artifact pipe. Best-effort (caching is an optimisation):
+/// a pack error is silently skipped, EINTR is retried so the write isn't
+/// truncated, and the size is bounded by the `/box` tmpfs + the parent's cap.
+fn send_artifact(artifact_wr: &OwnedFd, source_file: &str) {
+    let bytes = match crate::artifact::pack_dir(
+        std::path::Path::new("/box"),
+        &[source_file, crate::artifact::STDIN_FILE],
+    ) {
         Ok(b) => b,
         Err(_) => return,
     };

@@ -78,12 +78,29 @@ async fn main() -> Result<()> {
         tracing::warn!(error = %e, "could not install subreaper; orphans may leak");
     }
 
+    let parallelism = args.max_parallel.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2)
+    });
+
+    // Pool must cover: 1 long-lived job LISTEN connection + up to `parallelism`
+    // concurrent jobs each doing claim/publish/write queries. The old fixed 4
+    // left only 3 for `parallelism` jobs once the listener took one. Default to
+    // parallelism + 4 of headroom; override with ZEROCODE_WORKER_DB_POOL.
+    let worker_db_pool: u32 = std::env::var("ZEROCODE_WORKER_DB_POOL")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or((parallelism as u32) + 4)
+        .max(4);
+
     let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .acquire_timeout(Duration::from_secs(2))
+        .max_connections(worker_db_pool)
+        .acquire_timeout(Duration::from_secs(5))
         .connect(&args.database_url)
         .await
         .context("connecting to Postgres")?;
+    tracing::info!(worker_db_pool, parallelism, "worker db pool configured");
 
     let languages = load_languages(&args.languages_file)?;
     tracing::info!(count = languages.len(), "loaded language registry");
@@ -92,13 +109,18 @@ async fn main() -> Result<()> {
     // failing fast if the host is missing cgroup v2, landlock, or user namespaces.
     let sandbox = sandbox_select::pick().context("constructing sandbox")?;
 
-    let parallelism = args.max_parallel.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2)
-    });
-
     let webhook_secret = args.webhook_secret.clone().unwrap_or_default();
+
+    // Memory budget for concurrent sandboxes. The CPU-count semaphore bounds how
+    // MANY jobs run; this bounds their summed memory_limit so a burst of heavy
+    // JVM/.NET jobs (256MB–1GB each) can't OOM the host. Defaults to 60% of
+    // MemAvailable; override with ZEROCODE_MEMORY_BUDGET_MB.
+    let memory_budget_mb: u32 = std::env::var("ZEROCODE_MEMORY_BUDGET_MB")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(default_memory_budget_mb);
+    ::metrics::gauge!("zerocode_memory_budget_mb").set(memory_budget_mb as f64);
+    tracing::info!(memory_budget_mb, "sandbox memory budget configured");
 
     let runner = Runner::new(
         pool.clone(),
@@ -106,6 +128,7 @@ async fn main() -> Result<()> {
         languages,
         sandbox,
         parallelism,
+        memory_budget_mb,
         webhook_secret,
     );
     // Lower the worker's OOM score so the kernel preferentially kills sandbox
@@ -172,6 +195,29 @@ async fn main() -> Result<()> {
     tracing::info!(%worker_id, "zerocode-worker stopped cleanly");
     telemetry::shutdown(());
     Ok(())
+}
+
+/// 60% of MemAvailable (MB), floored at 1024. Falls back to 2048 if
+/// /proc/meminfo can't be read (e.g. non-Linux dev host).
+fn default_memory_budget_mb() -> u32 {
+    let avail_kb = std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|s| {
+            s.lines().find_map(|l| {
+                l.strip_prefix("MemAvailable:")?
+                    .split_whitespace()
+                    .next()?
+                    .parse::<u64>()
+                    .ok()
+            })
+        })
+        .unwrap_or(0);
+    let mb = avail_kb / 1024;
+    if mb == 0 {
+        2048
+    } else {
+        ((mb * 6 / 10) as u32).max(1024)
+    }
 }
 
 fn load_languages(path: &std::path::Path) -> Result<LanguageRegistry> {

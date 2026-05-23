@@ -166,17 +166,25 @@ pub fn pivot_into_runner(
     std::fs::copy(scratch_dir.join("stdin"), box_path.join("stdin"))
         .map_err(|e| SandboxError::MountSetup(format!("copy stdin: {e}")))?;
 
-    // 4a. If a cached compile artifact exists, copy it in and mark executable.
+    // 4a. If a cached compile artifact exists, restore it into /box, skipping
+    //     the compile phase. New entries are a tar of the compile outputs
+    //     (handles JVM .class/.jar + .NET bin/); legacy entries are a single raw
+    //     binary, so if untar fails we fall back to writing it as /box/prog.
     let cached = scratch_dir.join("cached_prog");
     if cached.exists() {
-        std::fs::copy(&cached, box_path.join("prog"))
-            .map_err(|e| SandboxError::MountSetup(format!("copy cached binary: {e}")))?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            box_path.join("prog"),
-            std::fs::Permissions::from_mode(0o755),
-        )
-        .map_err(|e| SandboxError::MountSetup(format!("chmod cached binary: {e}")))?;
+        let blob = std::fs::read(&cached)
+            .map_err(|e| SandboxError::MountSetup(format!("read cached artifact: {e}")))?;
+        if crate::artifact::unpack_into(&box_path, &blob).is_err() {
+            // Legacy raw-binary cache entry — restore the single executable.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::write(box_path.join("prog"), &blob)
+                .map_err(|e| SandboxError::MountSetup(format!("write cached binary: {e}")))?;
+            std::fs::set_permissions(
+                box_path.join("prog"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .map_err(|e| SandboxError::MountSetup(format!("chmod cached binary: {e}")))?;
+        }
     }
 
     // NOTE: the compiled binary is NOT exchanged via a file in /box. It used to
