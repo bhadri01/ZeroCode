@@ -1,0 +1,134 @@
+---
+/*
+ * The full 60-language catalog, grouped by batch, each entry showing its
+ * brand icon, stable numeric ID, and toolchain version. Replaces the old
+ * static markdown tables in languages.mdx so every language carries its
+ * real logo. Data + icon markup live in `language-catalog-data.ts`.
+ */
+import { LANGUAGE_CATALOG } from './language-catalog-data';
+import LangIcon from './LangIcon.astro';
+---
+<div class="lang-catalog" role="list">
+  {LANGUAGE_CATALOG.map((group) => (
+    <section class="lc-group">
+      <h3 class="lc-label">
+        <span>{group.label}</span>
+        <span class="lc-count">{group.langs.length}</span>
+      </h3>
+      <div class="lc-grid">
+        {group.langs.map((l) => (
+          <div class="lc-card" role="listitem" style={`--lc:#${l.hex}`}>
+            <span class="lc-ico">
+              <LangIcon svg={l.svg} viewBox={l.viewBox} size={26} title={l.name} />
+            </span>
+            <span class="lc-text">
+              <span class="lc-name">
+                {l.name}
+                <span class="lc-id">{l.id}</span>
+              </span>
+              <span class="lc-meta">{l.note ? `${l.version} · ${l.note}` : l.version}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  ))}
+</div>
+
+<style>
+  .lang-catalog {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    margin-top: 1.25rem;
+  }
+  .lc-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .lc-label {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-2);
+    border: 0;
+  }
+  .lc-count {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--sl-color-gray-3);
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 999px;
+    line-height: 1.4;
+  }
+  .lc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.6rem;
+  }
+  .lc-card {
+    --lc: var(--sl-color-accent);
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.6rem;
+    background: var(--sl-color-black);
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .lc-card:hover {
+    border-color: color-mix(in srgb, var(--lc) 55%, var(--sl-color-gray-5));
+    transform: translateY(-1px);
+  }
+  .lc-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--lc) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--lc) 24%, transparent);
+  }
+  .lc-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .lc-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--sl-color-white);
+    line-height: 1.2;
+  }
+  .lc-id {
+    font-family: var(--sl-font-mono, ui-monospace, monospace);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--sl-color-gray-3);
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.25rem;
+  }
+  .lc-meta {
+    font-family: var(--sl-font-mono, ui-monospace, monospace);
+    font-size: 0.72rem;
+    color: var(--sl-color-gray-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

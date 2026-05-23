@@ -18,9 +18,11 @@ export type CmLang =
   | 'shell' | 'lua' | 'perl' | 'ruby' | 'r' | 'php' | 'pascal' | 'objective-c'
   | 'kotlin' | 'scala' | 'clojure' | 'elixir' | 'scheme' | 'csharp' | 'fsharp'
   | 'swift' | 'sql' | 'dart' | 'julia'
+  // Stock Monaco basic-languages also wired up in Editor.tsx.
+  | 'coffeescript' | 'vb' | 'systemverilog' | 'powershell'
   // Custom Monarch grammars registered in Editor.tsx (no Monaco basic-language).
   | 'asm' | 'ada' | 'erlang' | 'fortran' | 'haskell'
-  | 'cobol' | 'prolog' | 'octave' | 'plaintext';
+  | 'cobol' | 'prolog' | 'octave' | 'forth' | 'pony' | 'plaintext';
 
 export interface Lang {
   id: number;
@@ -516,7 +518,7 @@ IO.puts("#{n} squared = #{n * n}")
   // ── v1.5 Batch E — .NET ─────────────────────────────────────────────
   {
     id: 140, name: 'C#', version: '.NET 9', ext: 'cs', family: 'c', core: false,
-    accent: '#239120', cm: 'csharp',
+    accent: '#9B4F96', cm: 'csharp',
     snippet: `using System;
 
 class Program {
@@ -544,12 +546,17 @@ printfn "%d squared = %d" n (n * n)
     id: 150, name: 'COBOL', version: 'gnucobol', ext: 'cob', family: 'c', core: false,
     accent: '#005CA5', cm: 'cobol',
     snippet: `       IDENTIFICATION DIVISION.
-       PROGRAM-ID. HELLO.
+       PROGRAM-ID. SQUARE.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 N    PIC 9  VALUE 7.
+       01 SQ   PIC 99.
        PROCEDURE DIVISION.
-           DISPLAY "hello from COBOL".
+           COMPUTE SQ = N * N.
+           DISPLAY N " squared = " SQ.
            STOP RUN.
 `,
-    sampleStdin: '', output: ['hello from COBOL'],
+    sampleStdin: '', output: ['7 squared = 49'],
     metrics: { time: 0.01, memory: 1.6, exit: 0 },
   },
   {
@@ -640,7 +647,7 @@ println(n, " squared = ", n * n)
     metrics: { time: 0.3, memory: 50.0, exit: 0 },
   },
 
-  // ── Batch H — practical ─────────────────────────────
+  // ── Batch H — practical ─────────────────────────────────────────────
   {
     id: 170, name: 'Racket', version: '8.x', ext: 'rkt', family: 'hs', core: false,
     accent: '#3E5BA9', cm: 'scheme',
@@ -673,7 +680,7 @@ say "$n squared = { $n * $n }";
   },
   {
     id: 173, name: 'CoffeeScript', version: '2.x', ext: 'coffee', family: 'c', core: false,
-    accent: '#6F4E37', cm: 'plaintext',
+    accent: '#6F4E37', cm: 'coffeescript',
     snippet: `# Read an integer from stdin and print its square.
 fs = require 'fs'
 n = parseInt fs.readFileSync(0, 'utf8').trim(), 10
@@ -684,7 +691,7 @@ console.log "#{n} squared = #{n * n}"
   },
   {
     id: 174, name: 'Forth', version: 'gforth', ext: 'fth', family: 'c', core: false,
-    accent: '#C24A2B', cm: 'plaintext',
+    accent: '#C24A2B', cm: 'forth',
     snippet: `\\ Compute and print 7 squared.
 : main  7 dup 0 .r ."  squared = " dup * 0 .r cr ;
 main
@@ -704,7 +711,7 @@ main
   },
   {
     id: 177, name: 'Verilog', version: 'iverilog', ext: 'v', family: 'c', core: false,
-    accent: '#1EA64A', cm: 'plaintext',
+    accent: '#1EA64A', cm: 'systemverilog',
     snippet: `module main;
   integer n;
   initial begin
@@ -745,18 +752,18 @@ fn main() {
   },
   {
     id: 180, name: 'FreeBASIC', version: '1.x', ext: 'bas', family: 'c', core: false,
-    accent: '#1D4E89', cm: 'plaintext',
-    snippet: `Dim s As String
-Line Input s
-Dim n As Integer = Val(s)
+    accent: '#1D4E89', cm: 'vb',
+    // Self-contained: fbc's runtime `Line Input` blocks on the sandbox's stdin
+    // pipe (waits for an EOF the runtime mishandles), so the demo hardcodes n.
+    snippet: `Dim n As Integer = 7
 Print n & " squared = " & (n * n)
 `,
-    sampleStdin: '7\n', output: ['7 squared = 49'],
+    sampleStdin: '', output: ['7 squared = 49'],
     metrics: { time: 0.01, memory: 2.0, exit: 0 },
   },
   {
     id: 181, name: 'PowerShell', version: '7.x', ext: 'ps1', family: 'sh', core: false,
-    accent: '#5391FE', cm: 'shell',
+    accent: '#5391FE', cm: 'powershell',
     snippet: `# Read an integer from stdin and print its square.
 $n = [int][Console]::In.ReadLine()
 Write-Output "$n squared = $($n * $n)"
@@ -766,7 +773,7 @@ Write-Output "$n squared = $($n * $n)"
   },
   {
     id: 182, name: 'Pony', version: 'ponyc', ext: 'pony', family: 'c', core: false,
-    accent: '#B05CF0', cm: 'plaintext',
+    accent: '#B05CF0', cm: 'pony',
     snippet: `actor Main
   new create(env: Env) =>
     let n: I64 = 7

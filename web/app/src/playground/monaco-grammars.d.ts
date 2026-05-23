@@ -137,3 +137,23 @@ declare module 'monaco-editor/esm/vs/basic-languages/julia/julia' {
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;
 }
+declare module 'monaco-editor/esm/vs/basic-languages/coffee/coffee' {
+  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
+  export const conf: languages.LanguageConfiguration;
+  export const language: languages.IMonarchLanguage;
+}
+declare module 'monaco-editor/esm/vs/basic-languages/vb/vb' {
+  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
+  export const conf: languages.LanguageConfiguration;
+  export const language: languages.IMonarchLanguage;
+}
+declare module 'monaco-editor/esm/vs/basic-languages/systemverilog/systemverilog' {
+  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
+  export const conf: languages.LanguageConfiguration;
+  export const language: languages.IMonarchLanguage;
+}
+declare module 'monaco-editor/esm/vs/basic-languages/powershell/powershell' {
+  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
+  export const conf: languages.LanguageConfiguration;
+  export const language: languages.IMonarchLanguage;
+}

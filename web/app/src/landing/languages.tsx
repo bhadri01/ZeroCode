@@ -8,7 +8,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { LangIcon, type LangKey } from '../shared/lang-icons';
+import { LangIcon, langKeyFromId, type LangKey } from '../shared/lang-icons';
 import { Reveal, Stagger, StaggerItem } from './motion';
 
 interface CoreLang {
@@ -69,7 +69,7 @@ const BATCHES: { label: string; langs: BatchLang[] }[] = [
     { id: 134, name: 'Common Lisp', accent: '#3FB68B' },
   ] },
   { label: 'E · .NET', langs: [
-    { id: 140, name: 'C#', accent: '#239120' },
+    { id: 140, name: 'C#', accent: '#9B4F96' },
     { id: 141, name: 'F#', accent: '#378BBA' },
   ] },
   { label: 'F · niche', langs: [
@@ -282,13 +282,18 @@ export function LanguageMatrix() {
             <div key={b.label} className="zc-batch">
               <span className="blabel">{b.label}</span>
               <div className="chips">
-                {b.langs.map((l) => (
-                  <span key={l.id} className="zc-chip" style={{ '--g': l.accent } as CSSProperties}>
-                    <span className="cdot" aria-hidden="true" />
-                    {l.name}
-                    <span className="cid">{l.id}</span>
-                  </span>
-                ))}
+                {b.langs.map((l) => {
+                  const lk = langKeyFromId(l.id);
+                  return (
+                    <span key={l.id} className="zc-chip" style={{ '--g': l.accent } as CSSProperties}>
+                      {lk
+                        ? <LangIcon lang={lk} size={14} />
+                        : <span className="cdot" aria-hidden="true" />}
+                      {l.name}
+                      <span className="cid">{l.id}</span>
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ))}

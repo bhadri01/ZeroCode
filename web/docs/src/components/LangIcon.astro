@@ -1,0 +1,26 @@
+---
+/*
+ * Renders a single language brand icon. The SVG inner markup + viewBox
+ * come from `language-catalog-data.ts` (path data from simple-icons, CC0;
+ * the multi-color Python/Java/C/C++ logos are hand-authored, and a few
+ * logo-less languages render a monogram badge). Inner markup is injected
+ * with `set:html` — it is generated, not user-supplied.
+ */
+interface Props {
+  svg: string;
+  viewBox: string;
+  size?: number;
+  title?: string;
+}
+const { svg, viewBox, size = 22, title } = Astro.props;
+---
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox={viewBox}
+  width={size}
+  height={size}
+  role="img"
+  aria-label={title}
+  style="display:block;flex-shrink:0"
+  set:html={svg}
+></svg>

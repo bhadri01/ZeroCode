@@ -62,6 +62,10 @@ import { conf as csharpConf, language as csharpLang } from 'monaco-editor/esm/vs
 import { conf as swiftConf, language as swiftLang } from 'monaco-editor/esm/vs/basic-languages/swift/swift';
 import { conf as sqlConf, language as sqlLang } from 'monaco-editor/esm/vs/basic-languages/sql/sql';
 import { conf as juliaConf, language as juliaLang } from 'monaco-editor/esm/vs/basic-languages/julia/julia';
+import { conf as coffeeConf, language as coffeeLang } from 'monaco-editor/esm/vs/basic-languages/coffee/coffee';
+import { conf as vbConf, language as vbLang } from 'monaco-editor/esm/vs/basic-languages/vb/vb';
+import { conf as sverilogConf, language as sverilogLang } from 'monaco-editor/esm/vs/basic-languages/systemverilog/systemverilog';
+import { conf as powershellConf, language as powershellLang } from 'monaco-editor/esm/vs/basic-languages/powershell/powershell';
 // Bash (cm:'shell'), Assembly, Ada, Erlang, Fortran, Haskell, COBOL, Prolog and
 // Octave have no usable stock grammar — they're hand-written Monarch grammars in
 // registerExtraGrammars() below. (Bash specifically: the stock shell grammar
@@ -204,6 +208,10 @@ function registerExtraGrammars() {
     ['swift', swiftConf, swiftLang, MT],
     ['sql', sqlConf, sqlLang, {}],           // SQL: call coloring only
     ['julia', juliaConf, juliaLang, M],
+    ['coffeescript', coffeeConf, coffeeLang, M],   // CoffeeScript (cm:'coffeescript')
+    ['vb', vbConf, vbLang, {}],                    // backs FreeBASIC (cm:'vb')
+    ['systemverilog', sverilogConf, sverilogLang, {}], // backs Verilog (cm:'systemverilog')
+    ['powershell', powershellConf, powershellLang, M],
   ];
   for (const [id, conf, lang, opts] of STOCK) registerEnhancedLang(id, conf, lang, opts);
   registerEnhancedLang('c', cppConf, cppLang, MT);                  // shares the C++ grammar
@@ -832,6 +840,96 @@ function registerExtraGrammars() {
       sstring: [[/[^']+/, 'string'], [/''/, 'string'], [/'/, 'string', '@pop']],
     },
   });
+
+  // ── Forth ───────────────────────────────────────────────────────────────
+  // Stack language: `\ …` line comments, `( … )` inline comments, `." … "`
+  // print-strings, `: name … ;` definitions (name colored as a type), and a
+  // core word-list. Forth is case-insensitive.
+  monaco.languages.register({ id: 'forth', extensions: ['.fth', '.fs', '.4th', '.forth'], aliases: ['Forth', 'forth'] });
+  monaco.languages.setLanguageConfiguration('forth', {
+    comments: { lineComment: '\\', blockComment: ['(', ')'] },
+    brackets: [['(', ')']],
+  });
+  monaco.languages.setMonarchTokensProvider('forth', {
+    ignoreCase: true,
+    keywords: [
+      'if', 'then', 'else', 'begin', 'until', 'while', 'repeat', 'again', 'do',
+      'loop', '+loop', 'leave', 'case', 'of', 'endof', 'endcase', 'exit', 'recurse',
+      'immediate', 'variable', 'constant', 'create', 'allot', 'value', 'to',
+      'postpone', 'does>', 'cells', 'here', 'dup', 'drop', 'swap', 'over', 'rot',
+      '-rot', 'nip', 'tuck', 'pick', 'roll', 'depth', '2dup', '2drop', '2swap',
+      '2over', 'cr', 'emit', 'space', 'spaces', 'bye', 'abort',
+    ],
+    tokenizer: {
+      root: [
+        [/\\(\s.*)?$/, 'comment'],                       // \ line comment
+        [/\(\s[^)]*\)/, 'comment'],                      // ( inline comment )
+        [/(:)(\s+)(\S+)/, ['keyword', 'white', 'type']], // : name → definition
+        [/;/, 'keyword'],
+        [/(\.\"|s\\?\"|c\"|abort\")/, { token: 'string.quote', next: '@fstring' }],
+        [/[-+]?\$[0-9a-fA-F]+/, 'number.hex'],
+        [/[-+]?\d+(\.\d+)?/, 'number'],
+        [/[a-zA-Z_][\w!?+\-*/=<>.@]*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }],
+        [/\S+/, 'operator'],
+      ],
+      fstring: [
+        [/[^"]+/, 'string'],
+        [/"/, { token: 'string.quote', next: '@pop' }],
+      ],
+    },
+  });
+
+  // ── Pony ────────────────────────────────────────────────────────────────
+  // `//` + `/* */` comments, `"…"` / `"""…"""` strings, Capitalized identifiers
+  // are types, reference-capability + control keywords, `name(` call coloring.
+  monaco.languages.register({ id: 'pony', extensions: ['.pony'], aliases: ['Pony', 'pony'] });
+  monaco.languages.setLanguageConfiguration('pony', {
+    comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+    brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+    autoClosingPairs: [
+      { open: '(', close: ')' }, { open: '[', close: ']' },
+      { open: '{', close: '}' }, { open: '"', close: '"' },
+    ],
+  });
+  monaco.languages.setMonarchTokensProvider('pony', {
+    keywords: [
+      'actor', 'class', 'primitive', 'interface', 'trait', 'struct', 'type', 'use',
+      'var', 'let', 'embed', 'fun', 'be', 'new', 'if', 'then', 'else', 'elseif',
+      'end', 'while', 'do', 'repeat', 'until', 'for', 'in', 'match', 'where', 'try',
+      'with', 'recover', 'consume', 'as', 'is', 'isnt', 'not', 'and', 'or', 'xor',
+      'return', 'error', 'break', 'continue', 'object', 'this', 'iso', 'trn', 'ref',
+      'val', 'box', 'tag',
+    ],
+    tokenizer: {
+      root: [
+        [/\/\/.*$/, 'comment'],
+        [/\/\*/, { token: 'comment', next: '@comment' }],
+        [/"""/, { token: 'string.quote', next: '@tripstring' }],
+        [/"/, { token: 'string.quote', next: '@pstring' }],
+        [/0x[0-9a-fA-F_]+/, 'number.hex'],
+        [/\d[\d_]*(\.\d+)?/, 'number'],
+        [/[A-Z]\w*/, 'type'],                              // Pony types are Capitalized
+        [/[a-z_]\w*(?=\s*\()/, 'function'],                // call site
+        [/[a-zA-Z_]\w*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }],
+        [/[{}()[\]]/, '@brackets'],
+        [/[.,;:]/, 'delimiter'],
+      ],
+      comment: [
+        [/[^/*]+/, 'comment'],
+        [/\*\//, { token: 'comment', next: '@pop' }],
+        [/[/*]/, 'comment'],
+      ],
+      pstring: [
+        [/[^"]+/, 'string'],
+        [/"/, { token: 'string.quote', next: '@pop' }],
+      ],
+      tripstring: [
+        [/[^"]+/, 'string'],
+        [/"""/, { token: 'string.quote', next: '@pop' }],
+        [/"/, 'string'],
+      ],
+    },
+  });
 }
 
 // Format providers. Monaco's `editor.action.formatDocument` is a no-op unless a
@@ -862,6 +960,7 @@ const FORMATTER_LANGUAGE_IDS = [
   'kotlin', 'scala', 'clojure', 'elixir', 'scheme', 'csharp', 'fsharp',
   'swift', 'sql', 'dart', 'julia', 'asm', 'ada', 'erlang', 'fortran',
   'haskell', 'cobol', 'prolog', 'octave',
+  'coffeescript', 'vb', 'systemverilog', 'powershell', 'forth', 'pony',
 ];
 
 function registerFormatters(ids: string[]) {

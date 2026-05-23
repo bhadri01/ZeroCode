@@ -4,132 +4,20 @@ description: The 60 languages ZeroCode supports — IDs, versions, and how to qu
 ---
 
 import { Aside } from '@astrojs/starlight/components';
+import LanguageCatalog from '../../components/LanguageCatalog.astro';
 
 ZeroCode ships **60 languages**: the **Core 7** (the most-tuned, primary
 targets), **52 more** across Batches A–I, and the v2 `raw-wasm` tier. Numeric
 IDs are stable across releases — existing clients only need the integer, not
 the name.
 
-### Core 7
-
-| ID | Name | Version | Runtime kind |
-|---|---|---|---|
-| 48 | C | gcc-14 | compile-then-run |
-| 52 | C++ | g++-14 | compile-then-run |
-| 60 | Go | latest stable (1.23+) | compile-then-run |
-| 62 | Java | OpenJDK 21 (LTS) | javac → java |
-| 63 | Node.js | 22 (LTS) | interpreted (single file) |
-| 71 | Python | 3.13 | interpreted (single file) |
-| 73 | Rust | latest stable | compile-then-run (`-C panic=abort`) |
-
-### Batch A — interpreted
-
-| ID | Name | Version |
-|---|---|---|
-| 100 | Bash | 5.x |
-| 101 | Lua | 5.4 |
-| 102 | Perl | 5.x |
-| 103 | Ruby | 3.x |
-| 104 | R | 4.x |
-| 105 | PHP | 8.x |
-| 106 | TypeScript | tsx (Node) |
-
-### Batch B — compiled (GCC family)
-
-| ID | Name | Version |
-|---|---|---|
-| 110 | Fortran | gfortran-14 |
-| 111 | Pascal | fpc |
-| 112 | D | ldc |
-| 113 | Objective-C | clang |
-| 114 | Assembly | nasm (x86-64) |
-| 115 | Ada | gnat |
-
-### Batch C — JVM
-
-| ID | Name | Version |
-|---|---|---|
-| 120 | Kotlin | 2.x |
-| 121 | Scala | 3.x |
-| 122 | Groovy | 4.x |
-| 123 | Clojure | 1.x |
-
-### Batch D — functional / ML
-
-| ID | Name | Version |
-|---|---|---|
-| 130 | Haskell | ghc |
-| 131 | OCaml | 5.x |
-| 132 | Erlang | OTP 27 |
-| 133 | Elixir | 1.x |
-| 134 | Common Lisp | sbcl |
-
-### Batch E — .NET
-
-| ID | Name | Version |
-|---|---|---|
-| 140 | C# | .NET 9 |
-| 141 | F# | .NET 9 |
-
-### Batch F — niche
-
-| ID | Name | Version |
-|---|---|---|
-| 150 | COBOL | gnucobol |
-| 151 | Prolog | swipl |
-| 152 | Swift | 6.x |
-| 153 | Octave | 9.x |
-| 154 | SQL | sqlite3 |
-
-### Batch G — modern
-
-| ID | Name | Version |
-|---|---|---|
-| 161 | Nim | 2.x |
-| 162 | Crystal | 1.x |
-| 163 | Dart | 3.x |
-| 164 | Julia | 1.x |
-
-### Batch H — practical
-
-| ID | Name | Version |
-|---|---|---|
-| 170 | Racket | 8.x |
-| 171 | Raku | rakudo |
-| 172 | AWK | gawk |
-| 173 | CoffeeScript | 2.x |
-| 174 | Forth | gforth |
-| 176 | Emacs Lisp | emacs (batch) |
-| 177 | Verilog | iverilog |
-| 178 | LLVM IR | lli |
-| 179 | V | 0.4.x |
-| 180 | FreeBASIC | 1.x |
-| 181 | PowerShell | 7.x |
-| 182 | Pony | ponyc |
-
-### Batch I — esoteric / code-golf
-
-| ID | Name | Version |
-|---|---|---|
-| 300 | Brainfuck | bf |
-| 301 | GolfScript | 1.0 |
-| 302 | CJam | 0.6.x |
-| 303 | Vyxal | 2.x |
-| 304 | Jelly | 0.x |
-| 305 | Samarium | 0.x |
-| 306 | Paradoc | 0.x |
-
-### v2 — WASM tier
-
-| ID | Name | Version | Notes |
-|---|---|---|---|
-| 200 | raw-wasm | WASI preview1 | submit a pre-compiled `.wasm` blob; runs under the wasmtime sandbox |
+<LanguageCatalog />
 
 <Aside>
   The runner image bundles every toolchain; the API never invokes them
   directly. The toolchain versions above track upstream stable channels and
   are rebuilt nightly via CI — exact versions in a running cluster come from
-  `/v1/languages` (see below), not this table.
+  `/v1/languages` (see below), not the catalog above.
 </Aside>
 
 ## Querying the live registry
