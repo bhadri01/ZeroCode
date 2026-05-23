@@ -86,7 +86,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(mut req): Json<BatchRequest>,
 ) -> ApiResult<Response> {
-    // Decode base64 payloads (Judge0-compat).
+    // Decode base64 payloads.
     if req.base64_encoded {
         let raw = req.source_code.as_utf8().map_err(|_| {
             ApiError::Validation("base64_encoded source_code must be a UTF-8 string".into())

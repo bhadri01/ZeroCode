@@ -1,5 +1,5 @@
 //! Filesystem isolation via Landlock. Closes the symlink-escape class of
-//! sandbox bugs (Judge0 CVE-2024-28185 / -28189): even if the child resolves
+//! sandbox bugs (CVE-2024-28185 / -28189): even if the child resolves
 //! a symlink that points outside `/box`, the kernel denies the I/O at the
 //! target path, not at the link.
 //!

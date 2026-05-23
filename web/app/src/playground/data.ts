@@ -640,7 +640,7 @@ println(n, " squared = ", n * n)
     metrics: { time: 0.3, memory: 50.0, exit: 0 },
   },
 
-  // ── Batch H — practical parity w/ Piston ─────────────────────────────
+  // ── Batch H — practical ─────────────────────────────
   {
     id: 170, name: 'Racket', version: '8.x', ext: 'rkt', family: 'hs', core: false,
     accent: '#3E5BA9', cm: 'scheme',

@@ -38,7 +38,7 @@ LISTEN/NOTIFY-dispatched worker pool, and a built-in browser playground.
 ## Supported languages
 
 60 languages ship today, each with a stable numeric ID so existing
-self-hosted-sandbox clients (Judge0-shaped) drop in by ID alone. The
+self-hosted-sandbox clients drop in by ID alone. The
 **Core 7** below are the primary, most-tuned targets; **Batches A–I** add 52
 more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 

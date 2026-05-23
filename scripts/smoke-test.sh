@@ -125,7 +125,7 @@ body=$(echo "$response" | sed '$d')
 if [[ "$http_code" == "200" ]]; then
   status=$(echo "$body" | jq -r '.status.id // .status // empty' 2>/dev/null)
   stdout_val=$(echo "$body" | jq -r '.stdout // empty' 2>/dev/null)
-  # status.id == 3 means "Accepted" in Judge0-style status enums
+  # status.id == 3 means "Accepted" in the status enum
   if [[ "$stdout_val" == *"hello zerocode"* ]]; then
     pass "$test_name"
   else

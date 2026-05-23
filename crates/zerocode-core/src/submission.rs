@@ -25,7 +25,7 @@ pub struct SubmissionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callback_url: Option<Url>,
     /// When true, `source_code` and `stdin` are base64-encoded strings.
-    /// The API decodes them before storing. Judge0-compatible convenience.
+    /// The API decodes them before storing. A convenience for binary payloads.
     #[serde(default)]
     pub base64_encoded: bool,
 }

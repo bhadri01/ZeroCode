@@ -14,7 +14,7 @@ Legend: `[ ]` planned · `[~]` in progress
 - **v1.5 — language expansion**: Core 7 (Python, Node, Rust, Go, C, C++,
   Java) plus 53 additional languages across Batches A–I (interpreted,
   native GCC family, JVM family, functional/ML, .NET, niche, modern,
-  Piston-parity practical, and esoteric / code-golf).
+  practical, and esoteric / code-golf).
 - **Web surface**: embedded landing + playground (Vite + React) and
   Astro/Starlight docs site, served by the API.
 - **Operational**: Prometheus `/metrics`, multi-arch images (amd64 +

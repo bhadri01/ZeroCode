@@ -43,7 +43,7 @@ docs are for you.
 | [`DEPLOY.md`](DEPLOY.md) | Operators | Host prereqs, capabilities, cgroup delegation, TLS, troubleshooting |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Contributors | Local-dev workflow, testing, sqlx, tracing, common pitfalls |
 | [`ROADMAP.md`](ROADMAP.md) | Everyone | Forward-looking only — in progress / v2 / v3 / out of scope |
-| [`THREAT_MODEL.md`](THREAT_MODEL.md) | Security reviewers | STRIDE pass, 11-layer defence-in-depth, Judge0 CVE analysis |
+| [`THREAT_MODEL.md`](THREAT_MODEL.md) | Security reviewers | STRIDE pass, 11-layer defence-in-depth, sandbox-escape CVE analysis |
 | [`../README.md`](../README.md) | First-time visitors | Repo entry point — what ZeroCode is, supported languages, quick start |
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Contributors | Code style, commit format, PR checklist, security disclosure |
 | [`../CHANGELOG.md`](../CHANGELOG.md) | Everyone | Per-release change log |

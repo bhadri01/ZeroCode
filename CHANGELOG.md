@@ -587,7 +587,7 @@ follow-up work upstream of the sandbox.
   sandbox children under host memory pressure rather than the worker process.
 - **`base64_encoded` on POST**: when `base64_encoded: true` in the request body,
   `source_code` and `stdin` are decoded from base64 strings before validation
-  and storage. Judge0-compatible convenience for binary payloads.
+  and storage. A convenience for binary payloads.
 - **`?base64_encoded=true` on GET**: when set as a query param on
   `GET /v1/submissions/{token}`, all output fields (`stdout`, `stderr`,
   `compile_output`) are returned as base64-encoded strings instead of the
@@ -601,7 +601,7 @@ follow-up work upstream of the sandbox.
 |---|---|---|---|
 | macOS (default features) | 56 | 57 | +1 (retention config_defaults) |
 
-### v1.5 — Judge0 catalog parity (41 languages)
+### v1.5 — language catalog expansion (41 languages)
 
 #### Added
 - **34 new languages** across 7 batches, bringing the total from 7 to 41:
@@ -642,7 +642,7 @@ follow-up work upstream of the sandbox.
   Trust boundary diagram (client -> API -> Postgres -> worker -> sandbox),
   per-category threat enumeration with mitigations traced to source files,
   defense-in-depth layer inventory (11 layers), known v1 limitations (9 items),
-  and analysis of Judge0's three 2024 CVEs (CVE-2024-28185, CVE-2024-28189,
+  and analysis of three 2024 sandbox-escape CVEs (CVE-2024-28185, CVE-2024-28189,
   CVE-2024-29021) with structural mitigation explanations.
 - **`docs/DEPLOY.md`** (494 lines) -- production deployment guide. Host
   requirement checks with copy-pasteable commands (kernel version, cgroup v2,
@@ -962,7 +962,7 @@ follow-up work upstream of the sandbox.
 - **User-namespace UID/GID mapping** (`native/userns.rs`): parent writes
   `/proc/<child>/uid_map`, `gid_map`, and `setgroups=deny` after the child
   enters `CLONE_NEWUSER`. In-container UID 0 maps to the unprivileged worker
-  UID. **Structurally blocks** the Judge0 CVE-2024-28189 chown-bypass class —
+  UID. **Structurally blocks** the CVE-2024-28189 chown-bypass class —
   there's no mapping for arbitrary host UIDs.
 - **Mount-namespace hardening** (`native/mounts.rs`): `mount("/", MS_PRIVATE | MS_REC)`
   so subsequent tmpfs mounts don't propagate to the host; tmpfs on `/tmp`
@@ -971,7 +971,7 @@ follow-up work upstream of the sandbox.
 - **Landlock filesystem policy** (`native/landlock_policy.rs`, ABI v1):
   read-only on `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`; read-write
   on the per-submission scratch dir + `/tmp` tmpfs. Symlink targets are
-  enforced at the I/O layer (closes Judge0 CVE-2024-28185 class).
+  enforced at the I/O layer (closes the CVE-2024-28185 class).
 - **Seccomp BPF filter** (`native/seccomp.rs`): allow-by-default with deny
   rules for `io_uring_*`, `bpf`, `userfaultfd`, `ptrace`, `unshare`, `keyctl`,
   `mount`, `umount2`, `pivot_root`, `setns`, `reboot`, `kexec_load`,

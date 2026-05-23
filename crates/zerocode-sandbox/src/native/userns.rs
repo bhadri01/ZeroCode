@@ -6,7 +6,7 @@
 //!
 //! Why this matters:
 //! - `CAP_CHOWN` inside a user namespace can only target UIDs that map into
-//!   that namespace — historical Judge0 CVE-2024-28189 (chown bypass) is
+//!   that namespace — historical CVE-2024-28189 (chown bypass) is
 //!   structurally impossible because there's no mapping for arbitrary UIDs.
 //! - Mount calls inside the child only need namespace-scoped capabilities,
 //!   so we don't need to grant the worker any extra privilege on the host.

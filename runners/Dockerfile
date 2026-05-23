@@ -374,7 +374,7 @@ RUN curl -fsSL "https://github.com/ponylang/ponyc/releases/download/${PONYC_VERS
 # =====================================================================
 # Batch I — Esoteric / code-golf languages (ids 300–306)
 #
-# Best-effort parity with Piston's golfing tier. ALL marked VALIDATE — confirm
+# Best-effort golfing/esoteric tier. ALL marked VALIDATE — confirm
 # package names/entrypoints against a real build + sandbox smoke test before
 # relying on them.
 # =====================================================================

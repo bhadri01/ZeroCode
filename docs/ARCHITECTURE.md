@@ -302,7 +302,7 @@ worker image has no language toolchains.
 Loaded from `runners/languages.toml` at boot. ID space: 1-99 for core v1
 languages; 100-164 for the v1.5 expansion (Batches A-G; id 160 / Zig is
 unused — removed because its compiler can't run in the sandbox); 170-182 for
-Batch H (practical / Piston parity; id 175 / Smalltalk unused — gnu-smalltalk
+Batch H (practical; id 175 / Smalltalk unused — gnu-smalltalk
 was dropped from Debian); 300-306 for Batch I (esoteric / code-golf); 200 for
 the v2 raw-wasm tier.
 

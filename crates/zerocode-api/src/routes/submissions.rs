@@ -38,7 +38,7 @@ pub async fn create(
     headers: HeaderMap,
     Json(mut req): Json<SubmissionRequest>,
 ) -> ApiResult<Response> {
-    // Decode base64-encoded payloads (Judge0 compatibility).
+    // Decode base64-encoded payloads.
     if req.base64_encoded {
         let raw = req.source_code.as_utf8().map_err(|_| {
             ApiError::Validation("base64_encoded source_code must be a UTF-8 string".into())
@@ -579,7 +579,7 @@ pub fn create_doc() {}
     description = "Returns the current state of a submission. Streams stdout/\
                    stderr as UTF-8 strings (when valid) or as `{\"_b64\": \"...\"}` \
                    for binary payloads. Pass `?base64_encoded=true` to force \
-                   base64-encoded plain strings for Judge0 compatibility.",
+                   base64-encoded plain strings.",
     security(("bearer" = [])),
     params(
         ("token" = String, Path, description = "ULID token returned by `POST /v1/submissions`"),

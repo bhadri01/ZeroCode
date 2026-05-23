@@ -83,7 +83,7 @@ pub struct AboutBody {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct LanguageEntry {
-    /// Stable Judge0-compatible numeric ID (e.g. `71` for Python 3.13).
+    /// Stable numeric ID (e.g. `71` for Python 3.13).
     pub id: u32,
     /// Display name, e.g. `"Python"`.
     pub name: String,

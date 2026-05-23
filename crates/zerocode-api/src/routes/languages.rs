@@ -36,7 +36,7 @@ pub async fn list(State(state): State<AppState>) -> ApiResult<Json<Vec<LanguageV
     get, path = "/v1/languages", tag = "languages",
     summary = "List active languages",
     description = "Returns the in-memory language registry the API was started \
-                   with. Stable Judge0-compatible numeric IDs. Bearer auth required.",
+                   with. Stable numeric IDs. Bearer auth required.",
     security(("bearer" = [])),
     responses(
         (status = 200, description = "Active registry", body = crate::openapi::LanguagesBody),

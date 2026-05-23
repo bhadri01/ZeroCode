@@ -4,8 +4,7 @@
 
 ## 1. Overview
 
-ZeroCode is a sandboxed code execution service designed as a replacement for
-Judge0. It accepts untrusted source code over an HTTP API, compiles and runs it
+ZeroCode is a sandboxed code execution service. It accepts untrusted source code over an HTTP API, compiles and runs it
 inside a Linux sandbox, and returns stdout/stderr/exit status.
 
 **Primary adversary**: any authenticated API consumer who submits arbitrary
@@ -269,11 +268,11 @@ opportunity, tracked in [`ROADMAP.md`](ROADMAP.md) where work is planned.
    argument inspection is deferred to a follow-up hardening pass (`seccomp.rs:47`).
 
 
-## 6. CVE Analysis: Judge0 2024 Vulnerabilities
+## 6. Sandbox-escape vulnerability classes (2024 CVEs)
 
 ### CVE-2024-28185: Symlink-based sandbox escape via `/box`
 
-**Judge0 vulnerability**: The sandbox did not restrict symlinks in the submission
+**The vulnerability**: The sandbox did not restrict symlinks in the submission
 directory. An attacker could create a symlink inside `/box` pointing to an
 arbitrary host path (e.g., `/etc/shadow`), and subsequent read/write operations
 followed the symlink to the host filesystem.
@@ -291,7 +290,7 @@ followed the symlink to the host filesystem.
 
 ### CVE-2024-28189: chown-based sandbox escape
 
-**Judge0 vulnerability**: The sandbox allowed `chown` operations that changed
+**The vulnerability**: The sandbox allowed `chown` operations that changed
 file ownership to arbitrary UIDs, enabling privilege escalation by making files
 owned by root accessible.
 
@@ -307,7 +306,7 @@ owned by root accessible.
 
 ### CVE-2024-29021: Network access to internal services (SSRF)
 
-**Judge0 vulnerability**: Sandboxed code could reach internal services on the
+**The vulnerability**: Sandboxed code could reach internal services on the
 Docker network (including the database), enabling SQL injection, metadata
 service access, and data exfiltration via SSRF.
 

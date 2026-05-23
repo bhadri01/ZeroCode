@@ -240,7 +240,7 @@ check 164 Julia   <<'SRC'
 println("hello")
 SRC
 
-printf "\nBatch H — practical (Piston parity)\n"
+printf "\nBatch H — practical\n"
 check 170 Racket       <<'SRC'
 #lang racket
 (displayln "hello")
