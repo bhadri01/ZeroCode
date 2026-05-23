@@ -1,0 +1,8 @@
+(let* ((n (string-to-number (read-from-minibuffer "")))
+       (m 4294967291)
+       (s 0)
+       (i 1))
+  (while (<= i n)
+    (setq s (mod (+ (* s 1000003) i) m))
+    (setq i (1+ i)))
+  (princ (format "%d\n" s)))
