@@ -32,11 +32,6 @@ declare module 'monaco-editor/esm/vs/basic-languages/dart/dart' {
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;
 }
-declare module 'monaco-editor/esm/vs/basic-languages/fsharp/fsharp' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
 declare module 'monaco-editor/esm/vs/basic-languages/python/python' {
   import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
   export const conf: languages.LanguageConfiguration;
@@ -82,37 +77,12 @@ declare module 'monaco-editor/esm/vs/basic-languages/php/php' {
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;
 }
-declare module 'monaco-editor/esm/vs/basic-languages/pascal/pascal' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/objective-c/objective-c' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
 declare module 'monaco-editor/esm/vs/basic-languages/kotlin/kotlin' {
   import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;
 }
 declare module 'monaco-editor/esm/vs/basic-languages/scala/scala' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/clojure/clojure' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/elixir/elixir' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/scheme/scheme' {
   import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;
@@ -128,31 +98,6 @@ declare module 'monaco-editor/esm/vs/basic-languages/swift/swift' {
   export const language: languages.IMonarchLanguage;
 }
 declare module 'monaco-editor/esm/vs/basic-languages/sql/sql' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/julia/julia' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/coffee/coffee' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/vb/vb' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/systemverilog/systemverilog' {
-  import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
-  export const conf: languages.LanguageConfiguration;
-  export const language: languages.IMonarchLanguage;
-}
-declare module 'monaco-editor/esm/vs/basic-languages/powershell/powershell' {
   import type { languages } from 'monaco-editor/esm/vs/editor/editor.api';
   export const conf: languages.LanguageConfiguration;
   export const language: languages.IMonarchLanguage;

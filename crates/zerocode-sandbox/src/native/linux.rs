@@ -52,8 +52,16 @@ pub fn execute(
         None
     };
 
+    // Run-phase memory sampled across the compile→run barrier (compiled langs);
+    // overrides the whole-job memory.peak triage would otherwise report, so the
+    // compiler's transient RSS is excluded. None for interpreted/cache hits.
+    let run_phase_memory_kb = raw.run_phase_memory_kb;
+
     let mut result = triage::classify(raw, &cgroup, cpu_time, wall_elapsed, started_at)?;
     result.compiled_binary = compiled_binary;
+    if let Some(kb) = run_phase_memory_kb {
+        result.memory_kb = kb;
+    }
 
     cgroup.destroy();
     scratch.destroy();

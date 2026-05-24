@@ -28,13 +28,13 @@ This sheet answers two questions:
   interpreted job, ~**3.4 req/s** for a cache-missed C++ compile. Both peak at
   concurrency 4.
 - **The compile cache is the single biggest lever — but only for
-  single-binary compiled languages.** C/Go/Rust/Crystal/… cache the compiled
-  `/box/prog` and drop from a 1–13 s cold compile to **~0.02–0.1 s** warm.
-  **JVM and .NET languages do *not* benefit** (Kotlin, Scala, Clojure, Groovy,
-  C#, F# recompile/respawn on *every* submission) and stay expensive
-  (0.7–5.4 s each) under sustained traffic.
+  single-binary compiled languages.** C/Go/Rust/Swift/Dart cache the compiled
+  `/box/prog` and drop from a 1–9 s cold compile to **~0.02–0.1 s** warm.
+  **JVM and .NET languages do *not* benefit** (Kotlin, Scala, C# recompile/
+  respawn on *every* submission) and stay expensive (0.7–5.4 s each) under
+  sustained traffic.
 - **Memory is the per-job pressure that matters at concurrency.** Most jobs are
-  <60 MB, but JVM/Pony/compile-heavy peaks hit **113–383 MB** — at 4 concurrent
+  <60 MB, but JVM/compile-heavy peaks hit **180–383 MB** — at 4 concurrent
   Kotlin compiles that's ~1.5 GB, which matters on small nodes.
 
 ---
@@ -87,10 +87,8 @@ to populate the compile cache; the **cold-start** column is that first run
 easy/medium/hard columns are **run cost** with the compile cache warm — so the
 gap between *cold-start* and *easy* is exactly what the compile cache saves.
 
-**Esoteric / niche tier.** Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium,
-Paradoc, plus Assembly, COBOL, Prolog, SQL, Forth, Verilog, LLVM IR and Pony
-can't express the scaling loop cleanly, so they're profiled at the easy tier
-only (a fixed "hello"); medium/hard are **N/A**.
+**Niche tier.** SQL can't express the scaling loop cleanly, so it's profiled at
+the easy tier only (a fixed "hello"); its medium/hard columns are **N/A**.
 
 **Saturation sweep.** Each request carries a globally unique source (so it
 misses both the result cache and the compile cache → real sandbox execution),
@@ -122,79 +120,38 @@ the cold-compile peak can dominate).
 | 104 | R | 0.30 | 0.268 | 0.459 | 2.053 | 2.037 | 56 |
 | 105 | PHP | 0.06 | 0.076 | 0.052 | 0.152 | 0.141 | 4 |
 | 106 | TypeScript | 0.97 | 1.035 | 0.962 | 1.182 | 1.166 | 80 |
-| 110 | Fortran | 0.17 | 0.023 | 0.040 | 0.103 | 0.073 | <1 |
-| 111 | Pascal | 0.17 | 0.023 | 0.033 | 0.074 | 0.058 | 1 |
-| 112 | D | 2.08 | 0.027 | 0.032 | 0.076 | 0.054 | 2 |
-| 113 | Objective-C | 0.21 | 0.021 | 0.032 | 0.078 | 0.053 | <1 |
-| 114 | Assembly | 0.06 | 0.057 | N/A | N/A | — | 5 |
-| 115 | Ada | 0.43 | 0.023 | 0.035 | 0.074 | 0.057 | <1 |
 | 120 | Kotlin | 5.74 | 5.281 | 5.195 | 5.409 | 5.385 | 383 |
 | 121 | Scala | 3.88 | 3.538 | 3.497 | 3.575 | 3.550 | 181 |
-| 122 | Groovy | 0.69 | 0.743 | 0.842 | 0.961 | 0.940 | 113 |
-| 123 | Clojure | 1.85 | 2.405 | 2.112 | 2.163 | 2.140 | 203 |
-| 130 | Haskell | 1.14 | 0.044 | 0.049 | 0.094 | 0.069 | 11 |
-| 131 | OCaml | 0.27 | 0.035 | 0.031 | 0.087 | 0.066 | 2 |
-| 132 | Erlang | 1.64 | 1.671 | 1.739 | 1.721 | 0.714 | 54 |
-| 133 | Elixir | 0.49 | 0.468 | 0.468 | 0.590 | 0.576 | 53 |
-| 134 | Common Lisp | 0.06 | 0.045 | 0.058 | 0.138 | 0.121 | 3 |
 | 140 | C# | 0.78 | 0.668 | 0.684 | 0.815 | 0.796 | 42 |
-| 141 | F# | 1.84 | 1.787 | 1.719 | 1.763 | 1.734 | 115 |
-| 150 | COBOL | 0.26 | 0.263 | N/A | N/A | — | 19 |
-| 151 | Prolog | 0.08 | 0.078 | N/A | N/A | — | 8 |
 | 152 | Swift | 1.40 | 0.035 | 0.034 | 0.071 | 0.058 | 1 |
-| 153 | Octave | 0.21 | 0.162 | 2.498 | 24.354 | 23.550 | 9 |
 | 154 | SQL | 0.05 | 0.049 | N/A | N/A | — | 1 |
-| 161 | Nim | 2.83 | 0.060 | 0.043 | 0.111 | 0.075 | 1 |
-| 162 | Crystal | 13.50 | 0.032 | 0.103 | 0.078 | 0.050 | 3 |
 | 163 | Dart | 2.02 | 0.031 | 0.042 | 0.103 | 0.075 | 9 |
-| 164 | Julia | 0.84 | 0.336 | 0.554 | 2.113 | 2.082 | 111 |
-| 170 | Racket | 0.81 | 0.558 | 0.505 | 0.591 | 0.563 | 132 |
-| 171 | Raku | 0.51 | 0.337 | 1.672 | 12.252 | 12.099 | 94 |
-| 172 | AWK | 0.04 | 0.039 | 0.139 | 1.009 | 0.988 | 1 |
-| 173 | CoffeeScript | 0.48 | 0.258 | 0.300 | 0.484 | 0.474 | 24 |
-| 174 | Forth | 0.05 | 0.051 | N/A | N/A | — | 1 |
-| 176 | Emacs Lisp | 0.41 | 0.166 | 0.349 | 2.015 | 1.994 | 17 |
-| 177 | Verilog | 0.10 | 0.096 | N/A | N/A | — | 6 |
-| 178 | LLVM IR | 0.28 | 0.281 | N/A | N/A | — | 66 |
-| 179 | V | 0.28 | 0.032 | 0.035 | 0.076 | 0.059 | 1 |
-| 180 | FreeBASIC | 0.20 | 0.024 | 0.033 | 0.073 | 0.058 | 1 |
-| 181 | PowerShell | 0.64 | 0.622 | 1.756 | 8.983 | 8.882 | 39 |
-| 182 | Pony | 1.15 | 1.150 | N/A | N/A | — | 200 |
-| 300 | Brainfuck | 0.06 | 0.061 | N/A | N/A | — | 4 |
-| 301 | GolfScript | 0.16 | 0.162 | N/A | N/A | — | 18 |
-| 302 | CJam | 0.26 | 0.261 | N/A | N/A | — | 54 |
-| 303 | Vyxal | 0.98 | 0.978 | N/A | N/A | — | 92 |
-| 304 | Jelly | 0.08 | 0.083 | N/A | N/A | — | 7 |
-| 305 | Samarium | 0.12 | 0.121 | N/A | N/A | — | 8 |
-| 306 | Paradoc | 0.17 | 0.174 | N/A | N/A | — | 19 |
 
 ### Reading the table
 
 **Compile cache: huge for binaries, useless for JVM/.NET.** Compare *cold* to
 *easy*:
 
-- **Single-binary compiled** (C, C++, Go, Rust, D, Obj-C, Ada, Fortran, Pascal,
-  Haskell, OCaml, Nim, Crystal, Dart, Swift, V, FreeBASIC): cold compile is
-  0.1–13.5 s but warm runs are **~0.02–0.1 s** — a **100–400× drop**. Crystal
-  (13.5 s → 0.03 s) and Go (9.3 s → 0.03 s) are the extreme cases. After the
-  first submission of a given program, these are effectively free.
-- **JVM** (Kotlin 5.3 s, Scala 3.5 s, Clojure 2.1 s, Groovy 0.9 s) and **.NET**
-  (C# 0.7 s, F# 1.7 s): *easy ≈ cold* — the cache does **not** help. Their
-  compile output isn't the single `/box/prog` the content-addressed cache
-  stores, so every submission re-pays compiler + VM startup. **Under traffic
-  these are permanently expensive.**
+- **Single-binary compiled** (C, C++, Go, Rust, Swift, Dart): cold compile is
+  0.1–9.3 s but warm runs are **~0.02–0.1 s** — a **100–300× drop**. Go
+  (9.3 s → 0.03 s) is the extreme case. After the first submission of a given
+  program, these are effectively free.
+- **JVM** (Kotlin 5.3 s, Scala 3.5 s) and **.NET** (C# 0.7 s): *easy ≈ cold* —
+  the cache does **not** help. Their compile output isn't the single `/box/prog`
+  the content-addressed cache stores, so every submission re-pays compiler + VM
+  startup. **Under traffic these are permanently expensive.**
 
-**Slowest at the heavy tier (hard, wall-s):** Bash 27.2, Octave 24.4, Raku 12.3,
-PowerShell 9.0, Kotlin 5.4, Scala 3.6, Julia 2.1, R 2.1, Emacs Lisp 2.0,
-Python 1.6. Loop-heavy work in shell/array languages is 100–1000× slower than
-compiled — Bash at N=1e7 burns 27 CPU-s where C burns 0.05.
+**Slowest at the heavy tier (hard, wall-s):** Bash 27.2, Kotlin 5.4, Scala 3.6,
+R 2.1, Python 1.6, TypeScript 1.2, Ruby 0.8, C# 0.8. Loop-heavy work in
+shell/array languages is 100–1000× slower than compiled — Bash at N=1e7 burns
+27 CPU-s where C burns 0.05.
 
-**Heaviest memory (peak RSS, MB):** Kotlin 383, Clojure 203, Pony 200,
-Scala 181, Racket 132, F# 115, Groovy 113, Julia 111, TypeScript 80, LLVM IR 66.
-Most everything else is <60 MB; the Core-7 compiled langs are <10 MB at runtime.
+**Heaviest memory (peak RSS, MB):** Kotlin 383, Scala 181, TypeScript 80,
+Java 62, R 56, C# 42. Most everything else is <60 MB; the Core-7 compiled langs
+are <10 MB at runtime.
 
-**Heaviest cold compile (s):** Crystal 13.5, Go 9.3, Kotlin 5.7, Scala 3.9,
-Nim 2.8, D 2.1, Dart 2.0, F# 1.8, Swift 1.4, Pony 1.2, Haskell 1.1, C++ 0.9.
+**Heaviest cold compile (s):** Go 9.3, Kotlin 5.7, Scala 3.9, Dart 2.0,
+Swift 1.4, C++ 0.9, C# 0.8, Rust 0.7.
 
 ---
 

@@ -89,6 +89,21 @@ impl Cgroup {
             .unwrap_or(0)
     }
 
+    /// Reclaim the compile phase's lingering footprint at the compile→run
+    /// boundary (after the compiler sub-child has exited): force-reclaim the
+    /// cgroup's reclaimable memory — chiefly the page cache the compiler
+    /// touched, which stays charged to the cgroup after the process exits — so
+    /// the subsequent run-phase `memory.current` sampling (see `exec.rs`) reads
+    /// the user program's footprint, not the compiler's leftover cache.
+    ///
+    /// It also best-effort resets `memory.peak`, which helps on kernels that
+    /// expose it writable (≥6.8 upstream); on kernels where it is read-only
+    /// (e.g. the deployed 6.8.0 Ubuntu build) that write fails harmlessly and
+    /// the run-phase figure comes entirely from the current-sampling path.
+    pub fn reset_run_baseline(&self) {
+        reset_run_baseline_at(&self.path);
+    }
+
     /// Total CPU time the cgroup consumed since creation.
     pub fn cpu_time(&self) -> Duration {
         let txt = match fs::read_to_string(self.path.join("cpu.stat")) {
@@ -118,6 +133,16 @@ impl Cgroup {
             );
         }
     }
+}
+
+/// Free-function form of [`Cgroup::reset_run_baseline`], usable from a thread
+/// that only holds the cgroup path (the compile→run barrier in `exec.rs`).
+pub fn reset_run_baseline_at(path: &Path) {
+    // Reclaim a large amount; the kernel reclaims as much as it can and any
+    // -EAGAIN remainder is irrelevant — the compiler's page cache is the target.
+    let _ = write_file(&path.join("memory.reclaim"), "1073741824");
+    // Writing any value resets the peak to current usage (kernel ≥6.8).
+    let _ = write_file(&path.join("memory.peak"), "0");
 }
 
 fn write_file(path: &Path, value: &str) -> Result<(), SandboxError> {

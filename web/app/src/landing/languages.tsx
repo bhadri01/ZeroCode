@@ -1,10 +1,9 @@
 /*
  * Languages section.
  *
- * Core 7 as detailed cards (brand icons) + a chip wall of the 52 batch
- * languages (A–I) and the v2 raw-wasm tier — every entry in
- * runners/languages.toml (60 total). Mobile-first: 1 col on small screens,
- * 2 col tablets, 3 col laptops, 4 col wide.
+ * Core 7 as detailed cards (brand icons) + a chip wall of the 13 remaining
+ * supported languages — every entry in runners/languages.toml (20 total).
+ * Mobile-first: 1 col on small screens, 2 col tablets, 3 col laptops, 4 col wide.
  */
 
 import type { CSSProperties } from 'react';
@@ -34,11 +33,11 @@ const KIND_LABEL: Record<CoreLang['kind'], string> = {
   jvm:         'javac · java',
 };
 
-// The 52 batch languages (A–I) + the v2 raw-wasm tier, grouped by batch.
+// The 13 supported languages beyond the Core 7, grouped by paradigm.
 // Accents mirror runners/languages.toml / the playground catalog.
 interface BatchLang { id: number; name: string; accent: string; }
 const BATCHES: { label: string; langs: BatchLang[] }[] = [
-  { label: 'A · interpreted', langs: [
+  { label: 'scripting', langs: [
     { id: 100, name: 'Bash',       accent: '#4EAA25' },
     { id: 101, name: 'Lua',        accent: '#2C2D72' },
     { id: 102, name: 'Perl',       accent: '#39457E' },
@@ -47,69 +46,19 @@ const BATCHES: { label: string; langs: BatchLang[] }[] = [
     { id: 105, name: 'PHP',        accent: '#777BB4' },
     { id: 106, name: 'TypeScript', accent: '#3178C6' },
   ] },
-  { label: 'B · compiled', langs: [
-    { id: 110, name: 'Fortran',     accent: '#734F96' },
-    { id: 111, name: 'Pascal',      accent: '#1A6FB5' },
-    { id: 112, name: 'D',           accent: '#B03931' },
-    { id: 113, name: 'Objective-C', accent: '#438EFF' },
-    { id: 114, name: 'Assembly',    accent: '#6E4C13' },
-    { id: 115, name: 'Ada',         accent: '#0CA14A' },
-  ] },
-  { label: 'C · JVM', langs: [
+  { label: 'JVM', langs: [
     { id: 120, name: 'Kotlin',  accent: '#7F52FF' },
     { id: 121, name: 'Scala',   accent: '#DC322F' },
-    { id: 122, name: 'Groovy',  accent: '#4298B8' },
-    { id: 123, name: 'Clojure', accent: '#5881D8' },
   ] },
-  { label: 'D · functional', langs: [
-    { id: 130, name: 'Haskell',     accent: '#5E5086' },
-    { id: 131, name: 'OCaml',       accent: '#EC6813' },
-    { id: 132, name: 'Erlang',      accent: '#A90533' },
-    { id: 133, name: 'Elixir',      accent: '#4B275F' },
-    { id: 134, name: 'Common Lisp', accent: '#3FB68B' },
-  ] },
-  { label: 'E · .NET', langs: [
+  { label: '.NET', langs: [
     { id: 140, name: 'C#', accent: '#9B4F96' },
-    { id: 141, name: 'F#', accent: '#378BBA' },
   ] },
-  { label: 'F · niche', langs: [
-    { id: 150, name: 'COBOL',  accent: '#005CA5' },
-    { id: 151, name: 'Prolog', accent: '#74283C' },
-    { id: 152, name: 'Swift',  accent: '#F05138' },
-    { id: 153, name: 'Octave', accent: '#0790C0' },
-    { id: 154, name: 'SQL',    accent: '#003B57' },
+  { label: 'native', langs: [
+    { id: 152, name: 'Swift', accent: '#F05138' },
+    { id: 163, name: 'Dart',  accent: '#0175C2' },
   ] },
-  { label: 'G · modern', langs: [
-    { id: 161, name: 'Nim',     accent: '#FFC200' },
-    { id: 162, name: 'Crystal', accent: '#999999' },
-    { id: 163, name: 'Dart',    accent: '#0175C2' },
-    { id: 164, name: 'Julia',   accent: '#9558B2' },
-  ] },
-  { label: 'H · practical', langs: [
-    { id: 170, name: 'Racket',       accent: '#3E5BA9' },
-    { id: 171, name: 'Raku',         accent: '#C7407A' },
-    { id: 172, name: 'AWK',          accent: '#1E8FA8' },
-    { id: 173, name: 'CoffeeScript', accent: '#6F4E37' },
-    { id: 174, name: 'Forth',        accent: '#C24A2B' },
-    { id: 176, name: 'Emacs Lisp',   accent: '#7F5AB6' },
-    { id: 177, name: 'Verilog',      accent: '#1EA64A' },
-    { id: 178, name: 'LLVM IR',      accent: '#2C6FBB' },
-    { id: 179, name: 'V',            accent: '#5D87BF' },
-    { id: 180, name: 'FreeBASIC',    accent: '#1D4E89' },
-    { id: 181, name: 'PowerShell',   accent: '#5391FE' },
-    { id: 182, name: 'Pony',         accent: '#B05CF0' },
-  ] },
-  { label: 'I · esoteric', langs: [
-    { id: 300, name: 'Brainfuck',  accent: '#6B5B95' },
-    { id: 301, name: 'GolfScript', accent: '#4A8C4A' },
-    { id: 302, name: 'CJam',       accent: '#C0703A' },
-    { id: 303, name: 'Vyxal',      accent: '#7D5BA6' },
-    { id: 304, name: 'Jelly',      accent: '#C13B8A' },
-    { id: 305, name: 'Samarium',   accent: '#C0392B' },
-    { id: 306, name: 'Paradoc',    accent: '#2C8C99' },
-  ] },
-  { label: 'v2 · WASM', langs: [
-    { id: 200, name: 'raw-wasm', accent: '#654FF0' },
+  { label: 'data', langs: [
+    { id: 154, name: 'SQL', accent: '#003B57' },
   ] },
 ];
 
@@ -251,7 +200,7 @@ export function LanguageMatrix() {
         <Reveal className="zc-langs-hd">
           <div className="copy">
             <span className="k">languages</span>
-            <h2>The Core 7, plus 53 more. <span className="it">Versioned. Sandboxed.</span></h2>
+            <h2>The Core 7, plus 13 more. <span className="it">Versioned. Sandboxed.</span></h2>
             <p>
               Every toolchain bundled into the runner image — no language
               setup on the host, no per-submission package install. Each
@@ -259,7 +208,7 @@ export function LanguageMatrix() {
               runs in the same cgroups + landlock + seccomp sandbox.
             </p>
           </div>
-          <span className="count">60 shipped today</span>
+          <span className="count">20 shipped today</span>
         </Reveal>
         <Stagger className="zc-langs-grid">
           {CORE7.map((l) => (

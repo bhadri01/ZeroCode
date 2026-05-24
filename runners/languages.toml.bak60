@@ -1,0 +1,1041 @@
+# Language specs loaded by the API/worker at boot. New languages are added
+# here and in `runners/Dockerfile`. ID space (stable numeric IDs):
+#   1–99    Core 7 (v1):        C, C++, Go, Java, Node.js, Python, Rust
+#   100–106 v1.5 Batch A:       interpreted (Bash, Lua, Perl, Ruby, R, PHP, TypeScript)
+#   110–115 v1.5 Batch B:       GCC-family compiled (Fortran, Pascal, D, Obj-C, Assembly, Ada)
+#   120–123 v1.5 Batch C:       JVM (Kotlin, Scala, Groovy, Clojure)
+#   130–134 v1.5 Batch D:       functional/ML (Haskell, OCaml, Erlang, Elixir, Common Lisp)
+#   140–141 v1.5 Batch E:       .NET (C#, F#)
+#   150–154 v1.5 Batch F:       niche (COBOL, Prolog, Swift, Octave, SQL)
+#   161–164 v1.5 Batch G:       modern (Nim, Crystal, Dart, Julia)  [160 Zig removed]
+#   170–182 Batch H:           practical languages (Racket, Raku, AWK, CoffeeScript,
+#                              Forth, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC,
+#                              PowerShell, Pony) — tarball toolchains marked VALIDATE
+#                              [175 Smalltalk removed — gnu-smalltalk gone from Debian]
+#   300–306 Batch I:           esoteric / code-golf (Brainfuck, GolfScript, CJam, Vyxal,
+#                              Jelly, Samarium, Paradoc) — best-effort, all VALIDATE
+#   200     v2 WASM tier:       raw-wasm (bring-your-own .wasm, runs under WasmSandbox)
+#
+# Substitutions available in env values:
+#   ${memory_mb}   the per-submission memory cap, in MB
+#   ${cpu_time}    CPU budget in seconds
+#   ${wall_time}   wall-clock budget in seconds
+#   ${max_pids}    max processes/threads in the cgroup
+#   ${jvm_heap_mb} max(memory_mb − 256, 32) — JVM heap ceiling accounting for
+#                  metaspace, code cache, thread stacks, and GC overhead
+#
+# Compiled languages run two phases inside the same sandbox: compile sub-child
+# first, then if it exits zero the outer process execvpes the run_cmd. A
+# non-zero compile sub-child causes the outer process to exit with the
+# sentinel `253`, which the worker maps to Status::CompileError with the
+# compiler's stderr routed into `compile_output`.
+
+[[language]]
+id = 48
+name = "C"
+version = "gcc-14"
+source_file = "main.c"
+compile_cmd = ["/usr/bin/gcc-14", "-O2", "-std=c17", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2", "main.c", "-o", "prog", "-lm"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 52
+name = "C++"
+version = "g++-14"
+source_file = "main.cpp"
+# `-O0 -pipe` keeps the cold compile of `<iostream>` hello-worlds under
+# 100 ms on Docker Desktop. `-O2` was ~5× slower without measurable
+# benefit for short-lived sandboxed runs. `-pipe` skips the cc1plus →
+# as intermediate temp file. Stack-protector + FORTIFY are dropped here
+# because the sandbox is the real security boundary; reintroduce on a
+# `--profile prod` build of the languages file if needed.
+compile_cmd = ["/usr/bin/g++-14", "-O0", "-pipe", "-std=c++23", "main.cpp", "-o", "prog", "-lm"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 60
+name = "Go"
+version = "1.x-latest"
+source_file = "main.go"
+compile_cmd = ["/usr/local/go/bin/go", "build", "-o", "prog", "main.go"]
+run_cmd = ["./prog"]
+env = [
+    # GOROOT must be set explicitly. Without it, Go falls back to deriving the
+    # install dir from /proc/self/exe, which dies inside chroot'd sandboxes
+    # with "go binary is trimmed and GOROOT is not set".
+    ["GOROOT", "/usr/local/go"],
+    # Read-only stdlib build cache baked into the runner image (see
+    # runners/Dockerfile). GOTMPDIR (writable tmpfs) takes the user package's
+    # compile output, so the cache itself need not be writable. -trimpath MUST
+    # match the bake's flags or the content-hash cache keys won't hit.
+    ["GOCACHE", "/var/cache/go-build"],
+    ["GOTMPDIR", "/tmp"],
+    ["GOFLAGS", "-trimpath"],
+    ["GOMAXPROCS", "1"],
+    ["GOMEMLIMIT", "${memory_mb}MiB"],
+]
+# With the prewarmed read-only stdlib cache (runners/Dockerfile), `go build` of a
+# typical program is ~0.3 s instead of ~11 s, so the old cold-build allowances
+# (15 s CPU / 30 s wall / 384–512 MB) are gone. A warm build of a json+sort
+# program fits in 256 MB at GOMAXPROCS=1.
+# NOTE: native applies ONE limit set to compile+run (per-phase compile_limits is
+# not yet wired into NativeSandbox), so default_limits must cover both phases.
+default_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 62
+name = "Java"
+version = "21"
+source_file = "Main.java"
+# javac's JVM startup is the dominant cost of a Java submission. Two levers:
+#   1. SerialGC (one GC thread) + C1-only JIT (TieredStopAtLevel=1) — fewer
+#      threads contending for the sandbox's single CPU.
+#   2. A prebuilt CDS archive of the compiler's classes (baked into the runner
+#      image at /usr/local/lib/zerocode/javac.jsa) — nearly halves javac
+#      startup (~640 ms -> ~340 ms under 1 CPU).
+# We invoke the compiler via `java -m jdk.compiler/...` (what `javac` wraps) so
+# we can attach `-XX:SharedArchiveFile`. Behaviour + exit codes match `javac`,
+# so compile-error detection is unchanged. If the archive is missing/mismatched
+# the JVM silently ignores it. The archive is regenerated when the JDK changes.
+compile_cmd = [
+    "/usr/bin/java",
+    "-XX:+UseSerialGC",
+    "-XX:TieredStopAtLevel=1",
+    "-XX:SharedArchiveFile=/usr/local/lib/zerocode/javac.jsa",
+    "-m", "jdk.compiler/com.sun.tools.javac.Main",
+    "Main.java",
+]
+# JVM flags go on the command line, not in JAVA_TOOL_OPTIONS — the JVM prints
+# "Picked up JAVA_TOOL_OPTIONS: ..." to stderr whenever that env var is set,
+# which leaks into the user-visible output and there's no flag to silence it.
+# UseSerialGC speeds run-phase startup too (no parallel GC threads at the small
+# heaps we cap to); we keep full tiered JIT on the run so compute-heavy
+# solutions still get C2.
+run_cmd = [
+    "/usr/bin/java",
+    "-XX:+UseSerialGC",
+    "-Xmx${jvm_heap_mb}m",
+    "-Xss512k",
+    "-XX:MaxMetaspaceSize=128m",
+    "-XX:ReservedCodeCacheSize=64m",
+    "-XX:+ExitOnOutOfMemoryError",
+    "Main",
+]
+env = []
+default_limits = { cpu_time = 5.0, wall_time = 15.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 63
+name = "Node.js"
+version = "22"
+source_file = "main.js"
+compile_cmd = []
+run_cmd = ["/usr/bin/node", "main.js"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
+]
+is_archived = false
+
+[[language]]
+id = 71
+name = "Python"
+version = "3.13"
+source_file = "main.py"
+compile_cmd = []
+run_cmd = ["/usr/bin/python3.13", "main.py"]
+env = [
+    ["PYTHONUNBUFFERED", "1"],
+    ["PYTHONDONTWRITEBYTECODE", "1"],
+]
+is_archived = false
+
+[[language]]
+id = 73
+name = "Rust"
+version = "1.x-latest"
+source_file = "main.rs"
+# The runner image installs rustup with RUSTUP_HOME=/usr/local/rustup and
+# CARGO_HOME=/usr/local/cargo (see runners/Dockerfile), so the rustc proxy
+# lives at `/usr/local/cargo/bin/rustc` — there is no `/usr/bin/rustc` symlink.
+# The proxy reads RUSTUP_HOME + CARGO_HOME to locate the toolchain.
+compile_cmd = ["/usr/local/cargo/bin/rustc", "-O", "-C", "panic=abort", "-C", "linker=gcc-14", "main.rs", "-o", "prog"]
+run_cmd = ["./prog"]
+env = [
+    # Rustup needs a toolchain selection — there's no `rustup default` baked
+    # into the runner rootfs. `stable` lets rustup pick whichever stable-*
+    # toolchain is installed (matches the host arch).
+    ["RUSTUP_TOOLCHAIN", "stable"],
+    # Must match the paths the runner image actually used at install time.
+    # Mismatches surface as "no toolchain installed" or "could not read sysroot".
+    ["RUSTUP_HOME", "/usr/local/rustup"],
+    ["CARGO_HOME", "/usr/local/cargo"],
+]
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch A — Interpreted scripting languages
+# ======================================================================
+
+[[language]]
+id = 100
+name = "Bash"
+version = "5.x"
+source_file = "main.sh"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/bin/bash", "main.sh"]
+env = []
+is_archived = false
+
+[[language]]
+id = 101
+name = "Lua"
+version = "5.4"
+source_file = "main.lua"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/usr/bin/lua5.4", "main.lua"]
+env = []
+is_archived = false
+
+[[language]]
+id = 102
+name = "Perl"
+version = "5.x"
+source_file = "main.pl"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/usr/bin/perl", "main.pl"]
+env = []
+is_archived = false
+
+[[language]]
+id = 103
+name = "Ruby"
+version = "3.x"
+source_file = "main.rb"
+compile_cmd = []
+run_cmd = ["/usr/bin/ruby", "main.rb"]
+env = [
+    ["RUBY_GC_HEAP_INIT_SLOTS", "10000"],
+]
+is_archived = false
+
+[[language]]
+id = 104
+name = "R"
+version = "4.x"
+source_file = "main.r"
+compile_cmd = []
+run_cmd = ["/usr/bin/Rscript", "--vanilla", "main.r"]
+env = []
+is_archived = false
+
+[[language]]
+id = 105
+name = "PHP"
+version = "8.x"
+source_file = "main.php"
+compile_cmd = []
+run_cmd = ["/usr/bin/php", "main.php"]
+env = []
+is_archived = false
+
+[[language]]
+id = 106
+name = "TypeScript"
+version = "tsx"
+source_file = "main.ts"
+# tsx is a Node-based TS runner installed globally (npm i -g tsx). Same V8
+# heap/rejection hardening as the Node.js (id 63) entry.
+compile_cmd = []
+run_cmd = ["/usr/local/bin/tsx", "main.ts"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
+]
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch B — Native-compiled, GCC family
+# ======================================================================
+
+[[language]]
+id = 110
+name = "Fortran"
+version = "gfortran-14"
+source_file = "main.f90"
+compile_cmd = ["/usr/bin/gfortran-14", "-O2", "main.f90", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 111
+name = "Pascal"
+version = "fpc"
+source_file = "main.pas"
+# fpc prints its logo + "Compiling/Linking" progress to STDOUT; on a successful
+# compile the sandbox routes compile-phase stderr (not stdout) into
+# compile_output, so that chatter would otherwise land in the program's stdout.
+# `sh -c "… 1>&2"` redirects it to stderr → compile_output, keeping run stdout
+# to just the program's output. `exec` preserves the compile exit code.
+compile_cmd = ["/bin/sh", "-c", "exec /usr/bin/fpc -O2 -oprog main.pas 1>&2"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 112
+name = "D"
+version = "ldc"
+source_file = "main.d"
+compile_cmd = ["/usr/bin/ldc2", "-O2", "-of=prog", "main.d"]
+run_cmd = ["./prog"]
+env = []
+# ldc2 is an LLVM-backed optimizing compile; needs more than the global default.
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 768, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 113
+name = "Objective-C"
+version = "clang"
+source_file = "main.m"
+compile_cmd = ["/usr/bin/clang", "-O2", "-lobjc", "main.m", "-o", "prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 114
+name = "Assembly"
+version = "nasm"
+source_file = "main.asm"
+# Two-step (assemble + link) so it needs a shell. nasm/ld live on PATH.
+compile_cmd = ["/bin/sh", "-c", "nasm -f elf64 main.asm -o prog.o && ld prog.o -o prog"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 115
+name = "Ada"
+version = "gnat"
+source_file = "main.adb"
+compile_cmd = ["/usr/bin/gnatmake", "-O2", "-o", "prog", "main.adb"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch C — JVM family
+#
+# Wrapper-script launchers (scalac/scala, groovy, clojure) can't take JVM
+# flags on the command line the way `java` can, so heap/stack caps go via
+# JAVA_TOOL_OPTIONS. The JVM prints "Picked up JAVA_TOOL_OPTIONS: ..." to
+# stderr when that var is set — accepted here as the price of capping
+# wrapper-launched JVMs (the Core 7 Java entry avoids it via CLI flags).
+# ======================================================================
+
+[[language]]
+id = 120
+name = "Kotlin"
+version = "2.x"
+source_file = "main.kt"
+# `-J` forwards JVM flags to kotlinc itself. kotlinc spins up a full JVM that
+# loads the entire Kotlin compiler, which dominated the submission's peak memory.
+# Cap its heap/metaspace/code-cache and use SerialGC + C1-only JIT (one GC
+# thread, no C2) — the same tuning as the javac compile (id 62).
+compile_cmd = [
+    "/usr/bin/kotlinc",
+    "-J-XX:+UseSerialGC", "-J-XX:TieredStopAtLevel=1",
+    "-J-Xmx512m", "-J-XX:MaxMetaspaceSize=256m", "-J-XX:ReservedCodeCacheSize=64m",
+    "main.kt", "-include-runtime", "-d", "prog.jar",
+]
+# JVM flags on the java command line (not JAVA_TOOL_OPTIONS) so the JVM doesn't
+# print "Picked up JAVA_TOOL_OPTIONS: ..." to stderr. SerialGC + a capped
+# reserved code cache mirror the Java (id 62) run and keep the run footprint
+# small; full tiered JIT is kept so compute-heavy solutions still get C2.
+run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-jar", "prog.jar"]
+env = []
+# NativeSandbox applies default_limits to BOTH compile and run (compile_limits
+# is not yet wired), and `kotlinc -include-runtime` building a fat jar is the
+# slowest compile in the set — so default_limits carries the full headroom.
+default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 121
+name = "Scala"
+version = "3.x"
+source_file = "main.scala"
+compile_cmd = ["/usr/bin/scalac", "main.scala"]
+# Run the compiled class directly with `java`, mirroring the plain-Java entry.
+# We can't use the default Scala 3 `scala` (the Scala-CLI runner that fetches
+# the toolchain over the network and can't run offline), and the classic
+# `scala_legacy` launcher invokes the deprecated dotty.tools.MainGenericRunner,
+# which prints a "MainGenericRunner ... deprecated since Scala 3.5.0" warning to
+# stderr on every run. Running java directly avoids both: scala.jar bundles the
+# scala3 + scala2.13 standard library, so `-cp .:scala.jar main` runs offline
+# and warning-free. JVM flags go inline here because plain java (unlike the
+# wrapper scripts) does NOT read JAVA_OPTS.
+run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-cp", ".:/usr/local/scala3-3.5.2/lib/scala.jar", "main"]
+env = [
+    # JAVA_OPTS bounds the scalac wrapper during the compile phase (scalac reads
+    # JAVA_OPTS and passes it to java — unlike JAVA_TOOL_OPTIONS, it doesn't
+    # trigger the "Picked up ..." stderr banner). SerialGC + C1-only JIT keep
+    # scalac's cold-start footprint down. The run phase uses java directly with
+    # the flags inline above, so it ignores this.
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
+]
+# scalac cold-start + compile is JVM-heavy; default_limits covers compile+run.
+default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 122
+name = "Groovy"
+version = "4.x"
+source_file = "main.groovy"
+compile_cmd = []
+run_cmd = ["/usr/bin/groovy", "main.groovy"]
+env = [
+    # Wrapper launchers (scala/groovy/clojure) read JAVA_OPTS and pass it to
+    # java — unlike JAVA_TOOL_OPTIONS, it doesn't trigger the "Picked up ..."
+    # stderr banner. If a launcher ignores it, the JVM's container-aware
+    # defaults still bound the heap to the cgroup.
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 30.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 123
+name = "Clojure"
+version = "1.x"
+source_file = "main.clj"
+compile_cmd = []
+# Debian's `clojure` is a thin clojure.main wrapper (not the deps.edn CLI
+# tools), so it doesn't understand `-M` — pass the script directly.
+run_cmd = ["/usr/bin/clojure", "main.clj"]
+env = [
+    # Wrapper launchers (scala/groovy/clojure) read JAVA_OPTS and pass it to
+    # java — unlike JAVA_TOOL_OPTIONS, it doesn't trigger the "Picked up ..."
+    # stderr banner. If a launcher ignores it, the JVM's container-aware
+    # defaults still bound the heap to the cgroup.
+    ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
+]
+# Clojure's JVM + runtime classload startup is slow; give it extra CPU/wall.
+default_limits = { cpu_time = 15.0, wall_time = 35.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch D — Functional / ML family
+# ======================================================================
+
+[[language]]
+id = 130
+name = "Haskell"
+version = "ghc"
+source_file = "main.hs"
+# `-v0` silences ghc's "[1 of 2] Compiling Main … / Linking prog" progress,
+# which it writes to stdout (would otherwise leak into the program's output).
+compile_cmd = ["/usr/bin/ghc", "-v0", "-O2", "-o", "prog", "main.hs"]
+run_cmd = ["./prog"]
+env = []
+# ghc -O2 compile dominates; default_limits covers compile+run (native sandbox
+# uses one limit set). Without this it falls back to the 2s/128MB global default.
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 1024, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 131
+name = "OCaml"
+version = "5.x"
+source_file = "main.ml"
+compile_cmd = ["/usr/bin/ocamlfind", "ocamlopt", "-package", "str", "-linkpkg", "-o", "prog", "main.ml"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 132
+name = "Erlang"
+version = "otp-27"
+source_file = "main.erl"
+compile_cmd = ["/usr/bin/erlc", "main.erl"]
+# +S 1:1 / +SDcpu 1:1 / +SDio 1 — run with a single normal, dirty-CPU and IO
+# scheduler instead of one per core. The BEAM otherwise reserves run-queue +
+# stack memory per scheduler, which dominated the tiny-program footprint.
+run_cmd = ["/usr/bin/erl", "+S", "1:1", "+SDcpu", "1:1", "+SDio", "1", "-noshell", "-s", "main", "main", "-s", "init", "stop"]
+env = []
+is_archived = false
+
+[[language]]
+id = 133
+name = "Elixir"
+version = "1.x"
+source_file = "main.exs"
+compile_cmd = []
+run_cmd = ["/usr/bin/elixir", "main.exs"]
+env = [
+    # Forward emulator flags to the `erl` that `elixir` launches: a single
+    # normal/dirty-CPU/IO scheduler instead of one per core (see the Erlang
+    # note) — the per-scheduler reservations dominated the small footprint.
+    ["ELIXIR_ERL_OPTIONS", "+S 1:1 +SDcpu 1:1 +SDio 1"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 134
+name = "Common Lisp"
+version = "sbcl"
+source_file = "main.lisp"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 96, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/usr/bin/sbcl", "--script", "main.lisp"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch E — .NET family
+#
+# The SDK writes to $HOME (.dotnet, .nuget) and phones home unless told not
+# to, so HOME/cache are pinned to writable /tmp and telemetry is disabled.
+# Sandboxed runs have no network: NuGet packages are pre-restored into a
+# baked, read-only cache at /usr/local/lib/zerocode/nuget (see runner
+# Dockerfile) and C# builds against a pre-restored project skeleton with
+# `--no-restore`. NOTE: .NET is the highest-risk batch — validate against a
+# real build + sandbox before relying on it.
+# ======================================================================
+
+[[language]]
+id = 140
+name = "C#"
+version = ".NET 9"
+source_file = "main.cs"
+# Compile the single source file with the Roslyn compiler (csc) directly via the
+# baked csharp/build.sh — NOT `dotnet build`. MSBuild peaks ~130 MB and ~3 s even
+# for a hello-world, and since the compile phase shares the submission cgroup it
+# dominated both the reported memory and the wall time; csc does the same job in
+# under a second in a fraction of the memory. The output assembly is `app.dll`
+# (+ app.runtimeconfig.json) under /box/bin. build.sh routes csc's diagnostics to
+# stderr so compile errors reach compile_output and never leak into stdout.
+compile_cmd = ["/bin/sh", "/usr/local/lib/zerocode/csharp/build.sh"]
+run_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/.dotnet/shm && cd /box/bin && exec dotnet app.dll"]
+env = [
+    ["HOME", "/tmp"],
+    ["DOTNET_CLI_HOME", "/tmp"],
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_NOLOGO", "1"],
+    ["NUGET_PACKAGES", "/usr/local/lib/zerocode/nuget"],
+    # Workstation GC, not Server GC — Server GC reserves a heap segment per CPU
+    # at startup and blows past the cgroup, surfacing as CoreCLR failing with
+    # 0x8007000E (E_OUTOFMEMORY). Workstation GC uses a single, modest heap.
+    ["DOTNET_gcServer", "0"],
+    # Suppress the "An issue was encountered verifying workloads" notice that
+    # otherwise leaks into the submission's stdout.
+    ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
+]
+# csc + `dotnet app.dll` covers compile+run. Limits stay generous (the cgroup is
+# shared across both phases) but well below the old MSBuild-era headroom.
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 141
+name = "F#"
+version = ".NET 9"
+source_file = "main.fsx"
+compile_cmd = []
+# Pre-create the .NET named-mutex shm dir (see C# note) before launching fsi.
+run_cmd = ["/bin/sh", "-c", "mkdir -p /tmp/.dotnet/shm && exec /usr/bin/dotnet fsi --nologo main.fsx"]
+env = [
+    ["HOME", "/tmp"],
+    ["DOTNET_CLI_HOME", "/tmp"],
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_NOLOGO", "1"],
+    ["NUGET_PACKAGES", "/usr/local/lib/zerocode/nuget"],
+    # Workstation GC (see C# note) — avoids CoreCLR 0x8007000E at startup.
+    ["DOTNET_gcServer", "0"],
+    # Make the GC give committed pages back to the OS aggressively (0–9 scale),
+    # trading a little CPU for a lower resident footprint — fsi's baseline is the
+    # bulk of F#'s memory, so this is the main lever short of compiling to a dll.
+    ["DOTNET_GCConserveMemory", "9"],
+    ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
+    # `dotnet fsi` loads the SDK, which runs a workload manifest integrity check
+    # and prints "An issue was encountered verifying workloads…" to stderr. It's
+    # a warning, not an error (the script still runs), but it leaks into the
+    # submission's captured stderr — skip the check to keep output clean.
+    ["DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK", "1"],
+]
+# `dotnet fsi` JITs and starts a full .NET runtime — generous startup headroom.
+default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch F — Niche / specialty
+# ======================================================================
+
+[[language]]
+id = 150
+name = "COBOL"
+version = "gnucobol"
+source_file = "main.cob"
+# The trailing object links the libxml2 version-skew silencer (built into the
+# runner image by runners/Dockerfile) into the binary, suppressing libcob's
+# spurious "compiled against libxml 212 using older 209" warning on every run
+# (Debian trixie libxml2 skew). See runners/cob_xml_quiet.c.
+compile_cmd = ["/usr/bin/cobc", "-x", "-O2", "-o", "prog", "main.cob", "/usr/local/lib/zerocode/cobol/cob_xml_quiet.o"]
+run_cmd = ["./prog"]
+env = []
+is_archived = false
+
+[[language]]
+id = 151
+name = "Prolog"
+version = "swipl"
+source_file = "main.pl"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 96, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/usr/bin/swipl", "-q", "-t", "halt", "-f", "main.pl"]
+env = []
+is_archived = false
+
+[[language]]
+id = 152
+name = "Swift"
+version = "6.x"
+source_file = "main.swift"
+compile_cmd = ["/usr/local/bin/swiftc", "-O", "-o", "prog", "main.swift"]
+run_cmd = ["./prog"]
+# Disable Swift's crash backtracer: it spawns a helper that uses ptrace-style
+# introspection the sandbox blocks, turning a clean error into a SIGILL during
+# backtracing. With /proc now landlock-readable, swiftc itself should run.
+env = [
+    ["SWIFT_BACKTRACE", "enable=no"],
+]
+# swiftc is among the heaviest compilers (CPU + memory); generous headroom.
+default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 153
+name = "Octave"
+version = "9.x"
+source_file = "main.m"
+compile_cmd = []
+run_cmd = ["/usr/bin/octave", "--no-gui", "--no-window-system", "main.m"]
+env = []
+is_archived = false
+
+[[language]]
+id = 154
+name = "SQL"
+version = "sqlite3"
+source_file = "main.sql"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+run_cmd = ["/usr/bin/sqlite3", "-cmd", ".read main.sql"]
+env = []
+is_archived = false
+
+# ======================================================================
+# v1.5 Batch G — Modern languages
+# ======================================================================
+
+# NOTE: Zig (id 160) was removed — `zig build-exe` fails in the sandbox because
+# the per-submission tmpfs returns EXDEV on cross-directory rename, which Zig's
+# cache commit relies on. Reserved id 160 is intentionally left unused.
+
+[[language]]
+id = 161
+name = "Nim"
+version = "2.x"
+source_file = "main.nim"
+# `--hints:off` keeps Nim's "Hint: used config file …" lines out of compile_output.
+compile_cmd = ["/usr/bin/nim", "c", "-d:release", "--hints:off", "--out:prog", "--nimcache:/tmp/.nim-cache", "main.nim"]
+run_cmd = ["./prog"]
+env = [
+    ["NIM_CACHE_DIR", "/tmp/.nim-cache"],
+]
+# Nim compiles via a C backend (gcc), so it pays both nim + gcc costs.
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 162
+name = "Crystal"
+version = "1.x"
+source_file = "main.cr"
+compile_cmd = ["/usr/bin/crystal", "build", "--release", "-o", "prog", "main.cr"]
+run_cmd = ["./prog"]
+env = [
+    # Crystal writes a compiler cache under $HOME/.cache/crystal.
+    ["HOME", "/tmp"],
+    ["XDG_CACHE_HOME", "/tmp/.cache"],
+    ["CRYSTAL_CACHE_DIR", "/tmp/.crystal-cache"],
+]
+# Crystal --release is an LLVM optimizing build; CPU + memory heavy.
+default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 163
+name = "Dart"
+version = "3.x"
+source_file = "main.dart"
+# `dart compile exe` always prints "Generated: <path>" to stdout (no verbosity
+# flag suppresses it), which would leak into the program's stdout. Redirect the
+# compile-phase stdout to stderr → compile_output. `exec` preserves the exit code.
+compile_cmd = ["/bin/sh", "-c", "exec /usr/bin/dart compile exe main.dart -o prog 1>&2"]
+run_cmd = ["./prog"]
+env = [
+    ["HOME", "/tmp"],
+    ["DART_DISABLE_ANALYTICS", "1"],
+]
+# `dart compile exe` AOT-compiles to a native binary; moderate CPU + memory.
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 164
+name = "Julia"
+version = "1.x"
+source_file = "main.jl"
+compile_cmd = []
+# NOTE: tried -O0 --compile=min -t 1 to shrink the footprint — it backfired
+# (RSS jumped ~68MB → ~270MB, likely the interpreter path retaining more), so
+# we keep plain startup. Julia's memory is floored by its sysimage + JIT; the
+# real lever would be a trimmed custom sysimage (PackageCompiler), not flags.
+run_cmd = ["/usr/local/bin/julia", "--startup-file=no", "main.jl"]
+env = [
+    ["HOME", "/tmp"],
+    ["JULIA_DEPOT_PATH", "/tmp/.julia"],
+]
+# Julia's first-run JIT + stdlib precompile is heavy on both CPU and memory.
+default_limits = { cpu_time = 20.0, wall_time = 45.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# Batch H — Practical languages (ids 170–182)
+#
+# apt/npm installs (Racket, Raku, AWK, CoffeeScript, Emacs, Verilog, LLVM IR)
+# are high-confidence; Forth (gforth) is pinned from bookworm (dropped from
+# trixie). The upstream-tarball toolchains (V, FreeBASIC, PowerShell, Pony)
+# follow the Nim/Crystal/Dart/Julia pattern and are marked VALIDATE in
+# runners/Dockerfile — confirm URLs/arch on a real build, and run a sandbox
+# smoke test, before relying on them. (id 175 Smalltalk removed — gnu-smalltalk
+# is no longer in Debian.)
+# ======================================================================
+
+[[language]]
+id = 170
+name = "Racket"
+version = "8.x"
+source_file = "main.rkt"
+compile_cmd = []
+run_cmd = ["/usr/bin/racket", "main.rkt"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 384, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 171
+name = "Raku"
+version = "rakudo"
+source_file = "main.raku"
+compile_cmd = []
+# Rakudo (MoarVM) compiles the program on each run; modest startup headroom.
+run_cmd = ["/usr/bin/raku", "main.raku"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 172
+name = "AWK"
+version = "gawk"
+source_file = "main.awk"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# `-f main.awk` runs the program; the submission stdin becomes the data stream.
+run_cmd = ["/usr/bin/gawk", "-f", "main.awk"]
+env = []
+is_archived = false
+
+[[language]]
+id = 173
+name = "CoffeeScript"
+version = "2.x"
+source_file = "main.coffee"
+compile_cmd = []
+# `coffee` transpiles + runs on Node (Core 7). Same V8 hardening as Node.js (id 63).
+run_cmd = ["/usr/local/bin/coffee", "main.coffee"]
+env = [
+    ["NODE_NO_WARNINGS", "1"],
+    ["NODE_OPTIONS", "--max-old-space-size=${memory_mb} --unhandled-rejections=strict"],
+]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 174
+name = "Forth"
+version = "gforth"
+source_file = "main.fth"
+compile_cmd = []
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# gforth runs the file then would drop into its interactive REPL (printing the
+# startup banner to stdout). `-e bye` evaluates `bye` right after the script so
+# it exits cleanly before the banner — keeps stdout to just the program output.
+run_cmd = ["/usr/bin/gforth", "main.fth", "-e", "bye"]
+env = []
+is_archived = false
+
+# Smalltalk (id 175) removed — gnu-smalltalk was dropped from Debian (not in
+# trixie or bookworm) and has no clean toolchain. id 175 left unused.
+
+[[language]]
+id = 176
+name = "Emacs Lisp"
+version = "emacs"
+source_file = "main.el"
+compile_cmd = []
+# Batch-mode elisp: load + evaluate the script, no UI. Emacs startup is heavy.
+# `--no-site-file` skips /etc/emacs/site-start.d/* so Debian's site packages
+# (00debian.el, 50gforth.el, …) don't print "Loading …" lines to stderr.
+run_cmd = ["/usr/bin/emacs", "--batch", "--no-init-file", "--no-site-file", "--script", "main.el"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 177
+name = "Verilog"
+version = "iverilog"
+source_file = "main.v"
+# Icarus Verilog: compile to a vvp object, then run it under the vvp runtime.
+compile_cmd = ["/usr/bin/iverilog", "-o", "prog", "main.v"]
+run_cmd = ["/usr/bin/vvp", "prog"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 178
+name = "LLVM IR"
+version = "lli"
+source_file = "main.ll"
+compile_cmd = []
+# lli JIT-executes textual LLVM IR. VALIDATE: Debian may ship a versioned
+# binary (e.g. lli-19) rather than /usr/bin/lli — adjust the path if so.
+run_cmd = ["/usr/bin/lli", "main.ll"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 179
+name = "V"
+version = "0.4.x"
+source_file = "main.v"
+# V shells out to a C compiler (gcc, Core 7) for the final link.
+compile_cmd = ["/usr/local/bin/v", "-o", "prog", "main.v"]
+run_cmd = ["./prog"]
+env = [
+    ["HOME", "/tmp"],
+    ["VMODULES", "/tmp/.vmodules"],
+    ["XDG_CACHE_HOME", "/tmp/.cache"],
+]
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 180
+name = "FreeBASIC"
+version = "1.x"
+source_file = "main.bas"
+# fbc -x names the output executable; links via the system C toolchain.
+compile_cmd = ["/usr/local/bin/fbc", "-x", "prog", "main.bas"]
+run_cmd = ["./prog"]
+env = []
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 181
+name = "PowerShell"
+version = "7.x"
+source_file = "main.ps1"
+compile_cmd = []
+# pwsh boots a full .NET runtime — generous startup headroom. -NoProfile keeps
+# stdout clean; HOME + telemetry pinned to writable /tmp. Workstation GC (see
+# the C#/F# notes) avoids CoreCLR reserving a heap segment per CPU.
+run_cmd = ["/usr/local/bin/pwsh", "-NoProfile", "-NonInteractive", "-File", "main.ps1"]
+env = [
+    ["HOME", "/tmp"],
+    ["POWERSHELL_TELEMETRY_OPTOUT", "1"],
+    ["POWERSHELL_UPDATECHECK", "Off"],
+    ["DOTNET_CLI_TELEMETRY_OPTOUT", "1"],
+    ["DOTNET_gcServer", "0"],
+]
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 384, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 182
+name = "Pony"
+version = "ponyc"
+source_file = "main.pony"
+# ponyc compiles the package directory (/box); -b names the binary. The LLVM
+# backend is CPU/memory heavy. `--link-ldcmd=lld` because ponyc defaults to the
+# `gold` linker, which isn't packaged in trixie (lld ships with the LLVM/clang
+# toolchain). VALIDATE: a single-file program with no external deps compiles
+# offline; corral-style deps would need network (blocked).
+# `-V0` sets verbosity to 0 so ponyc's build-phase progress ("Building …",
+# "Reachability", "Linking ./prog", …) stays out of compile_output on success.
+compile_cmd = ["/usr/bin/ponyc", "-V0", "--link-ldcmd=lld", "-b", "prog", "."]
+run_cmd = ["./prog"]
+env = []
+default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# Batch I — Esoteric / code-golf languages (ids 300–306)
+#
+# Best-effort golfing/esoteric tier. Brainfuck is apt-based;
+# GolfScript/CJam are single-file/jar downloads; the rest are PyPI packages.
+# ALL are marked VALIDATE — confirm package names + entrypoints against a real
+# runner build plus a sandbox smoke test (these drift). Deeper from-source
+# esoterics (LOLCODE, Befunge-93, Cow, Dragon, Emojicode, Rockstar, Pyth, Japt,
+# MATL, BQN, Brachylog, Husk, Retina, 05AB1E, Forte, Yeethon) are NOT included:
+# they need per-language build scripts and individual
+# verification.
+# ======================================================================
+
+[[language]]
+id = 300
+name = "Brainfuck"
+version = "beef"
+source_file = "main.bf"
+compile_cmd = []
+# `beef` is the Brainfuck interpreter packaged in trixie (`bf` was dropped).
+run_cmd = ["/usr/bin/beef", "main.bf"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 64, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 301
+name = "GolfScript"
+version = "1.0"
+source_file = "main.gs"
+compile_cmd = []
+# golfscript.rb (baked into the runner image) takes the program as ARGV[0] and
+# reads the submission stdin as input. Runs on Ruby (Batch A).
+run_cmd = ["/usr/bin/ruby", "/usr/local/lib/zerocode/golfscript/golfscript.rb", "main.gs"]
+env = []
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 96, max_pids = 16, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 302
+name = "CJam"
+version = "0.6.x"
+source_file = "main.cjam"
+compile_cmd = []
+# Runs the CJam interpreter jar on a JVM (Core 7 Java).
+run_cmd = ["/usr/bin/java", "-jar", "/usr/local/lib/zerocode/cjam/cjam.jar", "main.cjam"]
+env = []
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 303
+name = "Vyxal"
+version = "2.x"
+source_file = "main.vy"
+compile_cmd = []
+# `python3 -m vyxal` — installed from PyPI into the runner image.
+run_cmd = ["/usr/bin/python3", "-m", "vyxal", "main.vy"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 304
+name = "Jelly"
+version = "0.x"
+source_file = "main.jelly"
+compile_cmd = []
+# `jelly` console script (installed from the jellylanguage GitHub tarball).
+# `fu` = read the program file as UTF-8 (vs `f`, which uses Jelly's code page and
+# mangles multi-byte atoms like `²` written by a UTF-8 editor).
+run_cmd = ["/usr/local/bin/jelly", "fu", "main.jelly"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 305
+name = "Samarium"
+version = "0.x"
+source_file = "main.sm"
+compile_cmd = []
+run_cmd = ["/usr/local/bin/samarium", "main.sm"]
+env = [["HOME", "/tmp"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+[[language]]
+id = 306
+name = "Paradoc"
+version = "0.x"
+source_file = "main.prdc"
+compile_cmd = []
+# Paradoc isn't pip-installable (no setup.py); the runner image extracts it to
+# /usr/local/lib/paradoc-master (landlock-allowed; /opt is not), reached via
+# PYTHONPATH so `python3 -m paradoc` resolves.
+# `-W ignore` silences the SyntaxWarning paradoc's own source emits at import
+# (an invalid `\ ` escape in a docstring) — otherwise it leaks to stderr.
+run_cmd = ["/usr/bin/python3", "-W", "ignore", "-m", "paradoc", "main.prdc"]
+env = [["HOME", "/tmp"], ["PYTHONPATH", "/usr/local/lib/paradoc-master"]]
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false
+
+# ======================================================================
+# v2 — WASM tier
+#
+# `raw-wasm` accepts a pre-compiled `.wasm` blob as source_code and runs its
+# `_start` function under WasmSandbox (wasmtime + WASI preview1). The
+# `tier = "wasm"` field opts it into WasmSandbox dispatch (see
+# worker/sandbox_select.rs). Future v2 work adds WASI-targeted compile
+# pipelines (wasi-sdk) for Rust/Go/C/C++ upstream of the sandbox.
+# ======================================================================
+
+[[language]]
+id = 200
+name = "raw-wasm"
+version = "wasi-preview1"
+source_file = "main.wasm"
+compile_cmd = []
+run_cmd = []
+env = []
+tier = "wasm"
+default_limits = { cpu_time = 2.0, wall_time = 5.0, memory_mb = 64, max_pids = 1, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+is_archived = false

@@ -179,6 +179,7 @@ mod tests {
             compile_stderr: Bytes::new(),
             compiled_binary: Bytes::new(),
             killed_by_wall_timeout: wall,
+            run_phase_memory_kb: None,
         }
     }
 
@@ -271,6 +272,7 @@ mod tests {
             compile_stderr: Bytes::from_static(b"error[E0308]: mismatched types"),
             compiled_binary: Bytes::new(),
             killed_by_wall_timeout: false,
+            run_phase_memory_kb: None,
         };
         let out = classify(
             r,

@@ -216,8 +216,8 @@ export function Hero() {
 
         <motion.p className="sub" variants={HERO_CHILD}>
           A self-hosted code-execution sandbox in Rust. Eight kernel-enforced
-          isolation layers, sub-5 ms job pickup, REST + SSE. 60 languages
-          out of the box — the Core 7 plus 53 more across Batches A–I.
+          isolation layers, sub-5 ms job pickup, REST + SSE. 20 languages
+          out of the box — the Core 7 plus 13 more popular languages.
         </motion.p>
 
         <motion.div className="zc-hero-cta" variants={HERO_CHILD}>

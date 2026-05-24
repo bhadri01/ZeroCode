@@ -1,15 +1,15 @@
 ---
 title: Language catalog
-description: The 60 languages ZeroCode supports — IDs, versions, and how to query the live registry.
+description: The 20 languages ZeroCode supports — IDs, versions, and how to query the live registry.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 import LanguageCatalog from '../../components/LanguageCatalog.astro';
 
-ZeroCode ships **60 languages**: the **Core 7** (the most-tuned, primary
-targets), **52 more** across Batches A–I, and the v2 `raw-wasm` tier. Numeric
-IDs are stable across releases — existing clients only need the integer, not
-the name.
+ZeroCode ships **20 languages**: the **Core 7** (the most-tuned, primary
+targets) plus **13 more** popular scripting, JVM, .NET, and native languages.
+Numeric IDs are stable across releases — existing clients only need the
+integer, not the name.
 
 <LanguageCatalog />
 
@@ -69,7 +69,7 @@ that produces `/box/prog`. Compile errors surface via the dedicated
 
 <Aside type="tip">
   NativeSandbox applies `default_limits` to **both** the compile and run
-  phases, so compile-heavy languages (JVM, .NET, Haskell, Swift, Crystal)
+  phases, so compile-heavy languages (JVM, .NET, Swift, Dart)
   set generous `default_limits` rather than relying on the small global
   default. `${memory_mb}`, `${cpu_time}`, `${wall_time}`, `${max_pids}`, and
   `${jvm_heap_mb}` placeholders in `env` values are substituted per

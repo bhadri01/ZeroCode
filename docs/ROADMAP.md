@@ -11,10 +11,10 @@ Legend: `[ ]` planned · `[~]` in progress
 - **v1 — core service**: API + worker + Postgres queue, NaiveSandbox (dev)
   and NativeSandbox (production with cgroups v2, landlock, seccomp,
   pivot_root, capability drop, no-new-privs).
-- **v1.5 — language expansion**: Core 7 (Python, Node, Rust, Go, C, C++,
-  Java) plus 53 additional languages across Batches A–I (interpreted,
-  native GCC family, JVM family, functional/ML, .NET, niche, modern,
-  practical, and esoteric / code-golf).
+- **v1.5 — language set**: Core 7 (Python, Node, Rust, Go, C, C++, Java)
+  plus 13 more popular languages — scripting (Bash, Lua, Perl, Ruby, R, PHP,
+  TypeScript), JVM (Kotlin, Scala), .NET (C#), native (Swift, Dart), and SQL.
+  (Trimmed from an earlier 60-language catalogue; see `languages.toml.bak60`.)
 - **Web surface**: embedded landing + playground (Vite + React) and
   Astro/Starlight docs site, served by the API.
 - **Operational**: Prometheus `/metrics`, multi-arch images (amd64 +
@@ -83,9 +83,9 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the version-by-version log.
 
 - **[ ] Extract a shared `zerocode-db` crate** if duplication between
   `api/db.rs` and `worker/db.rs` continues to grow
-- **[ ] Generalise per-language slim runner images** to the batch tiers
-  (today slim images cover Core 7 only; the full image still bundles
-  every Batch A–I language)
+- **[ ] Generalise per-language slim runner images** beyond the Core 7
+  (today slim images cover Core 7 only; the full image bundles all 20
+  supported languages)
 - **[ ] CI smoke test against a built UI** — `web/` typechecks + builds
   on PR today, but doesn't exercise the assembled bundle against a
   running API

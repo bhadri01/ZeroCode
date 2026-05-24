@@ -37,10 +37,10 @@ LISTEN/NOTIFY-dispatched worker pool, and a built-in browser playground.
 
 ## Supported languages
 
-60 languages ship today, each with a stable numeric ID so existing
-self-hosted-sandbox clients drop in by ID alone. The
-**Core 7** below are the primary, most-tuned targets; **Batches A–I** add 52
-more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
+20 languages ship today — the most popular / most-requested tier — each with a
+stable numeric ID so existing self-hosted-sandbox clients drop in by ID alone.
+The **Core 7** below are the primary, most-tuned targets; **13 more** cover
+popular scripting, JVM, .NET, and native languages.
 
 | ID | Language | Version       | Type             |
 |----|----------|---------------|------------------|
@@ -53,27 +53,23 @@ more, and the v2 `raw-wasm` tier (id 200) runs bring-your-own `.wasm` blobs.
 | 62 | Java     | OpenJDK 21 LTS| javac → java     |
 
 <details>
-<summary><strong>Batches A–I</strong> (52 more languages)</summary>
+<summary><strong>The other 13</strong></summary>
 
-| Batch | IDs | Languages |
-|-------|-----|-----------|
-| A — interpreted        | 100–106 | Bash, Lua, Perl, Ruby, R, PHP, TypeScript (tsx) |
-| B — GCC-family compiled| 110–115 | Fortran, Pascal, D, Objective-C, Assembly, Ada |
-| C — JVM                | 120–123 | Kotlin, Scala, Groovy, Clojure |
-| D — functional / ML    | 130–134 | Haskell, OCaml, Erlang, Elixir, Common Lisp |
-| E — .NET               | 140–141 | C#, F# |
-| F — niche              | 150–154 | COBOL, Prolog, Swift, Octave, SQL (SQLite) |
-| G — modern             | 161–164 | Nim, Crystal, Dart, Julia |
-| H — practical          | 170–182 | Racket, Raku, AWK, CoffeeScript, Forth, Emacs Lisp, Verilog, LLVM IR, V, FreeBASIC, PowerShell, Pony |
-| I — esoteric / golf    | 300–306 | Brainfuck, GolfScript, CJam, Vyxal, Jelly, Samarium, Paradoc |
-| v2 — WASM tier         | 200     | raw-wasm (pre-compiled `.wasm`, runs under WasmSandbox) |
+| Group     | IDs | Languages |
+|-----------|-----|-----------|
+| Scripting | 100–106 | Bash, Lua, Perl, Ruby, R, PHP, TypeScript (tsx) |
+| JVM       | 120, 121 | Kotlin, Scala |
+| .NET      | 140 | C# |
+| Native    | 152, 163 | Swift, Dart |
+| Data      | 154 | SQL (SQLite) |
 
 </details>
 
 Source of truth: [`runners/languages.toml`](runners/languages.toml).
-Live registry: `GET /v1/languages`. The expansion plan lives in
-[`docs/ROADMAP.md`](docs/ROADMAP.md); each addition ships with its own
-edge-case test under [`tests/edge_cases/`](tests/edge_cases/).
+Live registry: `GET /v1/languages`. Each language ships with its own
+edge-case test under [`tests/edge_cases/`](tests/edge_cases/). The earlier
+60-language catalogue is preserved in `runners/languages.toml.bak60` and git
+history if you need to re-add any.
 
 ---
 
@@ -167,7 +163,7 @@ ZeroCode/
 │   └── zerocode-worker/          # Job consumer + sandbox executor
 │
 ├── runners/                      # Sandbox rootfs (language toolchains)
-│   ├── Dockerfile                # Full image — all 60 language toolchains
+│   ├── Dockerfile                # Image — all 20 language toolchains
 │   ├── Dockerfile.slim           # Per-language slim images
 │   └── languages.toml            # Per-language compile/run specs
 │

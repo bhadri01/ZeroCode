@@ -8,6 +8,34 @@ Pre-release work is grouped under `Unreleased` and tagged by plan phase. See
 
 ## [Unreleased]
 
+### Trim the language catalogue to the popular 20
+
+The v1.5 catalogue had grown to 60 languages, most of them niche, functional,
+or esoteric/code-golf entries that pulled large toolchains into the runner image
+for little real usage. The supported set is now the **20 most-requested /
+popular** languages; the other 40 toolchains are removed.
+
+**Supported (20):**
+- Core 7: C (48), C++ (52), Go (60), Java (62), Node.js (63), Python (71), Rust (73)
+- Scripting: Bash (100), Lua (101), Perl (102), Ruby (103), R (104), PHP (105), TypeScript (106)
+- JVM: Kotlin (120), Scala (121) · .NET: C# (140) · Native: Swift (152), Dart (163) · SQL (154)
+
+#### Removed
+- 40 languages from `runners/languages.toml` and their toolchain installs from
+  `runners/Dockerfile` (GCC-family compiled, functional/ML, F#, COBOL, Prolog,
+  Octave, Nim, Crystal, Julia, the Batch-H practical tier, the Batch-I
+  esoteric/code-golf tier, and the raw-wasm tier). The Dockerfile drops from
+  ~477 to ~247 lines and no longer builds those toolchains.
+- The full 60-language registry is preserved at `runners/languages.toml.bak60`
+  and in git history — re-add any entry by copying it back plus its Dockerfile
+  toolchain step.
+
+#### Changed
+- Frontend playground (`web/app`), landing page, brand-icon set, Monaco grammar
+  registrations, and the docs catalog (`web/docs`) now list only the 20.
+- `scripts/{smoke,report,mem,coldstart}-*.sh`, the registry + edge-case tests,
+  and the `docs/{PERFORMANCE,MEMORY-REPORT}.md` datasheets are trimmed to the 20.
+
 ### CI hardening — close the gaps that hid two v1 bugs
 
 Both bugs found during the v2 work — the PG16 `BINARY` keyword regression

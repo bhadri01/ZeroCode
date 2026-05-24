@@ -14,9 +14,7 @@
 
 mod edge_cases {
     mod batch_a;
-    mod batch_b;
     mod batch_c;
-    mod batch_d;
     mod batch_efg;
     mod c_cpp;
     mod common;

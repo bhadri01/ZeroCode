@@ -1,6 +1,5 @@
-//! v1.5 Batch C edge cases: Kotlin, Scala, Groovy, Clojure.
-//! All JVM languages — each tests hello world. Uses generous limits for JVM
-//! startup overhead.
+//! JVM language edge cases: Kotlin, Scala.
+//! Each tests hello world. Uses generous limits for JVM startup overhead.
 
 use zerocode_core::{ResourceLimits, Status};
 
@@ -45,32 +44,6 @@ async fn scala_hello() {
 }
 "#;
     let result = run(job_with_limits(SCALA, source, "", jvm_limits())).await;
-    assert!(matches!(result.status, Status::Accepted));
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    assert!(stdout.contains("hello"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Groovy (122)
-// ═══════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn groovy_hello() {
-    let source = r#"println "hello""#;
-    let result = run(job_with_limits(GROOVY, source, "", jvm_limits())).await;
-    assert!(matches!(result.status, Status::Accepted));
-    let stdout = String::from_utf8_lossy(&result.stdout);
-    assert!(stdout.contains("hello"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Clojure (123)
-// ═══════════════════════════════════════════════════════════════════════
-
-#[tokio::test]
-async fn clojure_hello() {
-    let source = r#"(println "hello")"#;
-    let result = run(job_with_limits(CLOJURE, source, "", jvm_limits())).await;
     assert!(matches!(result.status, Status::Accepted));
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("hello"));

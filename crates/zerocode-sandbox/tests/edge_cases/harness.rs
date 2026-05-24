@@ -98,7 +98,7 @@ pub const GO: u32 = 60;
 pub const RUST: u32 = 73;
 pub const JAVA: u32 = 62;
 
-// v1.5 Batch A — scripting languages
+// Scripting languages
 pub const BASH: u32 = 100;
 pub const LUA: u32 = 101;
 pub const PERL: u32 = 102;
@@ -107,41 +107,16 @@ pub const R: u32 = 104;
 pub const PHP: u32 = 105;
 pub const TYPESCRIPT: u32 = 106;
 
-// v1.5 Batch B — compiled systems languages
-pub const FORTRAN: u32 = 110;
-pub const PASCAL: u32 = 111;
-pub const D_LANG: u32 = 112;
-pub const OBJECTIVE_C: u32 = 113;
-pub const ASSEMBLY: u32 = 114;
-pub const ADA: u32 = 115;
-
-// v1.5 Batch C — JVM languages
+// JVM languages
 pub const KOTLIN: u32 = 120;
 pub const SCALA: u32 = 121;
-pub const GROOVY: u32 = 122;
-pub const CLOJURE: u32 = 123;
 
-// v1.5 Batch D — functional / academic languages
-pub const HASKELL: u32 = 130;
-pub const OCAML: u32 = 131;
-pub const ERLANG: u32 = 132;
-pub const ELIXIR: u32 = 133;
-pub const COMMON_LISP: u32 = 134;
-
-// v1.5 Batch E — .NET languages
+// .NET
 pub const CSHARP: u32 = 140;
-pub const FSHARP: u32 = 141;
 
-// v1.5 Batch F — legacy / niche
-pub const COBOL: u32 = 150;
-pub const PROLOG: u32 = 151;
+// Native compiled
 pub const SWIFT: u32 = 152;
-pub const OCTAVE: u32 = 153;
-pub const SQL: u32 = 154;
-
-// v1.5 Batch G — modern compiled
-// Zig (160) removed — compiler can't run in the sandbox (tmpfs rename EXDEV).
-pub const NIM: u32 = 161;
-pub const CRYSTAL: u32 = 162;
 pub const DART: u32 = 163;
-pub const JULIA: u32 = 164;
+
+// SQL
+pub const SQL: u32 = 154;

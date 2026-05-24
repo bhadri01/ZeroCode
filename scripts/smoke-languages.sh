@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# smoke-languages.sh — submit a hello-world for every runnable language in the
-# registry and print a PASS/FAIL matrix. Use after building the full runner
-# image (runners/Dockerfile) and bringing the stack up, to see which of the
-# v1.5 batch languages actually compile + run inside the sandbox.
+# smoke-languages.sh — submit a hello-world for every one of the 20 supported
+# languages in the registry and print a PASS/FAIL matrix. Use after building the
+# runner image (runners/Dockerfile) and bringing the stack up, to confirm each
+# language compiles + runs inside the sandbox.
 #
 # Prereqs: the API reachable at $API_BASE (default http://localhost:8080),
 #          plus curl + jq in PATH.
@@ -13,8 +13,7 @@
 #   API_BASE=http://host:8080 ./scripts/smoke-languages.sh
 #
 # Each language prints "hello"; a language passes when status is Accepted and
-# stdout contains "hello". raw-wasm (id 200) is skipped — it needs a compiled
-# .wasm blob, not source. On FAIL the script prints the status + compile_output
+# stdout contains "hello". On FAIL the script prints the status + compile_output
 # so you can see why (toolchain missing, compile error, timeout, …).
 
 set -uo pipefail
@@ -92,7 +91,7 @@ check 62 Java     <<'SRC'
 public class Main { public static void main(String[] a){ System.out.println("hello"); } }
 SRC
 
-printf "\nBatch A — interpreted\n"
+printf "\nScripting\n"
 check 100 Bash       <<'SRC'
 echo hello
 SRC
@@ -116,50 +115,8 @@ const m: string = "hello";
 console.log(m);
 SRC
 
-printf "\nBatch B — GCC-family compiled\n"
-check 110 Fortran     <<'SRC'
-program p
-  print *, "hello"
-end program p
-SRC
-check 111 Pascal      <<'SRC'
-begin
-  writeln('hello');
-end.
-SRC
-check 112 D           <<'SRC'
-import std.stdio;
-void main() { writeln("hello"); }
-SRC
-check 113 Objective-C <<'SRC'
-#import <stdio.h>
-int main(){ printf("hello\n"); return 0; }
-SRC
-check 114 Assembly    <<'SRC'
-section .data
-msg db "hello", 10
-len equ $ - msg
-section .text
-global _start
-_start:
-  mov rax, 1
-  mov rdi, 1
-  mov rsi, msg
-  mov rdx, len
-  syscall
-  mov rax, 60
-  xor rdi, rdi
-  syscall
-SRC
-check 115 Ada         <<'SRC'
-with Ada.Text_IO;
-procedure Main is
-begin
-  Ada.Text_IO.Put_Line("hello");
-end Main;
-SRC
 
-printf "\nBatch C — JVM\n"
+printf "\nJVM (Kotlin, Scala)\n"
 check 120 Kotlin  <<'SRC'
 fun main() { println("hello") }
 SRC
@@ -168,152 +125,29 @@ object main {
   def main(args: Array[String]): Unit = println("hello")
 }
 SRC
-check 122 Groovy  <<'SRC'
-println "hello"
-SRC
-check 123 Clojure <<'SRC'
-(println "hello")
-SRC
 
-printf "\nBatch D — functional / ML\n"
-check 130 Haskell     <<'SRC'
-main = putStrLn "hello"
-SRC
-check 131 OCaml       <<'SRC'
-let () = print_endline "hello"
-SRC
-check 132 Erlang      <<'SRC'
--module(main).
--export([main/0]).
-main() -> io:format("hello~n").
-SRC
-check 133 Elixir      <<'SRC'
-IO.puts("hello")
-SRC
-check 134 "Common Lisp" <<'SRC'
-(format t "hello~%")
-SRC
 
-printf "\nBatch E — .NET\n"
+printf "\n.NET (C#)\n"
 check 140 "C#" <<'SRC'
 using System;
 class Program { static void Main(){ Console.WriteLine("hello"); } }
 SRC
-check 141 "F#" <<'SRC'
-printfn "hello"
-SRC
 
-printf "\nBatch F — niche\n"
-check 150 COBOL  <<'SRC'
-       IDENTIFICATION DIVISION.
-       PROGRAM-ID. HELLO.
-       PROCEDURE DIVISION.
-           DISPLAY "hello".
-           STOP RUN.
-SRC
-check 151 Prolog <<'SRC'
-:- initialization(main).
-main :- write('hello'), nl, halt.
-SRC
+printf "\nSwift · SQL\n"
 check 152 Swift  <<'SRC'
 print("hello")
-SRC
-check 153 Octave <<'SRC'
-disp("hello")
 SRC
 check 154 SQL    <<'SRC'
 SELECT 'hello';
 SRC
 
-printf "\nBatch G — modern\n"
+printf "\nDart\n"
 # Zig (160) removed — compiler can't run in the sandbox (tmpfs cross-dir rename).
-check 161 Nim     <<'SRC'
-echo "hello"
-SRC
-check 162 Crystal <<'SRC'
-puts "hello"
-SRC
 check 163 Dart    <<'SRC'
 void main() { print("hello"); }
 SRC
-check 164 Julia   <<'SRC'
-println("hello")
-SRC
 
-printf "\nBatch H — practical\n"
-check 170 Racket       <<'SRC'
-#lang racket
-(displayln "hello")
-SRC
-check 171 Raku         <<'SRC'
-say "hello";
-SRC
-check 172 AWK          <<'SRC'
-BEGIN { print "hello" }
-SRC
-check 173 CoffeeScript <<'SRC'
-console.log "hello"
-SRC
-check 174 Forth        <<'SRC'
-." hello" cr
-SRC
-check 176 "Emacs Lisp" <<'SRC'
-(princ "hello\n")
-SRC
-check 177 Verilog      <<'SRC'
-module main;
-  initial $display("hello");
-endmodule
-SRC
-check 178 "LLVM IR"    <<'SRC'
-@.s = private unnamed_addr constant [6 x i8] c"hello\00"
-declare i32 @puts(ptr)
-define i32 @main() {
-  call i32 @puts(ptr @.s)
-  ret i32 0
-}
-SRC
-check 179 V            <<'SRC'
-fn main() {
-	println('hello')
-}
-SRC
-check 180 FreeBASIC    <<'SRC'
-Print "hello"
-SRC
-check 181 PowerShell   <<'SRC'
-Write-Output "hello"
-SRC
-check 182 Pony         <<'SRC'
-actor Main
-  new create(env: Env) =>
-    env.out.print("hello")
-SRC
 
-printf "\nBatch I — esoteric / code-golf (best-effort, VALIDATE)\n"
-check 300 Brainfuck "Hello World!" <<'SRC'
-++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
-SRC
-check 301 GolfScript <<'SRC'
-"hello"
-SRC
-check 302 CJam       <<'SRC'
-"hello"
-SRC
-check 303 Vyxal      <<'SRC'
-`hello`
-SRC
-check 304 Jelly "49" <<'SRC'
-7²
-SRC
-check 305 Samarium   <<'SRC'
-=> * {
-    "hello"!;
-}
-SRC
-check 306 Paradoc    <<'SRC'
-"hello"
-SRC
 
 printf "\n%s===================================%s\n" "$DIM" "$RESET"
 printf "PASS: ${GREEN}%d${RESET}   FAIL: ${RED}%d${RESET}\n" "$PASS" "$FAIL"

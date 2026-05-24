@@ -61,12 +61,9 @@ fn node_spec_carries_node_options_with_memory_placeholder() {
 #[test]
 fn compiled_languages_have_both_compile_and_run_cmd() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    // Core 7 compiled + Batch B + Batch C compiled (Kotlin, Scala) + Batch D compiled (Haskell, OCaml, Erlang)
-    // + Batch E compiled (C#) + Batch F compiled (COBOL, Swift) + Batch G compiled (Nim, Crystal, Dart)
-    for id in [
-        48, 52, 60, 62, 73, 110, 111, 112, 113, 114, 115, 120, 121, 130, 131, 132, 140, 150, 152,
-        161, 162, 163,
-    ] {
+    // Core compiled (C, C++, Go, Java, Rust) + JVM (Kotlin, Scala) + .NET (C#)
+    // + native (Swift, Dart).
+    for id in [48, 52, 60, 62, 73, 120, 121, 140, 152, 163] {
         let spec = reg
             .require(id)
             .unwrap_or_else(|_| panic!("id {id} should exist"));
@@ -138,9 +135,8 @@ fn java_spec_caps_heap_and_stack_on_run_cmd() {
     // The Java (id 62) run phase passes JVM limits as command-line flags rather
     // than via JAVA_TOOL_OPTIONS: the JVM prints "Picked up JAVA_TOOL_OPTIONS:
     // ..." to stderr whenever that var is set, which would leak into the
-    // user-visible output. (Wrapper-launched JVM batch languages — Kotlin,
-    // Scala, Groovy, Clojure — still use JAVA_TOOL_OPTIONS because their
-    // launchers can't take JVM flags directly; see batch_c_jvm_languages_present.)
+    // user-visible output. (The JVM languages Kotlin and Scala cap heap via
+    // JAVA_OPTS or -Xmx instead; see jvm_languages_cap_heap_without_tool_options.)
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
     let java = reg.require(62).expect("Java id 62 must be registered");
     let run = java.run_cmd.join(" ");
@@ -233,77 +229,10 @@ fn batch_a_languages_present_and_interpreted() {
 #[test]
 fn total_language_count() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    // 7 core + 7 Batch A + 6 Batch B + 4 Batch C + 5 Batch D + 2 Batch E
-    // + 5 Batch F + 4 Batch G (Zig/160 removed) + 12 Batch H (Smalltalk/175
-    // removed) + 7 Batch I + 1 v2 raw-wasm = 60
-    assert_eq!(reg.list().len(), 60, "expected 60 languages total");
-}
-
-#[test]
-fn batch_h_practical_languages_present() {
-    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let batch_h = [
-        (170, "Racket"),
-        (171, "Raku"),
-        (172, "AWK"),
-        (173, "CoffeeScript"),
-        (174, "Forth"),
-        // (175, "Smalltalk") removed — gnu-smalltalk dropped from Debian.
-        (176, "Emacs Lisp"),
-        (177, "Verilog"),
-        (178, "LLVM IR"),
-        (179, "V"),
-        (180, "FreeBASIC"),
-        (181, "PowerShell"),
-        (182, "Pony"),
-    ];
-    for (id, name) in batch_h {
-        let spec = reg
-            .require(id)
-            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
-        assert_eq!(spec.name, name, "id {id} name mismatch");
-    }
-    // Verilog (177), V (179), FreeBASIC (180) and Pony (182) are compiled.
-    for id in [177, 179, 180, 182] {
-        assert!(
-            reg.require(id).unwrap().is_compiled(),
-            "id {id} should be a compiled language"
-        );
-    }
-}
-
-#[test]
-fn batch_i_esoteric_languages_present() {
-    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let batch_i = [
-        (300, "Brainfuck"),
-        (301, "GolfScript"),
-        (302, "CJam"),
-        (303, "Vyxal"),
-        (304, "Jelly"),
-        (305, "Samarium"),
-        (306, "Paradoc"),
-    ];
-    for (id, name) in batch_i {
-        let spec = reg
-            .require(id)
-            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
-        assert_eq!(spec.name, name, "id {id} name mismatch");
-        // All Batch I languages are interpreted (no compile step).
-        assert!(
-            !spec.is_compiled(),
-            "{name} (id {id}) should be interpreted"
-        );
-    }
-}
-
-#[test]
-fn raw_wasm_is_registered_with_wasm_tier() {
-    use zerocode_core::SandboxTier;
-    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let wasm = reg.require(200).expect("raw-wasm (id 200) missing");
-    assert_eq!(wasm.name, "raw-wasm");
-    assert_eq!(wasm.tier, SandboxTier::Wasm);
+    // 7 core + 7 scripting (Bash, Lua, Perl, Ruby, R, PHP, TypeScript)
+    // + 2 JVM (Kotlin, Scala) + 1 .NET (C#) + 2 native (Swift, Dart)
+    // + 1 SQL = 20
+    assert_eq!(reg.list().len(), 20, "expected 20 languages total");
 }
 
 #[test]
@@ -321,35 +250,10 @@ fn typescript_spec_uses_tsx_runner() {
 }
 
 #[test]
-fn batch_b_compiled_languages_present() {
+fn jvm_languages_cap_heap_without_tool_options() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let batch_b = [
-        (110, "Fortran"),
-        (111, "Pascal"),
-        (112, "D"),
-        (113, "Objective-C"),
-        (114, "Assembly"),
-        (115, "Ada"),
-    ];
-    for (id, name) in batch_b {
-        let spec = reg
-            .require(id)
-            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
-        assert_eq!(spec.name, name);
-        assert!(spec.is_compiled(), "{name} should be compiled");
-    }
-}
-
-#[test]
-fn batch_c_jvm_languages_cap_heap_without_tool_options() {
-    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let batch_c = [
-        (120, "Kotlin"),
-        (121, "Scala"),
-        (122, "Groovy"),
-        (123, "Clojure"),
-    ];
-    for (id, name) in batch_c {
+    let jvm = [(120, "Kotlin"), (121, "Scala")];
+    for (id, name) in jvm {
         let spec = reg
             .require(id)
             .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
@@ -375,39 +279,9 @@ fn batch_c_jvm_languages_cap_heap_without_tool_options() {
 }
 
 #[test]
-fn batch_d_functional_languages_present() {
+fn dotnet_native_and_sql_languages_present() {
     let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let batch_d = [
-        (130, "Haskell"),
-        (131, "OCaml"),
-        (132, "Erlang"),
-        (133, "Elixir"),
-        (134, "Common Lisp"),
-    ];
-    for (id, name) in batch_d {
-        let spec = reg
-            .require(id)
-            .unwrap_or_else(|_| panic!("{name} (id {id}) should exist"));
-        assert_eq!(spec.name, name);
-    }
-}
-
-#[test]
-fn batch_efg_languages_present() {
-    let reg = LanguageRegistry::from_toml(&languages_toml()).unwrap();
-    let langs = [
-        (140, "C#"),
-        (141, "F#"),
-        (150, "COBOL"),
-        (151, "Prolog"),
-        (152, "Swift"),
-        (153, "Octave"),
-        (154, "SQL"),
-        (161, "Nim"),
-        (162, "Crystal"),
-        (163, "Dart"),
-        (164, "Julia"),
-    ];
+    let langs = [(140, "C#"), (152, "Swift"), (154, "SQL"), (163, "Dart")];
     for (id, name) in langs {
         let spec = reg
             .require(id)

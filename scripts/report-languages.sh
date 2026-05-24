@@ -134,47 +134,6 @@ run 106 TypeScript <<'SRC'
 const m: string = "hello";
 console.log(m);
 SRC
-run 110 Fortran     <<'SRC'
-program p
-  print *, "hello"
-end program p
-SRC
-run 111 Pascal      <<'SRC'
-begin
-  writeln('hello');
-end.
-SRC
-run 112 D           <<'SRC'
-import std.stdio;
-void main() { writeln("hello"); }
-SRC
-run 113 Objective-C <<'SRC'
-#import <stdio.h>
-int main(){ printf("hello\n"); return 0; }
-SRC
-run 114 Assembly    <<'SRC'
-section .data
-msg db "hello", 10
-len equ $ - msg
-section .text
-global _start
-_start:
-  mov rax, 1
-  mov rdi, 1
-  mov rsi, msg
-  mov rdx, len
-  syscall
-  mov rax, 60
-  xor rdi, rdi
-  syscall
-SRC
-run 115 Ada         <<'SRC'
-with Ada.Text_IO;
-procedure Main is
-begin
-  Ada.Text_IO.Put_Line("hello");
-end Main;
-SRC
 run 120 Kotlin  <<'SRC'
 fun main() { println("hello") }
 SRC
@@ -183,141 +142,21 @@ object main {
   def main(args: Array[String]): Unit = println("hello")
 }
 SRC
-run 122 Groovy  <<'SRC'
-println "hello"
-SRC
-run 123 Clojure <<'SRC'
-(println "hello")
-SRC
-run 130 Haskell     <<'SRC'
-main = putStrLn "hello"
-SRC
-run 131 OCaml       <<'SRC'
-let () = print_endline "hello"
-SRC
-run 132 Erlang      <<'SRC'
--module(main).
--export([main/0]).
-main() -> io:format("hello~n").
-SRC
-run 133 Elixir      <<'SRC'
-IO.puts("hello")
-SRC
-run 134 "Common Lisp" <<'SRC'
-(format t "hello~%")
-SRC
 run 140 "C#" <<'SRC'
 using System;
 class Program { static void Main(){ Console.WriteLine("hello"); } }
 SRC
-run 141 "F#" <<'SRC'
-printfn "hello"
-SRC
-run 150 COBOL  <<'SRC'
-       IDENTIFICATION DIVISION.
-       PROGRAM-ID. HELLO.
-       PROCEDURE DIVISION.
-           DISPLAY "hello".
-           STOP RUN.
-SRC
-run 151 Prolog <<'SRC'
-:- initialization(main).
-main :- write('hello'), nl, halt.
-SRC
 run 152 Swift  <<'SRC'
 print("hello")
-SRC
-run 153 Octave <<'SRC'
-disp("hello")
 SRC
 run 154 SQL    <<'SRC'
 SELECT 'hello';
 SRC
-run 161 Nim     <<'SRC'
-echo "hello"
-SRC
-run 162 Crystal <<'SRC'
-puts "hello"
-SRC
 run 163 Dart    <<'SRC'
 void main() { print("hello"); }
 SRC
-run 164 Julia   <<'SRC'
-println("hello")
-SRC
 
-run 170 Racket       <<'SRC'
-#lang racket
-(displayln "hello")
-SRC
-run 171 Raku         <<'SRC'
-say "hello";
-SRC
-run 172 AWK          <<'SRC'
-BEGIN { print "hello" }
-SRC
-run 173 CoffeeScript <<'SRC'
-console.log "hello"
-SRC
-run 174 Forth        <<'SRC'
-." hello" cr
-SRC
-run 176 "Emacs Lisp" <<'SRC'
-(princ "hello\n")
-SRC
-run 177 Verilog      <<'SRC'
-module main;
-  initial $display("hello");
-endmodule
-SRC
-run 178 "LLVM IR"    <<'SRC'
-@.s = private unnamed_addr constant [6 x i8] c"hello\00"
-declare i32 @puts(ptr)
-define i32 @main() {
-  call i32 @puts(ptr @.s)
-  ret i32 0
-}
-SRC
-run 179 V            <<'SRC'
-fn main() {
-	println('hello')
-}
-SRC
-run 180 FreeBASIC    <<'SRC'
-Print "hello"
-SRC
-run 181 PowerShell   <<'SRC'
-Write-Output "hello"
-SRC
-run 182 Pony         <<'SRC'
-actor Main
-  new create(env: Env) =>
-    env.out.print("hello")
-SRC
 
-run 300 Brainfuck "Hello World!" <<'SRC'
-++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
-SRC
-run 301 GolfScript <<'SRC'
-"hello"
-SRC
-run 302 CJam       <<'SRC'
-"hello"
-SRC
-run 303 Vyxal      <<'SRC'
-`hello`
-SRC
-run 304 Jelly "49" <<'SRC'
-7²
-SRC
-run 305 Samarium   <<'SRC'
-=> * {
-    "hello"!;
-}
-SRC
-run 306 Paradoc    <<'SRC'
-"hello"
-SRC
 
 hr
 printf "${BOLD}PASS ${GREEN}%d${RESET}${BOLD}   FAIL ${RED}%d${RESET}${BOLD}   total CPU %ss${RESET}\n" \

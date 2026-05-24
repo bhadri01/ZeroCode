@@ -67,6 +67,11 @@ pub struct RawOutcome {
     /// cache or write unbounded data to host disk.
     pub compiled_binary: Bytes,
     pub killed_by_wall_timeout: bool,
+    /// Peak `memory.current` sampled across the RUN phase only (KB), set when a
+    /// compile→run barrier fired so the compiler's transient RSS is excluded.
+    /// `None` for interpreted langs / cache hits, where the whole-job
+    /// `memory.peak` is already run-only and triage uses it directly.
+    pub run_phase_memory_kb: Option<u32>,
 }
 
 const NAMESPACE_FLAGS: CloneFlags = CloneFlags::empty()
@@ -108,6 +113,15 @@ pub fn run(
     // landlock-blocked, so its fd number can't be discovered either).
     let (artifact_rd, artifact_wr) =
         pipe2(OFlag::O_CLOEXEC).map_err(|e| SandboxError::Spawn(format!("pipe artifact: {e}")))?;
+    // Compile→run barrier pipes (CLOEXEC, so they vanish on the run execvpe):
+    //   phase   — child→parent: "compilation finished, the compiler has exited"
+    //   proceed — parent→child: "I've reset the cgroup baseline, exec the run"
+    // Between the two the parent drops the compiler's page cache + resets
+    // memory.peak so the reported figure is run-phase only.
+    let (phase_rd, phase_wr) =
+        pipe2(OFlag::O_CLOEXEC).map_err(|e| SandboxError::Spawn(format!("pipe phase: {e}")))?;
+    let (proceed_rd, proceed_wr) =
+        pipe2(OFlag::O_CLOEXEC).map_err(|e| SandboxError::Spawn(format!("pipe proceed: {e}")))?;
 
     let scratch_path = scratch.path.clone();
     let runner_rootfs = config.runner_rootfs.clone();
@@ -126,6 +140,8 @@ pub fn run(
             drop(start_rd);
             drop(ready_wr);
             drop(artifact_wr);
+            drop(phase_wr);
+            drop(proceed_rd);
 
             // Wait for the child to enter its new user namespace.
             let mut byte = [0u8; 1];
@@ -157,9 +173,61 @@ pub fn run(
             let compile_stderr = std::thread::spawn(move || read_capped(compile_rd, max_stderr));
             let artifact = std::thread::spawn(move || read_capped(artifact_rd, MAX_ARTIFACT));
 
+            // Compile→run barrier + run-phase memory sampler. When the child
+            // finishes compiling it writes one byte to `phase`; the compiler
+            // sub-child has exited, so we drop its lingering page cache
+            // (memory.reclaim), ack over `proceed` so the child execs the run,
+            // then poll memory.current for the run phase's high-water mark.
+            // This is how the reported figure becomes run-phase only: this
+            // kernel exposes memory.peak read-only (no reset), so the whole-job
+            // peak would otherwise be the compiler's ~100 MB+ RSS. Interpreted
+            // langs and compile-cache hits never compile — the byte never comes,
+            // the read hits EOF at job end, and we leave the (already run-only)
+            // whole-job memory.peak for triage to use. Runs in its own thread so
+            // the blocking wait_with_timeout below still bounds the wall clock.
+            let cg_path = cgroup.path.clone();
+            let run_mem_kb = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let run_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (rm, rdone) = (run_mem_kb.clone(), run_done.clone());
+            let barrier = std::thread::spawn(move || {
+                use std::sync::atomic::Ordering::Relaxed;
+                let mut b = [0u8; 1];
+                if read(&phase_rd, &mut b).unwrap_or(0) != 1 {
+                    return false; // no compile phase: triage uses the cgroup peak
+                }
+                super::cgroup::reset_run_baseline_at(&cg_path);
+                let _ = write(&proceed_wr, b"1");
+                let current = cg_path.join("memory.current");
+                let sample = |p: &Path| -> u64 {
+                    std::fs::read_to_string(p)
+                        .ok()
+                        .and_then(|s| s.trim().parse().ok())
+                        .unwrap_or(0)
+                };
+                loop {
+                    rm.fetch_max(sample(&current) / 1024, Relaxed);
+                    if rdone.load(Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_micros(200));
+                }
+                rm.fetch_max(sample(&current) / 1024, Relaxed);
+                true
+            });
+
             // Wall-clock budget; on overrun we ask the cgroup to atomically
-            // SIGKILL every process in the sandbox.
-            let (status, killed_by_wall_timeout) = wait_with_timeout(child, wall_time, cgroup)?;
+            // SIGKILL every process in the sandbox. Signal the sampler and join
+            // it (even on a wait error) before propagating, so it never leaks.
+            let wait_res = wait_with_timeout(child, wall_time, cgroup);
+            run_done.store(true, std::sync::atomic::Ordering::Relaxed);
+            let sampled = barrier.join().unwrap_or(false);
+            let run_phase_memory_kb = if sampled {
+                let kb = run_mem_kb.load(std::sync::atomic::Ordering::Relaxed) as u32;
+                (kb > 0).then_some(kb)
+            } else {
+                None
+            };
+            let (status, killed_by_wall_timeout) = wait_res?;
 
             let stdout = stdout
                 .join()
@@ -181,6 +249,7 @@ pub fn run(
                 compile_stderr,
                 compiled_binary,
                 killed_by_wall_timeout,
+                run_phase_memory_kb,
             })
         }
         ForkResult::Child => {
@@ -190,6 +259,8 @@ pub fn run(
             drop(ready_rd);
             drop(start_wr);
             drop(artifact_rd);
+            drop(phase_rd);
+            drop(proceed_wr);
 
             // Phase 2 child path: every step bails to exit(127) with a
             // message on stderr if it fails. We can't use ?-propagation here
@@ -206,6 +277,8 @@ pub fn run(
                 &stderr_wr,
                 &compile_wr,
                 &artifact_wr,
+                &phase_wr,
+                &proceed_rd,
                 compile_argv.as_deref(),
                 &run_argv,
                 &env_strings,
@@ -237,6 +310,8 @@ fn run_child(
     stderr_wr: &OwnedFd,
     compile_wr: &OwnedFd,
     artifact_wr: &OwnedFd,
+    phase_wr: &OwnedFd,
+    proceed_rd: &OwnedFd,
     compile_argv: Option<&[CString]>,
     run_argv: &[CString],
     env_strings: &[CString],
@@ -270,6 +345,8 @@ fn run_child(
             stderr_wr,
             compile_wr,
             artifact_wr,
+            phase_wr,
+            proceed_rd,
             compile_argv,
             run_argv,
             env_strings,
@@ -290,6 +367,8 @@ fn run_sandbox_child(
     stderr_wr: &OwnedFd,
     compile_wr: &OwnedFd,
     artifact_wr: &OwnedFd,
+    phase_wr: &OwnedFd,
+    proceed_rd: &OwnedFd,
     compile_argv: Option<&[CString]>,
     run_argv: &[CString],
     env_strings: &[CString],
@@ -357,6 +436,17 @@ fn run_sandbox_child(
             // cache poisoning) and nothing hits host disk. Best-effort: caching
             // is an optimisation; a pack error just means no cache entry.
             send_artifact(artifact_wr, source_file);
+
+            // Compile→run barrier. The compiler sub-child has been reaped, so
+            // its RSS is freed; tell the parent it can drop the lingering page
+            // cache + reset memory.peak, then block until it acks so the reset
+            // lands before user code allocates. This is what makes the reported
+            // `memory` the run-phase peak instead of the compiler's. The fds are
+            // CLOEXEC, so they vanish on the execvpe below. Best-effort: a pipe
+            // error just means we run without the reset (compile+run peak).
+            let _ = write(phase_wr, b"1");
+            let mut ack = [0u8; 1];
+            let _ = read(proceed_rd, &mut ack);
         }
     }
 
