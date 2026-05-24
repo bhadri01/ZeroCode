@@ -15,9 +15,31 @@ pub fn execute(
     config: &NativeSandboxConfig,
     job: SandboxJob,
 ) -> Result<SandboxResult, SandboxError> {
-    let cgroup = Cgroup::create(&config.cgroup_parent, &job.token.to_string(), &job.limits)?;
     let scratch = Scratch::create(&config.scratch_dir, &job)?;
     let has_cached_binary = scratch.has_cached_binary();
+
+    // Per-phase memory: when a compile phase will actually run, create the cgroup
+    // at the (larger) compile budget so the compiler has headroom; the exec
+    // barrier then drops memory.max to job.limits.memory_mb (the run budget) once
+    // the compiler exits. With no compile phase (interpreted langs, cache hits)
+    // the cgroup is created at the run budget and never shrinks. Only memory_mb
+    // differs by phase — pids/cpu stay at job.limits the whole job (a higher
+    // pids ceiling reserves nothing). job.limits is Copy.
+    let will_compile = job.language.compile_cmd.is_some() && !has_cached_binary;
+    let mut cgroup_limits = job.limits;
+    if will_compile {
+        if let Some(cl) = job.language.compile_limits.as_ref() {
+            cgroup_limits.memory_mb = cl.memory_mb.max(job.limits.memory_mb);
+        }
+    }
+    let cgroup = match Cgroup::create(&config.cgroup_parent, &job.token.to_string(), &cgroup_limits)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            scratch.destroy();
+            return Err(e);
+        }
+    };
 
     let cpu_time = std::time::Duration::from_secs_f64(job.limits.cpu_time);
     let started_at = Utc::now();

@@ -145,6 +145,21 @@ pub fn reset_run_baseline_at(path: &Path) {
     let _ = write_file(&path.join("memory.peak"), "0");
 }
 
+/// Lower (or raise) `memory.max` mid-job. Used at the compile→run barrier to
+/// drop the cgroup ceiling from the compile budget to the (smaller) run budget
+/// once the compiler has exited — so the admission controller's per-job
+/// reservation can be sized to the run, not the heavier cold compiler.
+///
+/// Writing a value below current usage makes the kernel reclaim to fit (and
+/// OOM-kill only if it can't), so callers MUST reclaim first — the barrier runs
+/// [`reset_run_baseline_at`] immediately before this, which drops the compiler's
+/// now-orphaned page cache, leaving `memory.current` well under any sane run
+/// budget. Best-effort: on failure the higher compile ceiling simply persists,
+/// which is safe (only less memory-efficient).
+pub fn set_memory_max_at(path: &Path, mb: u64) {
+    let _ = write_file(&path.join("memory.max"), &format!("{}", mb * 1024 * 1024));
+}
+
 fn write_file(path: &Path, value: &str) -> Result<(), SandboxError> {
     let mut f = fs::OpenOptions::new().write(true).open(path).map_err(|e| {
         SandboxError::CgroupSetup(format!("open {} for write: {e}", path.display()))

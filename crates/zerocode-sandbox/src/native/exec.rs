@@ -186,6 +186,10 @@ pub fn run(
             // whole-job memory.peak for triage to use. Runs in its own thread so
             // the blocking wait_with_timeout below still bounds the wall clock.
             let cg_path = cgroup.path.clone();
+            // Run-phase memory budget. The cgroup was created at the (larger)
+            // compile budget (see linux.rs); once the compiler has exited we drop
+            // memory.max to this so the run is bounded — and reserved — at run size.
+            let run_mem_mb = limits.memory_mb as u64;
             let run_mem_kb = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let run_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let (rm, rdone) = (run_mem_kb.clone(), run_done.clone());
@@ -195,7 +199,11 @@ pub fn run(
                 if read(&phase_rd, &mut b).unwrap_or(0) != 1 {
                     return false; // no compile phase: triage uses the cgroup peak
                 }
+                // Reclaim the compiler's orphaned page cache, THEN shrink the
+                // ceiling to the run budget (reclaim-first so current < new max),
+                // THEN release the run exec.
                 super::cgroup::reset_run_baseline_at(&cg_path);
+                super::cgroup::set_memory_max_at(&cg_path, run_mem_mb);
                 let _ = write(&proceed_wr, b"1");
                 let current = cg_path.join("memory.current");
                 let sample = |p: &Path| -> u64 {

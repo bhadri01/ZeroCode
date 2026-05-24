@@ -20,11 +20,19 @@
 # sentinel `253`, which the worker maps to Status::CompileError with the
 # compiler's stderr routed into `compile_output`.
 #
-# MEMORY ACCOUNTING (cold, no compile cache): the sandbox resets the cgroup
-# `memory.peak` (and reclaims page cache) at the compile→run boundary, so the
-# reported `memory` reflects RUN-phase peak only — not the compiler's transient
-# RSS (rustc/g++ alone exceed 100 MB). `default_limits.memory_mb` must still be
-# >= the cold compiler's peak, since both phases share one cgroup ceiling.
+# MEMORY ACCOUNTING — PER-PHASE ceilings (cold, no compile cache): compiled
+# languages run two phases in one cgroup, and the sandbox now sizes memory.max
+# per phase. The cgroup is created at `compile_limits.memory_mb` (compiler
+# headroom); at the compile→run boundary it reclaims the compiler's page cache,
+# resets the peak, and DROPS memory.max to `default_limits.memory_mb`. So:
+#   • compile_limits.memory_mb  must clear the cold compiler's peak (rustc / g++ /
+#     kotlinc / swiftc alone exceed 100 MB). Used only as the compile ceiling.
+#   • default_limits.memory_mb  needs only cover the RUN phase — and it is what the
+#     worker admission controller reserves per job, so keeping it tight packs far
+#     more concurrent jobs per node. (For JVM/Go/Node it also feeds the runtime
+#     heap knob — ${jvm_heap_mb}, GOMEMLIMIT, --max-old-space-size — so don't
+#     shrink those below a sane run heap.)
+# Reported `memory` reflects RUN-phase peak only.
 
 [[language]]
 id = 48
@@ -50,10 +58,11 @@ source_file = "main.cpp"
 compile_cmd = ["/usr/bin/g++-14", "-O0", "-pipe", "-std=c++23", "main.cpp", "-o", "prog", "-lm"]
 run_cmd = ["./prog"]
 env = []
-# Cold g++ parsing <iostream> peaks ~114 MB; both phases share one cgroup
-# ceiling, so default_limits.memory_mb must clear it (192 leaves headroom).
-# The reported figure is run-phase only (peak reset at the compile->run barrier).
-default_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# Cold g++ parsing <iostream> peaks ~114 MB → compile_limits clears it (192);
+# the run is ~1 MB so default_limits drops to 128. memory.max is shrunk to the
+# run budget at the compile→run barrier; the reported figure is run-phase only.
+default_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 128, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -82,8 +91,10 @@ env = [
 # typical program is ~0.3 s instead of ~11 s, so the old cold-build allowances
 # (15 s CPU / 30 s wall / 384–512 MB) are gone. A warm build of a json+sort
 # program fits in 256 MB at GOMAXPROCS=1.
-# NOTE: native applies ONE limit set to compile+run (per-phase compile_limits is
-# not yet wired into NativeSandbox), so default_limits must cover both phases.
+# NOTE: kept at 256 for both phases on purpose — `GOMEMLIMIT=${memory_mb}MiB`
+# feeds the runtime GC, so default_limits.memory_mb is the run heap knob and must
+# not be shrunk below what user programs need. (Per-phase memory.max shrink still
+# applies generally; here compile and run budgets are equal, so it's a no-op.)
 default_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
@@ -179,10 +190,11 @@ env = [
     ["RUSTUP_HOME", "/usr/local/rustup"],
     ["CARGO_HOME", "/usr/local/cargo"],
 ]
-# Cold rustc peaks ~128 MB on a trivial program (it hit the old 128 MB default
-# exactly); 256 gives compile headroom. Run-phase peak is reported (reset at the
-# compile->run barrier), so a hello binary still measures ~3 MB.
-default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# Cold rustc peaks ~128 MB on a trivial program → compile_limits 256 gives
+# headroom; the run is a ~9 MB native binary so default_limits drops to 128.
+# memory.max is shrunk to the run budget at the compile→run barrier.
+default_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 128, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 10.0, wall_time = 20.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -286,10 +298,12 @@ compile_cmd = [
 # small; full tiered JIT is kept so compute-heavy solutions still get C2.
 run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-jar", "prog.jar"]
 env = []
-# NativeSandbox applies default_limits to BOTH compile and run (compile_limits
-# is not yet wired), and `kotlinc -include-runtime` building a fat jar is the
-# slowest compile in the set — so default_limits carries the full headroom.
-default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# `kotlinc -include-runtime` building a fat jar is the slowest, heaviest compile
+# in the set → compile_limits 1024. The run is `java -jar` with -Xmx${jvm_heap_mb}m
+# (= memory_mb-256 = 256 MB heap), so default_limits 512 covers heap+metaspace+
+# codecache; memory.max shrinks 1024→512 at the compile→run barrier. 512 is also
+# what admission reserves per Kotlin job (was 1024).
+default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
@@ -317,8 +331,11 @@ env = [
     # the flags inline above, so it ignores this.
     ["JAVA_OPTS", "-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError"],
 ]
-# scalac cold-start + compile is JVM-heavy; default_limits covers compile+run.
-default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# scalac cold-start + compile is JVM-heavy → compile_limits 1024. The run is
+# `java -cp` with -Xmx${jvm_heap_mb}m (256 MB heap), so default_limits 512 covers
+# the run; memory.max shrinks 1024→512 at the barrier (and 512 is what admission
+# reserves per Scala job, was 1024).
+default_limits = { cpu_time = 25.0, wall_time = 55.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits = { cpu_time = 30.0, wall_time = 60.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
@@ -350,9 +367,10 @@ env = [
     # otherwise leaks into the submission's stdout.
     ["DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE", "1"],
 ]
-# csc + `dotnet app.dll` covers compile+run. Limits stay generous (the cgroup is
-# shared across both phases) but well below the old MSBuild-era headroom.
-default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 512, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# csc compile gets compile_limits 768; `dotnet app.dll` runs in ~5 MB so
+# default_limits drops to 256. memory.max shrinks 768→256 at the compile→run
+# barrier, and 256 is what admission reserves per C# job (was 512).
+default_limits = { cpu_time = 15.0, wall_time = 30.0, memory_mb = 256, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 compile_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
@@ -369,8 +387,12 @@ run_cmd = ["./prog"]
 env = [
     ["SWIFT_BACKTRACE", "enable=no"],
 ]
-# swiftc is among the heaviest compilers (CPU + memory); generous headroom.
-default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# swiftc is among the heaviest compilers (CPU + memory) → compile_limits 1024.
+# The run is a ~1.5 MB native binary, so default_limits drops to 128: memory.max
+# shrinks 1024→128 at the compile→run barrier, and 128 is what admission reserves
+# per Swift job (was 1024 — the biggest density win in the set, ~8×).
+default_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 128, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 25.0, wall_time = 50.0, memory_mb = 1024, max_pids = 128, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -398,6 +420,10 @@ env = [
     ["HOME", "/tmp"],
     ["DART_DISABLE_ANALYTICS", "1"],
 ]
-# `dart compile exe` AOT-compiles to a native binary; moderate CPU + memory.
-default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+# `dart compile exe` AOT-compiles to a native binary → compile_limits 768. The
+# run is a ~11 MB native binary, so default_limits drops to 256: memory.max
+# shrinks 768→256 at the compile→run barrier, and 256 is what admission reserves
+# per Dart job (was 768).
+default_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 20.0, wall_time = 40.0, memory_mb = 768, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
