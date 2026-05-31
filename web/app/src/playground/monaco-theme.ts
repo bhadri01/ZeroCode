@@ -92,40 +92,6 @@ const DARK: Palette = {
   focusBorder:     '#FFD86655',
 };
 
-// Monokai Pro "Light Sun"-inspired — warm cream paper, hues hand-calibrated to
-// ~4.6:1+ on the #FAF9F5 surface so the editor is a true light-theme peer, not
-// a dark pocket on the page. [NEEDS VISUAL QA — colors set without a live build.]
-const LIGHT: Palette = {
-  bg:              '#FAF9F5',
-  bgPanel:         '#FFFFFF',
-  bgLine:          '#EFEBE1',
-  bgSelection:     '#E5D9C3',
-  bgSelectionDim:  '#EFE9DC',
-  cursor:          'B8481A',
-  gutterDim:       '#B8B0A0',
-  gutterActive:    '#6B6456',
-  fg:              '2A2620',
-  fgDim:           '706A5A',
-  pink:            'C8366B',   // keyword / operator
-  green:           '4A7A1E',   // function / method
-  yellow:          '9A6B00',   // string  (warm gold)
-  orange:          'C0561B',   // escape / annotation / parameter
-  purple:          '7A4FCC',   // number / constant
-  blue:            '1A7A8C',   // type / class (deep teal)
-  comment:         '7F7A68',
-  error:           'C42B1C',
-  findMatch:       '#E5B84745',
-  findMatchHi:     '#E5B84730',
-  rangeHi:         '#E5D9C355',
-  minimapFind:     '#E5B84799',
-  scrollShadow:    '#00000014',
-  slider:          '#B8B0A077',
-  sliderHover:     '#9A948299',
-  sliderActive:    '#6B6456AA',
-  sticky:          '#FFFFFFCC',
-  focusBorder:     '#C8366B66',
-};
-
 function makeTheme(C: Palette, base: 'vs' | 'vs-dark'): monaco.editor.IStandaloneThemeData {
   return {
   base,
@@ -374,6 +340,7 @@ function makeTheme(C: Palette, base: 'vs' | 'vs-dark'): monaco.editor.IStandalon
   };
 }
 
+// The code editor stays dark Monokai Pro in BOTH app themes (dark code surface
+// on light chrome). The Palette/makeTheme structure is kept so the syntax
+// colors are easy to tweak in one place.
 export const editorTheme = makeTheme(DARK, 'vs-dark');
-export const editorThemeLight = makeTheme(LIGHT, 'vs');
-export const themeNameLight = 'monokai-pro-light';

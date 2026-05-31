@@ -126,8 +126,9 @@
   --syntax-num: #d2a86a;
   --syntax-fn:  #f5d76e;
 
-  /* Code-editor chrome background (Monaco). Light variant set in the
-   * light block once the light editor theme is wired. */
+  /* Code-editor chrome background (Monaco). The editor stays dark Monokai Pro
+   * in BOTH app themes, so this is NOT overridden in the light block — the
+   * editor reads as a dark code surface on the cream page by design. */
   --editor-bg: #221F22;
 
   /* Scrollbar (warm-neutral on dark; light override below). */
@@ -197,9 +198,6 @@
   --syntax-str: #2d7d47;  /* moss green  ~6.2:1 */
   --syntax-num: #8b6f3d;  /* warm brown  ~6.1:1 */
   --syntax-fn:  #b8870d;  /* golden      ~5.0:1 */
-
-  /* The Monaco editor switches to its light variant; keep the wrap in step. */
-  --editor-bg: #faf9f5;
 
   /* Cold white scrollbars vanish on cream. */
   --scrollbar:       rgba(20,18,12,0.18);
