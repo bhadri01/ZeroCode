@@ -186,7 +186,7 @@ export function Nav() {
           margin-top: 16px;
           display: inline-flex; align-items: center; justify-content: center; gap: 8px;
           padding: 14px 18px; border-radius: 8px;
-          background: var(--accent); color: #0a0a0a;
+          background: var(--accent); color: var(--accent-ink);
           font: 500 14px var(--f-sans);
           text-decoration: none;
           min-height: 48px;
@@ -205,14 +205,14 @@ export function Nav() {
         .zc-cta-primary {
           display: inline-flex; align-items: center; gap: 8px;
           padding: 7px 12px; border-radius: 6px;
-          background: var(--accent); color: #0a0a0a;
+          background: var(--accent); color: var(--accent-ink);
           font-family: var(--f-mono); font-size: 12px; font-weight: 500;
           letter-spacing: 0.02em;
           white-space: nowrap;
           transition: transform .15s ease, filter .15s ease, box-shadow .2s ease;
           box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--accent) 70%, transparent);
         }
-        .zc-cta-primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 10px 22px -6px color-mix(in oklab, var(--accent) 80%, transparent); }
+        .zc-cta-primary:hover { background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 10px 22px -6px color-mix(in oklab, var(--accent) 80%, transparent); }
         .zc-cta-primary:active { transform: translateY(1px); }
       `}</style>
       <div className="zc-nav-inner">

@@ -63,6 +63,97 @@
   --max-w: 1240px;
   --pad-x: 32px;
 
+  /* ── Type scale ──────────────────────────────────────────────────
+   * A deliberate, mono-forward ramp. Existing components still use inline
+   * sizes; new/refined code references these so the rhythm converges. */
+  --t-2xs:  10px;
+  --t-xs:   10.5px;
+  --t-sm:   11.5px;
+  --t-base: 12.5px;
+  --t-md:   13px;
+  --t-lg:   15px;
+  --t-xl:   18px;
+  --t-2xl:  22px;
+  --t-3xl:  28px;
+  --lh-tight:   1.3;
+  --lh-snug:    1.45;
+  --lh-normal:  1.55;
+  --lh-relaxed: 1.7;
+  --ls-tight:  -0.01em;
+  --ls-normal:  0;
+  --ls-wide:    0.04em;
+  --ls-wider:   0.08em;
+  --ls-widest:  0.14em;
+
+  /* ── Radius scale (additive; --r-* above are legacy radii, unused) ── */
+  --radius-xs:   3px;
+  --radius-sm:   4px;
+  --radius-base: 6px;
+  --radius-md:   8px;
+  --radius-lg:   10px;
+  --radius-xl:   12px;
+  --radius-2xl:  14px;
+  --radius-pill: 999px;
+
+  /* ── Signature motion ────────────────────────────────────────────
+   * --ease-out-soft is the house curve (drawers, sheets, motion.tsx).
+   * Keep the set small so every interaction feels like one system. */
+  --ease-out-soft: cubic-bezier(.22,.61,.36,1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-emph:     cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.4, 0.5, 1);
+  --dur-1: 120ms;
+  --dur-2: 150ms;
+  --dur-3: 220ms;
+  --dur-4: 350ms;
+  --dur-5: 500ms;
+
+  /* ── Accent ink + emphasis ───────────────────────────────────────
+   * The accent (rust) is theme-independent, so a near-black ink sits on
+   * it cleanly in BOTH themes (~6.2:1) — cream-on-rust would only be ~3:1.
+   * --accent-light/-dark replace brittle filter:brightness() hovers. */
+  --accent-ink:   #0a0a0a;
+  --accent-light: var(--rust-1);
+  --accent-dark:  #b8481a;
+  --green-1:      #7fefb0;
+
+  /* Card surface tier (between bg-2 and surface) for raised panels. */
+  --bg-card: var(--bg-2);
+
+  /* Faux-syntax palette for the landing IDE teaser. Light overrides below
+   * lift these to AA on cream (the dark pastels drop to ~2.5:1 on paper). */
+  --syntax-str: #9be39b;
+  --syntax-num: #d2a86a;
+  --syntax-fn:  #f5d76e;
+
+  /* Code-editor chrome background (Monaco). Light variant set in the
+   * light block once the light editor theme is wired. */
+  --editor-bg: #221F22;
+
+  /* Scrollbar (warm-neutral on dark; light override below). */
+  --scrollbar:       rgba(255,255,255,0.10);
+  --scrollbar-hover: rgba(255,255,255,0.20);
+
+  /* ── Elevation ramp ──────────────────────────────────────────────
+   * Dark slate separates by tone, so these are soft/deep rather than
+   * hard drop-shadows. --shadow-pop = popovers/sheets; --shadow-lift =
+   * the faint raise on flush IO panels. Light overrides are warm-tinted. */
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.40);
+  --shadow-lg:  0 12px 28px rgba(0,0,0,0.50);
+  --shadow-xl:  0 24px 56px rgba(0,0,0,0.60);
+  --shadow-pop: 0 24px 64px -24px rgba(0,0,0,0.70);
+  --shadow-lift: 0 2px 14px rgba(0,0,0,0.28);
+
+  /* Paper-card depth + focus ring. On dark these are nearly invisible (the
+   * dark slate panels already separate via tone); on light they give real
+   * paper-card lift so the stdin/output/test panels read as raised surfaces
+   * over the cream page rather than flat washes. */
+  --shadow-card:  0 1px 0 rgba(255,255,255,0.02);
+  --focus-width:  3px;
+  --focus-offset: 2px;
+  --shadow-focus: 0 0 0 var(--focus-width) color-mix(in oklab, var(--accent) 32%, transparent);
+
   /* light-mode tokens used by theme tweak; default is dark */
   color-scheme: dark;
 }
@@ -70,19 +161,62 @@
 [data-theme="light"] {
   --bg:        #f7f6f2;
   --bg-1:      #efeee8;
-  --bg-2:      #e6e4dc;
-  --bg-3:      #ddd9cd;
+  --bg-2:      #e3e0d4;
+  --bg-3:      #d2cdbb;
   --surface:   #ffffff;
-  --surface-2: #f3f1ea;
+  --surface-2: #faf8f1;
   --line:        rgba(20,18,12,0.10);
-  --line-2:      rgba(20,18,12,0.16);
-  --line-strong: rgba(20,18,12,0.28);
+  --line-2:      rgba(20,18,12,0.18);
+  --line-strong: rgba(20,18,12,0.32);
   --fg:    #14110b;
   --fg-1:  #3a352b;
-  --fg-2:  #6a6354;
-  --fg-3:  #948c7a;
-  --fg-4:  #b9b2a0;
+  --fg-2:  #5d5746;
+  --fg-3:  #847d6b;
+  --fg-4:  #b1aa97;
   color-scheme: light;
+
+  /* Verdict palette recalibrated for cream: the dark-mode pastels
+   * (#6ee7a4, #f5b850, #f06b6b…) drop below AA on light. These are deeper,
+   * more saturated shades that hit ~4.5:1 against the cream surface while
+   * still reading as "green / amber / red" at a glance. */
+  --st-accepted:   #15803d;
+  --st-tle:        #b45309;
+  --st-mle:        #9a3412;
+  --st-ce:         #b45309;
+  --st-re:         #b91c1c;
+  --st-se:         #991b1b;
+  --st-queued:     #1d4ed8;
+  --st-processing: #475569;
+
+  /* Warm the paper-white surface a touch (#fff reads clinical against cream)
+   * and add a card tier so panels lift off the page without a hard border. */
+  --surface:   #fdfcfa;
+  --bg-card:   #faf8f1;
+
+  /* Faux-syntax recalibrated to AA on cream (the dark pastels fail at ~2.5:1). */
+  --syntax-str: #2d7d47;  /* moss green  ~6.2:1 */
+  --syntax-num: #8b6f3d;  /* warm brown  ~6.1:1 */
+  --syntax-fn:  #b8870d;  /* golden      ~5.0:1 */
+
+  /* The Monaco editor switches to its light variant; keep the wrap in step. */
+  --editor-bg: #faf9f5;
+
+  /* Cold white scrollbars vanish on cream. */
+  --scrollbar:       rgba(20,18,12,0.18);
+  --scrollbar-hover: rgba(20,18,12,0.30);
+
+  /* Warm, layered elevation ramp — depth without muddy black. */
+  --shadow-sm:  0 1px 2px rgba(50,40,20,0.05);
+  --shadow-md:  0 4px 12px rgba(50,40,20,0.08), 0 1px 3px rgba(50,40,20,0.06);
+  --shadow-lg:  0 12px 28px rgba(50,40,20,0.10), 0 2px 6px rgba(50,40,20,0.06);
+  --shadow-xl:  0 28px 64px rgba(50,40,20,0.14), 0 4px 12px rgba(50,40,20,0.08);
+  --shadow-pop: 0 24px 60px -20px rgba(50,40,20,0.22);
+
+  /* Paper shadow — warm-tinted, not muddy black. Doubles as the lift cue
+   * for the playground IO panels and the test-case row cards. */
+  --shadow-card:  0 1px 2px rgba(50,40,20,0.05), 0 6px 18px rgba(50,40,20,0.08);
+  --shadow-lift:  var(--shadow-card);
+  --shadow-focus: 0 0 0 var(--focus-width) color-mix(in oklab, var(--accent) 24%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -125,8 +259,8 @@ body::after {
 [data-theme="light"] body::before { opacity: 0.45; }
 [data-theme="light"] body::after  { opacity: 0.02; mix-blend-mode: multiply; }
 
-/* selection */
-::selection { background: var(--rust); color: #0a0a0a; }
+/* selection — rust highlight with dark ink reads cleanly on both themes */
+::selection { background: var(--rust); color: var(--accent-ink); }
 
 /* helpers */
 .mono { font-family: var(--f-mono); font-feature-settings: 'liga' 0, 'calt' 0; }
@@ -159,16 +293,18 @@ a { color: inherit; text-decoration: none; }
   background-position: -1px -1px;
 }
 
-/* scrollbar */
+/* scrollbar — token-driven so light cream gets a visible (warm-dark) thumb */
+html { scrollbar-color: var(--scrollbar) transparent; scrollbar-width: thin; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 8px; transition: background var(--dur-2) var(--ease-emph); }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
 /* ─── Reveal-on-scroll utility ─────────────────────────────────────── */
 .reveal {
   opacity: 0;
   transform: translateY(14px);
-  transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1);
+  transition: opacity .7s var(--ease-out-soft), transform .7s var(--ease-out-soft);
   will-change: opacity, transform;
 }
 .reveal.in {

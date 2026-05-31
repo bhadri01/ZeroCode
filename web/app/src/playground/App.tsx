@@ -157,8 +157,10 @@ function ThemeToggle() {
           cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease;
         }
         .pg-theme:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+        .pg-theme:focus-visible { outline: none; border-color: var(--accent); color: var(--accent); box-shadow: var(--shadow-focus); }
         .pg-theme:active { transform: translateY(1px); }
-        .pg-theme svg { display: block; }
+        .pg-theme svg { display: block; transition: transform var(--dur-4) var(--ease-spring); }
+        .pg-theme:hover svg { transform: rotate(12deg); }
       `}</style>
       {isLight ? (
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -280,6 +282,7 @@ function LanguagePicker({ selected, onSelect, history, historyH, onResizeHistory
         .pg-rail-list { flex: 1 1 0; overflow-y: auto; padding: 0 8px 16px; min-height: 0; }
         .pg-row { appearance: none; border: 0; width: 100%; text-align: left; padding: 9px 10px; border-radius: 6px; background: transparent; display: flex; align-items: center; gap: 10px; color: var(--fg-1); cursor: pointer; transition: background .12s ease, color .12s ease, border-color .12s ease; position: relative; }
         .pg-row:hover { background: var(--bg-1); }
+        .pg-row:focus-visible { outline: none; background: var(--bg-1); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--row-accent, var(--accent)) 60%, transparent); }
         .pg-row.active { background: color-mix(in oklab, var(--row-accent, var(--accent)) 14%, var(--bg-1)); color: var(--fg); }
         .pg-row.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; background: var(--row-accent, var(--accent)); border-radius: 0 2px 2px 0; }
         .pg-row.active .id { color: var(--row-accent, var(--accent)); }
@@ -379,6 +382,23 @@ function WorkspaceBar(p: WorkspaceBarProps) {
   const isRunning = p.status === 'queued' || p.status === 'processing';
   const max: Ceilings = p.ceilings || { memoryMb: 2048, timeS: 60 };
   const handleShare = () => { p.onShare(); setCopied(true); setTimeout(() => setCopied(false), 1400); };
+
+  // The limits popover is rendered position:fixed and anchored to the trigger
+  // button at open time. This is deliberate: both .pg-wbar AND its parent
+  // .pg-editor-col have `overflow: hidden` on desktop (needed for the Monaco
+  // editor), which would clip an absolutely-positioned popover dropping below
+  // the bar — making the button look dead (it toggled state but nothing showed).
+  // position:fixed escapes every overflow ancestor; coords go through CSS vars
+  // so the ≤760px media query can still override to a bottom sheet.
+  const limitsBtnRef = useRef<HTMLButtonElement>(null);
+  const [limitsPos, setLimitsPos] = useState<{ top: number; right: number }>({ top: 80, right: 14 });
+  const toggleLimits = () => {
+    if (!showLimits) {
+      const r = limitsBtnRef.current?.getBoundingClientRect();
+      if (r) setLimitsPos({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+    }
+    setShowLimits(s => !s);
+  };
   const runLabel = p.apiOnline ? 'run · ⌘↵' : 'connect api';
   const langKey = langKeyFromId(p.lang.id);
   return (
@@ -386,21 +406,27 @@ function WorkspaceBar(p: WorkspaceBarProps) {
       <style>{`
         .pg-wbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg-1); font-family: var(--f-mono); flex-shrink: 0; position: relative; overflow: hidden; min-width: 0; }
         .pg-wbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-        .pg-btn { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); padding: 6px 10px; border-radius: 6px; font: 12px var(--f-mono); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: border-color .12s ease, color .12s ease, background .12s ease; }
+        .pg-btn { appearance: none; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); padding: 6px 10px; border-radius: var(--radius-base); font: var(--t-base) var(--f-mono); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: border-color var(--dur-1) var(--ease-emph), color var(--dur-1) var(--ease-emph), background var(--dur-1) var(--ease-emph), box-shadow var(--dur-2) var(--ease-out-soft), transform var(--dur-1) var(--ease-emph); }
         .pg-btn:hover { border-color: var(--line-strong); color: var(--fg); }
-        .pg-btn.primary { background: var(--accent); color: #0a0a0a; border-color: var(--accent); font-weight: 500; }
-        .pg-btn.primary:hover { filter: brightness(1.08); }
-        .pg-btn.primary:disabled { opacity: .55; cursor: not-allowed; }
-        .pg-btn.cancel { background: color-mix(in oklab, var(--st-re) 14%, var(--bg-1)); color: var(--st-re); border-color: color-mix(in oklab, var(--st-re) 55%, var(--line-2)); font-weight: 500; }
-        .pg-btn.cancel:hover { border-color: var(--st-re); filter: brightness(1.05); }
+        .pg-btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
+        .pg-btn:active { transform: translateY(1px); }
+        .pg-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; box-shadow: 0 4px 12px color-mix(in oklab, var(--accent) 30%, transparent), 0 1px 2px rgba(0,0,0,0.12); }
+        .pg-btn.primary:hover { background: var(--accent-light); border-color: var(--accent-light); box-shadow: 0 6px 18px color-mix(in oklab, var(--accent) 42%, transparent), 0 1px 2px rgba(0,0,0,0.14); }
+        .pg-btn.primary:active { transform: translateY(1px); box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 30%, transparent); }
+        .pg-btn.primary:focus-visible { box-shadow: var(--shadow-focus), 0 4px 12px color-mix(in oklab, var(--accent) 30%, transparent); }
+        .pg-btn.primary:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+        .pg-btn.cancel { background: color-mix(in oklab, var(--st-re) 16%, var(--bg-1)); color: var(--st-re); border-color: color-mix(in oklab, var(--st-re) 55%, var(--line-2)); font-weight: 600; }
+        .pg-btn.cancel:hover { border-color: var(--st-re); background: color-mix(in oklab, var(--st-re) 22%, var(--bg-1)); box-shadow: 0 4px 14px color-mix(in oklab, var(--st-re) 22%, transparent); }
         .pg-btn:disabled { opacity: .5; cursor: not-allowed; }
-        .pg-btn.ghost { background: transparent; }
+        .pg-btn.ghost { background: transparent; box-shadow: none; }
+        .pg-btn.ghost:hover { background: color-mix(in oklab, var(--accent) 6%, transparent); }
 
         /* Language chip: shown on both desktop and mobile now that the file tab and
            lang-text spans are gone. Tap to focus/open the language drawer (on mobile)
            or to re-confirm the active language (desktop — drawer is in-flow there). */
         .pg-wbar-lang { display: inline-flex; align-items: center; gap: 8px; appearance: none; cursor: pointer; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--bg); color: var(--fg-1); font: 12.5px var(--f-mono); white-space: nowrap; min-height: 36px; }
-        .pg-wbar-lang:hover { border-color: var(--line-strong); }
+        .pg-wbar-lang:hover { border-color: var(--line-strong); background: color-mix(in oklab, var(--accent) 5%, var(--bg)); }
+        .pg-wbar-lang:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
         .pg-wbar-lang .name { color: var(--fg); }
         .pg-wbar-lang .id { color: var(--fg-3); font-size: 11px; }
         .pg-wbar-lang .chev { color: var(--fg-3); }
@@ -415,9 +441,11 @@ function WorkspaceBar(p: WorkspaceBarProps) {
           .pg-wbar .pg-btn-format, .pg-wbar .pg-btn-reset { padding: 9px 10px; }
         }
 
-        /* Limits popover: desktop anchors top-right of the bar, mobile lifts to a
-           bottom sheet so the slider has room and isn't clipped off-screen. */
-        .pg-limits-popover { position: absolute; right: 14px; top: calc(100% + 8px); z-index: 30; width: 280px; border: 1px solid var(--line-2); background: var(--bg-1); border-radius: 8px; padding: 14px; box-shadow: 0 30px 80px -30px rgba(0,0,0,0.65); }
+        /* Limits popover: desktop is position:fixed (anchored to the trigger via
+           --lim-top/--lim-right inline vars) so it escapes the overflow:hidden on
+           .pg-wbar and .pg-editor-col; mobile lifts to a bottom sheet. Coords are
+           CSS vars (not direct top/right) so the ≤760px media query can override. */
+        .pg-limits-popover { position: fixed; right: var(--lim-right, 14px); top: var(--lim-top, 80px); z-index: 60; width: 280px; border: 1px solid var(--line-2); background: var(--bg-1); border-radius: var(--radius-md); padding: 14px; box-shadow: var(--shadow-pop); }
         .pg-limits-popover h4 { font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .pg-limits-popover .x-close { appearance: none; background: transparent; border: 1px solid var(--line-2); color: var(--fg-2); width: 24px; height: 24px; border-radius: 5px; display: none; align-items: center; justify-content: center; cursor: pointer; }
         .pg-lim-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
@@ -440,9 +468,15 @@ function WorkspaceBar(p: WorkspaceBarProps) {
           .pg-limits-popover::before { content: ''; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; border-radius: 999px; background: var(--line-2); }
         }
         @keyframes pg-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .pg-sheet-backdrop { display: none; position: fixed; inset: 0; background: color-mix(in oklab, #000 55%, transparent); z-index: 29; animation: pg-fade-in .18s ease; }
+        /* Desktop: a transparent full-screen click-catcher so clicking outside
+           the popover closes it (sits below the popover's z-index, above the
+           rest). Mobile: a dimmed sheet backdrop. */
+        .pg-sheet-backdrop { display: none; position: fixed; inset: 0; background: transparent; z-index: 55; }
+        .pg-sheet-backdrop.is-on { display: block; }
         @keyframes pg-fade-in { from { opacity: 0; } to { opacity: 1; } }
-        @media (max-width: 760px) { .pg-sheet-backdrop.is-on { display: block; } }
+        @media (max-width: 760px) {
+          .pg-sheet-backdrop { background: color-mix(in oklab, #000 55%, transparent); z-index: 29; animation: pg-fade-in var(--dur-3) var(--ease-out-soft); }
+        }
       `}</style>
       <button type="button" className="pg-wbar-lang" onClick={p.onOpenPicker} aria-label="Choose language">
         {langKey ? <LangIcon lang={langKey} size={16} /> : <span style={{ width: 9, height: 9, borderRadius: 2, background: p.lang.accent }} />}
@@ -459,12 +493,13 @@ function WorkspaceBar(p: WorkspaceBarProps) {
           .pg-wbar-mode { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
           .pg-wbar-mode button {
             appearance: none; background: transparent; color: var(--fg-2);
-            padding: 6px 10px; font: 11.5px var(--f-mono); cursor: pointer;
-            border: 0; letter-spacing: 0.04em;
+            padding: 6px 10px; font: var(--t-sm) var(--f-mono); cursor: pointer;
+            border: 0; letter-spacing: var(--ls-wide);
+            transition: color var(--dur-1) var(--ease-emph), background var(--dur-1) var(--ease-emph);
           }
           .pg-wbar-mode button + button { border-left: 1px solid var(--line-2); }
           .pg-wbar-mode button:hover { color: var(--fg); }
-          .pg-wbar-mode button.active { background: var(--accent); color: var(--bg); font-weight: 500; }
+          .pg-wbar-mode button.active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
         `}</style>
         <button type="button" role="tab" aria-selected={p.mode === 'single'}
           className={p.mode === 'single' ? 'active' : ''}
@@ -475,7 +510,7 @@ function WorkspaceBar(p: WorkspaceBarProps) {
       </div>
 
       <div className="pg-wbar-right">
-        <button className="pg-btn ghost" onClick={() => setShowLimits(s => !s)}>
+        <button ref={limitsBtnRef} type="button" className="pg-btn ghost" aria-haspopup="dialog" aria-expanded={showLimits} onClick={toggleLimits}>
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6" cy="6" r="4.5"/><path d="M6 2v4l2.5 1.5"/></svg>
           {p.limits.memoryMb}mb · {p.limits.timeS}s
         </button>
@@ -504,7 +539,12 @@ function WorkspaceBar(p: WorkspaceBarProps) {
       {showLimits && (
         <>
           <div className={`pg-sheet-backdrop is-on`} onClick={() => setShowLimits(false)} />
-          <div className="pg-limits-popover" onMouseLeave={() => setShowLimits(false)}>
+          <div
+            className="pg-limits-popover"
+            role="dialog"
+            aria-label="Execution limits"
+            style={{ ['--lim-top' as string]: `${limitsPos.top}px`, ['--lim-right' as string]: `${limitsPos.right}px` } as CSSProperties}
+          >
             <h4>
               <span>execution limits {p.apiOnline && p.ceilings ? '· server ceilings' : '· client defaults'}</span>
               <button type="button" className="x-close" aria-label="Close limits" onClick={() => setShowLimits(false)}>
@@ -538,22 +578,54 @@ function StdinPanel({ stdin, setStdin }: { stdin: string; setStdin: (s: string) 
     <section className="pg-stdin">
       <style>{`
         .pg-stdin { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--bg-1); border-top: 1px solid var(--line); }
-        .pg-stdin-hd { padding: 8px 14px; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-3); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-        .pg-stdin-hd .label { color: var(--fg-2); }
-        .pg-stdin-hd .meta { color: var(--fg-4); letter-spacing: 0.02em; text-transform: none; font-size: 11px; }
-        .pg-stdin-hd .meta b { color: var(--fg-2); font-weight: 500; }
-        .pg-stdin-hd button { margin-left: auto; appearance: none; background: transparent; border: 1px solid var(--line-2); color: var(--fg-3); padding: 2px 8px; border-radius: 4px; font: 10.5px var(--f-mono); letter-spacing: 0.06em; cursor: pointer; }
-        .pg-stdin-hd button:hover { color: var(--fg); border-color: var(--line-strong); }
-        .pg-stdin-hd button:disabled { opacity: .45; cursor: not-allowed; }
-        .pg-stdin-bd { flex: 1; min-height: 0; padding: 10px 14px 14px; display: flex; }
+        .pg-stdin-hd {
+          padding: 10px 14px; font-family: var(--f-mono); font-size: 11px;
+          letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-3);
+          display: flex; align-items: center; gap: 10px;
+          border-bottom: 1px solid var(--line); flex-shrink: 0;
+          background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+        }
+        .pg-stdin-hd .label {
+          color: var(--fg-1); font-weight: 600;
+          display: inline-flex; align-items: center; gap: 7px;
+        }
+        .pg-stdin-hd .label::before {
+          content: ''; width: 6px; height: 6px; border-radius: 50%;
+          background: var(--accent); box-shadow: 0 0 6px color-mix(in oklab, var(--accent) 70%, transparent);
+        }
+        .pg-stdin-hd .meta { color: var(--fg-3); letter-spacing: 0.02em; text-transform: none; font-size: 11px; }
+        .pg-stdin-hd .meta b { color: var(--fg-1); font-weight: 600; }
+        .pg-stdin-hd button {
+          margin-left: auto; appearance: none; background: transparent;
+          border: 1px solid var(--line-2); color: var(--fg-2);
+          padding: 3px 9px; border-radius: 5px;
+          font: 10.5px var(--f-mono); letter-spacing: 0.06em; cursor: pointer;
+          transition: color .12s ease, border-color .12s ease, background .12s ease;
+        }
+        .pg-stdin-hd button:hover {
+          color: var(--accent); border-color: var(--accent);
+          background: color-mix(in oklab, var(--accent) 8%, transparent);
+        }
+        .pg-stdin-hd button:disabled { opacity: .4; cursor: not-allowed; }
+        .pg-stdin-hd button:disabled:hover { color: var(--fg-2); border-color: var(--line-2); background: transparent; }
+        .pg-stdin-bd { flex: 1; min-height: 0; padding: 12px 14px 14px; display: flex; }
         .pg-stdin-bd textarea {
           width: 100%; flex: 1; resize: none;
-          background: var(--bg); color: var(--fg);
-          border: 1px solid var(--line-2); border-radius: 6px;
-          padding: 9px 11px; font: 12px var(--f-mono); line-height: 1.55; outline: none;
+          background: var(--surface); color: var(--fg);
+          border: 1px solid var(--line-2); border-radius: 7px;
+          padding: 11px 13px; font: 12.5px var(--f-mono); line-height: 1.6; outline: none;
+          box-shadow: var(--shadow-card);
+          transition: border-color .12s ease, box-shadow .12s ease;
         }
-        .pg-stdin-bd textarea:focus { border-color: var(--line-strong); }
-        .pg-stdin-bd textarea::placeholder { color: var(--fg-4); }
+        .pg-stdin-bd textarea:focus {
+          border-color: var(--accent);
+          box-shadow: var(--shadow-focus);
+        }
+        .pg-stdin-bd textarea::placeholder { color: var(--fg-4); font-style: italic; }
+        /* Dark theme: keep the textarea sunken (not paper-white) so it
+           reads as an input well, not a card. */
+        [data-theme="dark"] .pg-stdin-bd textarea { background: var(--bg); box-shadow: none; }
+        [data-theme="dark"] .pg-stdin-hd { background: var(--bg-1); }
       `}</style>
       <div className="pg-stdin-hd">
         <span className="label">stdin</span>
@@ -739,25 +811,81 @@ function OutputPane(p: OutputPaneProps) {
       <style>{`
         .pg-output { flex: 1 1 0; min-height: 120px; border-top: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
         @media (max-width: 880px) { .pg-output { width: 100%; border-left: 0; min-height: 320px; } }
-        .pg-output-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); background: var(--bg-1); flex-shrink: 0; }
-        .pg-output-tab { appearance: none; border: 0; background: transparent; padding: 12px 16px; cursor: pointer; font: 11.5px var(--f-mono); color: var(--fg-3); letter-spacing: 0.06em; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .12s ease, border-color .12s ease; display: flex; align-items: center; gap: 6px; }
-        .pg-output-tab:hover { color: var(--fg-1); }
-        .pg-output-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-        .pg-output-tab .pill { background: var(--bg-2); color: var(--fg-3); padding: 0 5px; border-radius: 99px; font-size: 10px; min-width: 14px; text-align: center; }
-        .pg-output-tab.active .pill { background: color-mix(in oklab, var(--accent) 18%, var(--bg-2)); color: var(--accent); }
-        .pg-output-tab.unseen { color: var(--fg-1); }
-        .pg-output-tab.unseen .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px color-mix(in oklab, var(--accent) 70%, transparent); animation: pg-pulse 1.4s ease-in-out infinite; }
+        .pg-output-tabs {
+          display: flex; gap: 0; border-bottom: 1px solid var(--line);
+          background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+          flex-shrink: 0;
+        }
+        [data-theme="dark"] .pg-output-tabs { background: var(--bg-1); }
+        .pg-output-tab {
+          appearance: none; border: 0; background: transparent;
+          padding: 12px 16px; cursor: pointer;
+          font: 11.5px var(--f-mono); color: var(--fg-2);
+          letter-spacing: 0.06em; border-bottom: 2px solid transparent;
+          margin-bottom: -1px;
+          transition: color .12s ease, border-color .12s ease, background .12s ease;
+          display: flex; align-items: center; gap: 6px;
+        }
+        .pg-output-tab:hover { color: var(--fg); background: color-mix(in oklab, var(--accent) 5%, transparent); }
+        .pg-output-tab:focus-visible { outline: none; color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+        .pg-output-tab.active {
+          color: var(--accent); border-bottom-color: var(--accent);
+          background: color-mix(in oklab, var(--accent) 7%, transparent);
+        }
+        .pg-output-tab .pill {
+          background: var(--bg-3); color: var(--fg-1);
+          padding: 1px 7px; border-radius: 99px;
+          font-size: 10px; min-width: 16px; text-align: center;
+          font-weight: 600;
+        }
+        .pg-output-tab.active .pill {
+          background: color-mix(in oklab, var(--accent) 22%, var(--bg-2));
+          color: var(--accent);
+        }
+        .pg-output-tab.unseen { color: var(--fg); }
+        .pg-output-tab.unseen .dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          background: var(--accent);
+          box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 80%, transparent);
+          animation: pg-pulse 1.4s ease-in-out infinite;
+        }
         @keyframes pg-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-        .pg-output-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px; font-family: var(--f-mono); font-size: 12.5px; line-height: 1.7; color: var(--st-accepted); white-space: pre-wrap; word-break: break-all; }
+        /* Output body: NEUTRAL by default (was --st-accepted, which painted
+           every line of stdout mint-green — unreadable on light cream and
+           semantically wrong: not every stdout means "accepted"). Per-tab
+           wrappers explicitly tint stderr/compile/accepted-stdout. */
+        .pg-output-body {
+          flex: 1; min-height: 0; overflow-y: auto;
+          padding: 14px 18px; font-family: var(--f-mono);
+          font-size: 12.5px; line-height: 1.7; color: var(--fg);
+          white-space: pre-wrap; word-break: break-all;
+          background: var(--surface);
+        }
+        [data-theme="dark"] .pg-output-body { background: var(--bg); }
         .pg-output-body.empty { color: var(--fg-3); font-style: italic; padding-top: 24px; }
         .pg-output-body .ln { white-space: pre; }
-        .pg-output-body .caret { display: inline-block; width: 7px; height: 13px; background: var(--accent); vertical-align: -2px; margin-left: 1px; animation: pg-blink 1s steps(1) infinite; }
+        .pg-output-body .stdout-ok { color: var(--st-accepted); }
+        .pg-output-body .caret {
+          display: inline-block; width: 8px; height: 14px; background: var(--accent);
+          vertical-align: -2px; margin-left: 1px;
+          animation: pg-blink 1s steps(1) infinite;
+        }
         @keyframes pg-blink { 50% { opacity: 0; } }
-        .pg-output-meta dt { font-family: var(--f-mono); font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.12em; text-transform: uppercase; margin-top: 14px; }
+        .pg-output-meta dt {
+          font-family: var(--f-mono); font-size: 10.5px;
+          color: var(--fg-3); letter-spacing: 0.12em;
+          text-transform: uppercase; margin-top: 14px;
+        }
         .pg-output-meta dt:first-child { margin-top: 0; }
-        .pg-output-meta dd { margin: 4px 0 0; color: var(--fg-1); font-family: var(--f-mono); font-size: 13px; }
-        .pg-output-meta dd b { color: var(--accent); font-weight: 500; }
-        .pg-output-stderr, .pg-output-compile { color: var(--fg-3); }
+        .pg-output-meta dd {
+          margin: 4px 0 0; color: var(--fg);
+          font-family: var(--f-mono); font-size: 13px;
+        }
+        .pg-output-meta dd b { color: var(--accent); font-weight: 600; }
+        .pg-output-stderr, .pg-output-compile {
+          color: var(--fg-3); font-style: italic;
+          padding: 2px 0;
+        }
       `}</style>
       <div className="pg-output-tabs">
         {tabs.map(t => (
@@ -773,10 +901,12 @@ function OutputPane(p: OutputPaneProps) {
       <div ref={outRef} className={`pg-output-body ${p.output.length === 0 && p.status === 'idle' ? 'empty' : ''}`}>
         {tab === 'stdout' && (
           <>
-            {p.output.length === 0 && p.status === 'idle' && <div>awaiting first run · click <b style={{color:'var(--accent)',fontStyle:'normal'}}>run</b> to begin</div>}
+            {p.output.length === 0 && p.status === 'idle' && <div className="pg-output-stderr">awaiting first run · click <b style={{color:'var(--accent)',fontStyle:'normal',fontWeight:600}}>run</b> to begin</div>}
             {p.status === 'queued' && <div style={{ color: 'var(--st-queued)' }}>queued · waiting for worker NOTIFY ...</div>}
-            {p.output.map((l, i) => <div key={i} className="ln">{l}</div>)}
-            {p.status === 'processing' && <span className="caret"/>}
+            <div className={p.status === 'accepted' ? 'stdout-ok' : ''}>
+              {p.output.map((l, i) => <div key={i} className="ln">{l}</div>)}
+              {p.status === 'processing' && <span className="caret"/>}
+            </div>
             {p.output.length === 0 && p.status !== 'idle' && p.status !== 'queued' && p.status !== 'processing' && (
               <div className="pg-output-stderr">— stdout empty —</div>
             )}
@@ -1268,7 +1398,7 @@ export function App() {
 
           /* Center column: editor (top) above an io row (bottom).      */
           .pg-center      { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-          .pg-editor-wrap { flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; position: relative; background: #221F22; }
+          .pg-editor-wrap { flex: 0 0 auto; min-height: 0; display: flex; flex-direction: column; position: relative; background: var(--editor-bg); }
           .pg-io-row      { flex: 1 1 0; min-height: 0; display: flex; flex-direction: row; }
           .pg-stdin-col   { flex: 0 0 auto; min-width: 0; display: flex; flex-direction: column; }
           .pg-output-col  { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
@@ -1336,7 +1466,7 @@ export function App() {
 
           /* Drawer backdrop — only visible while pickerOpen on mobile. Tap to close.
              Desktop hides this entirely since the rail is always in-flow there. */
-          .pg-rail-backdrop { display: none; position: fixed; inset: 0; z-index: 55; background: color-mix(in oklab, #000 55%, transparent); animation: pg-fade-in .18s ease; }
+          .pg-rail-backdrop { display: none; position: fixed; inset: 0; z-index: 55; background: color-mix(in oklab, #000 55%, transparent); animation: pg-fade-in var(--dur-3) var(--ease-out-soft); }
           @media (max-width: 880px) { .pg-rail-backdrop.is-on { display: block; } }
         `}</style>
 

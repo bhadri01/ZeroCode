@@ -61,7 +61,7 @@ import { conf as sqlConf, language as sqlLang } from 'monaco-editor/esm/vs/basic
 // whole; ours fixes all three.)
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 
-import { editorTheme, themeName } from './monaco-theme';
+import { editorTheme, editorThemeLight, themeName, themeNameLight } from './monaco-theme';
 import type { CmLang } from './data';
 
 // One-time global setup. Guarded so HMR re-mounts don't double-wire.
@@ -423,6 +423,7 @@ if (typeof window !== 'undefined' && !window.MonacoEnvironment) {
     },
   };
   monaco.editor.defineTheme(themeName, editorTheme);
+  monaco.editor.defineTheme(themeNameLight, editorThemeLight);
   registerExtraGrammars();
   registerFormatters(FORMATTER_LANGUAGE_IDS);
 }
@@ -440,6 +441,16 @@ function langId(l: CmLang): string {
   // some regexps) renders red/underlined. TypeScript (id 106) uses the
   // 'typescript' grammar for its own type annotations.
   return l;
+}
+
+// Editor theme follows the app's <html data-theme>: dark Monokai Pro or the
+// cream light variant. setTheme is global (one editor on the page), so a single
+// MutationObserver in the mount effect keeps it in sync with the theme toggle.
+function currentEditorTheme(): string {
+  return typeof document !== 'undefined'
+    && document.documentElement.getAttribute('data-theme') === 'light'
+    ? themeNameLight
+    : themeName;
 }
 
 export interface EditorHandle {
@@ -475,7 +486,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const editor = monaco.editor.create(hostRef.current, {
       value: code,
       language: langId(language),
-      theme: themeName,
+      theme: currentEditorTheme(),
       automaticLayout: true,            // re-layout when parent resizes
       fontFamily: 'IBM Plex Mono, ui-monospace, JetBrains Mono, Menlo, monospace',
       fontSize: 13.5,
@@ -527,7 +538,14 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       onCursorRef.current?.({ line: e.position.lineNumber, col: e.position.column });
     });
 
+    // Follow the app theme toggle live (setTheme is global; one editor here).
+    const themeObs = new MutationObserver(() => {
+      monaco.editor.setTheme(currentEditorTheme());
+    });
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     return () => {
+      themeObs.disconnect();
       changeSub.dispose();
       cursorSub.dispose();
       editor.dispose();
@@ -581,7 +599,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       <style>{`
         .ed {
           flex: 1; min-height: 0; position: relative; overflow: hidden;
-          background: #221F22;  /* matches monokai-pro editor.background */
+          background: var(--editor-bg);  /* matches monokai-pro editor.background per theme */
         }
         .ed-host { position: absolute; inset: 0; }
         /* Override Monaco's default focus outline — we get visual focus

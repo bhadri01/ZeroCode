@@ -48,7 +48,20 @@ import type * as monaco from 'monaco-editor';
 
 export const themeName = 'monokai-pro';
 
-const C = {
+type Palette = {
+  bg: string; bgPanel: string; bgLine: string; bgSelection: string; bgSelectionDim: string;
+  cursor: string; gutterDim: string; gutterActive: string;
+  fg: string; fgDim: string;
+  pink: string; green: string; yellow: string; orange: string; purple: string; blue: string;
+  comment: string; error: string;
+  findMatch: string; findMatchHi: string; rangeHi: string; minimapFind: string;
+  scrollShadow: string; slider: string; sliderHover: string; sliderActive: string;
+  sticky: string; focusBorder: string;
+};
+
+// Background-ish entries carry the leading '#'; token-foreground hues are bare
+// hex (Monaco's ITokenThemeRule convention) and get prefixed in `colors`.
+const DARK: Palette = {
   bg:              '#221F22',
   bgPanel:         '#2D2A2E',
   bgLine:          '#383539',
@@ -67,10 +80,55 @@ const C = {
   blue:            '78DCE8',
   comment:         '727072',
   error:           'FF6188',
+  findMatch:       '#FFD86640',
+  findMatchHi:     '#FFD86620',
+  rangeHi:         '#3D3A3F44',
+  minimapFind:     '#FFD86680',
+  scrollShadow:    '#1c1a1c',
+  slider:          '#3D3A3F88',
+  sliderHover:     '#4A474BAA',
+  sliderActive:    '#5B595CCC',
+  sticky:          '#26232688',
+  focusBorder:     '#FFD86655',
 };
 
-export const editorTheme: monaco.editor.IStandaloneThemeData = {
-  base: 'vs-dark',
+// Monokai Pro "Light Sun"-inspired — warm cream paper, hues hand-calibrated to
+// ~4.6:1+ on the #FAF9F5 surface so the editor is a true light-theme peer, not
+// a dark pocket on the page. [NEEDS VISUAL QA — colors set without a live build.]
+const LIGHT: Palette = {
+  bg:              '#FAF9F5',
+  bgPanel:         '#FFFFFF',
+  bgLine:          '#EFEBE1',
+  bgSelection:     '#E5D9C3',
+  bgSelectionDim:  '#EFE9DC',
+  cursor:          'B8481A',
+  gutterDim:       '#B8B0A0',
+  gutterActive:    '#6B6456',
+  fg:              '2A2620',
+  fgDim:           '706A5A',
+  pink:            'C8366B',   // keyword / operator
+  green:           '4A7A1E',   // function / method
+  yellow:          '9A6B00',   // string  (warm gold)
+  orange:          'C0561B',   // escape / annotation / parameter
+  purple:          '7A4FCC',   // number / constant
+  blue:            '1A7A8C',   // type / class (deep teal)
+  comment:         '7F7A68',
+  error:           'C42B1C',
+  findMatch:       '#E5B84745',
+  findMatchHi:     '#E5B84730',
+  rangeHi:         '#E5D9C355',
+  minimapFind:     '#E5B84799',
+  scrollShadow:    '#00000014',
+  slider:          '#B8B0A077',
+  sliderHover:     '#9A948299',
+  sliderActive:    '#6B6456AA',
+  sticky:          '#FFFFFFCC',
+  focusBorder:     '#C8366B66',
+};
+
+function makeTheme(C: Palette, base: 'vs' | 'vs-dark'): monaco.editor.IStandaloneThemeData {
+  return {
+  base,
   inherit: true,
   rules: [
     /* ───── Default text ─────────────────────────────────────────── */
@@ -247,10 +305,10 @@ export const editorTheme: monaco.editor.IStandaloneThemeData = {
     'editor.selectionHighlightBackground':              C.bgSelectionDim,
     'editor.wordHighlightBackground':                   C.bgSelectionDim,
     'editor.wordHighlightStrongBackground':             C.bgSelection,
-    'editor.findMatchBackground':                       '#FFD86640',
-    'editor.findMatchHighlightBackground':              '#FFD86620',
-    'editor.findRangeHighlightBackground':              '#3D3A3F44',
-    'editor.rangeHighlightBackground':                  '#3D3A3F44',
+    'editor.findMatchBackground':                       C.findMatch,
+    'editor.findMatchHighlightBackground':              C.findMatchHi,
+    'editor.findRangeHighlightBackground':              C.rangeHi,
+    'editor.rangeHighlightBackground':                  C.rangeHi,
 
     /* ───── Brackets (Monokai Pro rainbow palette) ───────────────── */
     'editorBracketMatch.background':                    C.bgSelectionDim,
@@ -278,14 +336,14 @@ export const editorTheme: monaco.editor.IStandaloneThemeData = {
     'editorGutter.deletedBackground':                   '#' + C.error,
     'minimap.background':                               C.bg,
     'minimap.selectionHighlight':                       C.bgSelection,
-    'minimap.findMatchHighlight':                       '#FFD86680',
-    'scrollbar.shadow':                                 '#1c1a1c',
-    'scrollbarSlider.background':                       '#3D3A3F88',
-    'scrollbarSlider.hoverBackground':                  '#4A474BAA',
-    'scrollbarSlider.activeBackground':                 '#5B595CCC',
+    'minimap.findMatchHighlight':                       C.minimapFind,
+    'scrollbar.shadow':                                 C.scrollShadow,
+    'scrollbarSlider.background':                       C.slider,
+    'scrollbarSlider.hoverBackground':                  C.sliderHover,
+    'scrollbarSlider.activeBackground':                 C.sliderActive,
 
     /* ───── Sticky scroll ────────────────────────────────────────── */
-    'editorStickyScroll.background':                    '#26232688',
+    'editorStickyScroll.background':                    C.sticky,
     'editorStickyScrollHover.background':               C.bgLine,
 
     /* ───── Widgets (find, suggest, hover, signature) ────────────── */
@@ -310,7 +368,12 @@ export const editorTheme: monaco.editor.IStandaloneThemeData = {
     'input.background':                                 C.bgPanel,
     'input.foreground':                                 '#' + C.fg,
     'input.border':                                     C.bgLine,
-    'focusBorder':                                      '#FFD86655',
+    'focusBorder':                                      C.focusBorder,
     'inputOption.activeBorder':                         '#' + C.yellow,
   },
-};
+  };
+}
+
+export const editorTheme = makeTheme(DARK, 'vs-dark');
+export const editorThemeLight = makeTheme(LIGHT, 'vs');
+export const themeNameLight = 'monokai-pro-light';

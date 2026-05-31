@@ -44,6 +44,9 @@ export function ArchitectureDiagram() {
           position: relative; overflow: hidden;
           box-shadow: 0 40px 100px -40px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.04) inset;
         }
+        [data-theme="light"] .zc-arch-wrap {
+          box-shadow: 0 40px 100px -40px rgba(50,40,20,0.16), 0 1px 0 rgba(255,255,255,0.6) inset;
+        }
         .zc-arch-wrap::before {
           content: ''; position: absolute; inset: 0;
           background-image:

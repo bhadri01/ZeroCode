@@ -105,6 +105,7 @@ export function Hero() {
           text-wrap: balance;
         }
         .zc-hero h1 .it { font-style: italic; color: var(--accent); }
+        [data-theme="light"] .zc-hero h1 .it { color: var(--accent-dark); }
 
         .zc-hero p.sub {
           margin: clamp(16px, 3vw, 28px) 0 0;
@@ -127,11 +128,11 @@ export function Hero() {
           min-height: 44px;  /* iOS touch target */
         }
         .zc-hero-cta .primary {
-          background: var(--accent); color: var(--bg);
+          background: var(--accent); color: var(--accent-ink);
           border: 1px solid var(--accent);
           box-shadow: 0 4px 24px -8px color-mix(in oklab, var(--accent) 60%, transparent);
         }
-        .zc-hero-cta .primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+        .zc-hero-cta .primary:hover { transform: translateY(-1px); background: var(--accent-light); border-color: var(--accent-light); box-shadow: 0 8px 28px -8px color-mix(in oklab, var(--accent) 70%, transparent); }
         .zc-hero-cta .ghost {
           color: var(--fg-1);
           border: 1px solid var(--line-2);

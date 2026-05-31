@@ -93,6 +93,12 @@ export function PlaygroundTeaser() {
             0 30px 80px -30px rgba(0,0,0,0.6),
             0 12px 32px -12px rgba(0,0,0,0.45);
         }
+        [data-theme="light"] .zc-ide {
+          box-shadow:
+            0 1px 0 rgba(255,255,255,0.7) inset,
+            0 30px 80px -30px rgba(50,40,20,0.16),
+            0 12px 32px -12px rgba(50,40,20,0.10);
+        }
         /* Title bar — three-column grid: traffic lights · centered title · trailing controls. */
         .zc-ide-hd {
           display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
@@ -149,8 +155,8 @@ export function PlaygroundTeaser() {
         .zc-ide-hd .right { justify-self: end; display: flex; align-items: center; gap: 8px; }
         .zc-ide-hd .status { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--fg-2); }
         .zc-ide-hd .status .pulse { width: 6px; height: 6px; border-radius: 50%; }
-        .zc-ide-hd .run-btn { appearance: none; border: 0; background: var(--accent); color: #0a0a0a; padding: 6px 12px; border-radius: 6px; font-family: var(--f-mono); font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: filter .15s ease, transform .15s ease; }
-        .zc-ide-hd .run-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        .zc-ide-hd .run-btn { appearance: none; border: 0; background: var(--accent); color: var(--accent-ink); padding: 6px 12px; border-radius: 6px; font-family: var(--f-mono); font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 3px 10px color-mix(in oklab, var(--accent) 30%, transparent); transition: background var(--dur-2) var(--ease-emph), box-shadow var(--dur-2) var(--ease-out-soft), transform var(--dur-2) var(--ease-emph); }
+        .zc-ide-hd .run-btn:hover { background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 6px 16px color-mix(in oklab, var(--accent) 40%, transparent); }
         .zc-ide-hd .run-btn:active { transform: translateY(0); }
         .zc-ide-hd .run-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
         /* Mobile: hide centered title to save space. */
@@ -165,15 +171,16 @@ export function PlaygroundTeaser() {
           .zc-ide-output { min-height: 200px; }
         }
         .zc-ide-editor { border-right: 1px solid var(--line); padding: 14px 16px; font-size: 12.5px; line-height: 1.75; color: var(--fg-1); background: linear-gradient(180deg, rgba(255,255,255,0.012), transparent 30%), var(--bg-1); overflow-x: auto; }
+        [data-theme="light"] .zc-ide-editor { background: linear-gradient(180deg, rgba(20,18,12,0.015), transparent 30%), var(--bg-1); }
         .zc-ide-editor .ln { display: flex; gap: 14px; }
         .zc-ide-editor .lno { color: var(--fg-4); width: 18px; text-align: right; user-select: none; flex-shrink: 0; }
         .zc-ide-editor .tx { white-space: pre; }
         .zc-ide-editor .kw  { color: var(--blue-1); }
         .zc-ide-editor .ty  { color: var(--magenta); }
-        .zc-ide-editor .str { color: #9be39b; }
-        .zc-ide-editor .num { color: #d2a86a; }
+        .zc-ide-editor .str { color: var(--syntax-str); }
+        .zc-ide-editor .num { color: var(--syntax-num); }
         .zc-ide-editor .mac { color: var(--accent); }
-        .zc-ide-editor .fn  { color: #f5d76e; }
+        .zc-ide-editor .fn  { color: var(--syntax-fn); }
         .zc-ide-output { padding: 14px 16px; font-size: 12.5px; line-height: 1.75; color: var(--st-accepted); background: var(--bg); }
         .zc-ide-output .ohd { display: flex; gap: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 10px; }
         .zc-ide-output .ohd .tab.active { color: var(--accent); border-bottom: 1px solid var(--accent); padding-bottom: 6px; margin-bottom: -9px; }

@@ -390,8 +390,8 @@ export function TestCasesSection() {
           text-decoration: none; min-height: 44px;
           transition: transform 120ms ease, filter 120ms ease, border-color 120ms ease, color 120ms ease;
         }
-        .zc-tc-cta .primary { background: var(--accent); color: var(--bg); border: 1px solid var(--accent); }
-        .zc-tc-cta .primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+        .zc-tc-cta .primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); box-shadow: 0 4px 16px -6px color-mix(in oklab, var(--accent) 50%, transparent); }
+        .zc-tc-cta .primary:hover { transform: translateY(-1px); background: var(--accent-light); border-color: var(--accent-light); box-shadow: 0 8px 22px -6px color-mix(in oklab, var(--accent) 60%, transparent); }
         .zc-tc-cta .ghost { color: var(--fg-1); border: 1px solid var(--line-2); }
         .zc-tc-cta .ghost:hover { color: var(--fg); border-color: var(--line-strong); }
 
