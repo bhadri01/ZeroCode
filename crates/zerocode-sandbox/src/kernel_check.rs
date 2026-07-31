@@ -79,16 +79,12 @@ fn has_cgroup_kill() -> bool {
 
 #[cfg(target_os = "linux")]
 fn has_landlock() -> bool {
-    // Cheap detect: /sys/kernel/security/landlock/ or /proc/sys/kernel/abi_version
-    // both lack a clean indicator; we instead check for the kernel ABI advertisement
-    // via /proc/filesystems. Real check happens in the landlock crate on first use.
-    std::path::Path::new("/sys/kernel/security/landlock").exists()
-        || std::fs::read_to_string("/proc/filesystems")
-            .map(|s| s.contains("landlock"))
-            .unwrap_or(false)
-        // Many distros expose landlock without an obvious sysfs entry; defer to the
-        // landlock crate's own ABI probe at sandbox-init time.
-        || true
+    // There's no reliable cheap sysfs/procfs indicator for Landlock across distros
+    // (the `/sys/kernel/security/landlock` entry is frequently absent even when the
+    // LSM is enabled, and `/proc/filesystems` never lists it). So we don't gate
+    // startup on a preflight here; the landlock crate runs its own ABI probe at
+    // sandbox-init time and fails closed, which is the authoritative check.
+    true
 }
 
 #[cfg(not(target_os = "linux"))]
