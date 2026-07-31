@@ -97,6 +97,26 @@ percentiles per level.
 
 ---
 
+## How `time` is measured (and what changed)
+
+`time` is the **run phase alone**: the CPU the submitted program consumed. The
+compile phase is billed separately to `compile_time` (wall-clock), and
+`wall_time` remains the whole submission end to end.
+
+This split landed with the compile→run barrier. Before it, `time` was the whole
+job's cgroup CPU, so for a compiled language it silently included our
+toolchain's work — a C++ submission's "execution time" was mostly `g++`. That
+made ZeroCode look orders of magnitude slower than engines that report run cost
+only, and it meant a slow compile could push a submission over its own
+`cpu_time_limit`. Neither is true any more: the CPU-limit check now compares the
+run phase against the limit.
+
+When comparing against another engine, check what its `time` field measures.
+Judge0 reports the run phase only, so `time` is now directly comparable and
+`compile_time` is the extra column to line up against its compile step.
+
+---
+
 ## Per-language datasheet
 
 `cold` = first-ever (cold-cache) wall: compile + spawn. `easy/medium/hard` =
