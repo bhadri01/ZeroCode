@@ -72,6 +72,28 @@ pub struct RawOutcome {
     /// `None` for interpreted langs / cache hits, where the whole-job
     /// `memory.peak` is already run-only and triage uses it directly.
     pub run_phase_memory_kb: Option<u32>,
+    /// CPU consumed by the compile phase, sampled at the compile→run barrier
+    /// (the compiler sub-child has been reaped by then, so `cpu.stat` already
+    /// includes all of it). Triage subtracts this from the whole-job total to
+    /// report run-phase CPU, so `time` measures the user's program and not our
+    /// compiler. `None` for interpreted langs / cache hits, which never compile.
+    pub compile_cpu_time: Option<std::time::Duration>,
+    /// Wall-clock from the moment the child is released to run (uid_map written,
+    /// cgroup attached) to the compile→run barrier — i.e. the child's own
+    /// sandbox setup plus the compile itself. Reported to callers as
+    /// `compile_time` so a slow compile is visible as itself rather than hiding
+    /// inside the execution figure.
+    pub compile_wall_time: Option<std::time::Duration>,
+}
+
+/// What the compile→run barrier thread reports back to the parent. `fired` is
+/// false for interpreted languages and compile-cache hits, where no barrier byte
+/// ever arrives and the whole-job figures are already run-only.
+#[derive(Default)]
+struct BarrierOutcome {
+    fired: bool,
+    compile_cpu_time: Option<std::time::Duration>,
+    compile_wall_time: Option<std::time::Duration>,
 }
 
 const NAMESPACE_FLAGS: CloneFlags = CloneFlags::empty()
@@ -134,6 +156,14 @@ pub fn run(
     // restrict ourselves to async-signal-safe operations and execve.
     match unsafe { fork() }.map_err(|e| SandboxError::Spawn(format!("fork: {e}")))? {
         ForkResult::Parent { child } => {
+            // Claim the child before it can exit. The worker's orphan reaper
+            // drains `waitpid(-1, WNOHANG)` on a timer; without this claim it
+            // can reap our child first and consume its exit status, leaving our
+            // own waitpid with ECHILD and the submission with a bogus
+            // `sandbox_failure`. The guard releases the claim on every path out
+            // of this function, including the `?` early-returns below.
+            let _owned = crate::owned_children::OwnedChild::register(child.as_raw());
+
             drop(stdout_wr);
             drop(stderr_wr);
             drop(compile_wr);
@@ -193,12 +223,20 @@ pub fn run(
             let run_mem_kb = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let run_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let (rm, rdone) = (run_mem_kb.clone(), run_done.clone());
+            let fork_inst = std::time::Instant::now();
             let barrier = std::thread::spawn(move || {
                 use std::sync::atomic::Ordering::Relaxed;
                 let mut b = [0u8; 1];
                 if read(&phase_rd, &mut b).unwrap_or(0) != 1 {
-                    return false; // no compile phase: triage uses the cgroup peak
+                    // No compile phase: triage uses the cgroup peak, and the
+                    // whole-job CPU is already run-only.
+                    return BarrierOutcome::default();
                 }
+                // The compiler sub-child has been reaped, so cpu.stat now holds
+                // the compile phase's full CPU and nothing of the run. Snapshot
+                // both clocks here — this instant is the phase boundary.
+                let compile_cpu = super::cgroup::cpu_time_at(&cg_path);
+                let compile_wall = fork_inst.elapsed();
                 // Reclaim the compiler's orphaned page cache, THEN shrink the
                 // ceiling to the run budget (reclaim-first so current < new max),
                 // THEN release the run exec.
@@ -220,7 +258,11 @@ pub fn run(
                     std::thread::sleep(std::time::Duration::from_micros(200));
                 }
                 rm.fetch_max(sample(&current) / 1024, Relaxed);
-                true
+                BarrierOutcome {
+                    fired: true,
+                    compile_cpu_time: Some(compile_cpu),
+                    compile_wall_time: Some(compile_wall),
+                }
             });
 
             // Wall-clock budget; on overrun we ask the cgroup to atomically
@@ -228,8 +270,8 @@ pub fn run(
             // it (even on a wait error) before propagating, so it never leaks.
             let wait_res = wait_with_timeout(child, wall_time, cgroup);
             run_done.store(true, std::sync::atomic::Ordering::Relaxed);
-            let sampled = barrier.join().unwrap_or(false);
-            let run_phase_memory_kb = if sampled {
+            let barrier_out = barrier.join().unwrap_or_default();
+            let run_phase_memory_kb = if barrier_out.fired {
                 let kb = run_mem_kb.load(std::sync::atomic::Ordering::Relaxed) as u32;
                 (kb > 0).then_some(kb)
             } else {
@@ -258,6 +300,8 @@ pub fn run(
                 compiled_binary,
                 killed_by_wall_timeout,
                 run_phase_memory_kb,
+                compile_cpu_time: barrier_out.compile_cpu_time,
+                compile_wall_time: barrier_out.compile_wall_time,
             })
         }
         ForkResult::Child => {
@@ -688,6 +732,23 @@ fn wait_with_timeout(
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Ok(status) => return Ok((status, false)),
+            // ECHILD means something else in this process reaped our child and
+            // consumed its exit status, so we cannot classify the run. The
+            // ownership registry (see `crate::owned_children`) is supposed to
+            // make this unreachable; if it happens anyway we must NOT invent a
+            // verdict from the partial evidence we have — an empty-stdout
+            // "result" reads as a wrong answer to a grader. Surface a retryable
+            // Wait error instead and let the worker re-run the submission.
+            Err(nix::errno::Errno::ECHILD) => {
+                tracing::error!(
+                    %pid,
+                    "sandbox child was reaped by another waiter; run cannot be classified"
+                );
+                return Err(SandboxError::Wait(format!(
+                    "waitpid({pid}): ECHILD — the child's exit status was reaped by another \
+                     waiter in this process; the run cannot be classified"
+                )));
+            }
             Err(e) => return Err(SandboxError::Wait(format!("waitpid: {e}"))),
         }
     }

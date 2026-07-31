@@ -128,7 +128,10 @@ impl Sandbox for WasmSandbox {
             let start = instance
                 .get_typed_func::<(), ()>(&mut store, "_start")
                 .map_err(|e| SandboxError::Internal(format!("missing _start: {e}")))?;
-            start.call_async(&mut store, ()).await.map_err(classify_trap)
+            start
+                .call_async(&mut store, ())
+                .await
+                .map_err(classify_trap)
         })
         .await;
 
@@ -177,6 +180,7 @@ impl Sandbox for WasmSandbox {
             signal: None,
             cpu_time,
             wall_time: elapsed,
+            compile_time: Duration::ZERO,
             memory_kb: 0, // wasmtime doesn't surface peak memory cheaply
             started_at,
             finished_at,
@@ -298,7 +302,11 @@ mod tests {
             cached_binary: None,
         };
         let res = sandbox.execute(job).await.expect("execute");
-        assert!(matches!(res.status, Status::Accepted), "status: {:?}", res.status);
+        assert!(
+            matches!(res.status, Status::Accepted),
+            "status: {:?}",
+            res.status
+        );
         let stdout = String::from_utf8_lossy(&res.stdout);
         assert_eq!(stdout, "hello-from-wasm\n", "stdout mismatch: {stdout:?}");
         assert_eq!(res.exit_code, Some(0));

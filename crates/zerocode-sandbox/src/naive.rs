@@ -25,8 +25,8 @@
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -87,9 +87,7 @@ fn ensure_rootfs_binds(rootfs: &str) -> Result<(), SandboxError> {
         let output = std::process::Command::new("/bin/mount")
             .args(["--rbind", &format!("/{sub}"), &target])
             .output()
-            .map_err(|e| {
-                SandboxError::Internal(format!("spawn /bin/mount for {target}: {e}"))
-            })?;
+            .map_err(|e| SandboxError::Internal(format!("spawn /bin/mount for {target}: {e}")))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(SandboxError::Internal(format!(
@@ -241,10 +239,8 @@ impl Sandbox for NaiveSandbox {
                 std::fs::write(&prog_path, bytes).map_err(|e| {
                     SandboxError::Internal(format!("write cached binary {prog_path}: {e}"))
                 })?;
-                let _ = std::fs::set_permissions(
-                    &prog_path,
-                    std::fs::Permissions::from_mode(0o755),
-                );
+                let _ =
+                    std::fs::set_permissions(&prog_path, std::fs::Permissions::from_mode(0o755));
                 tracing::debug!(
                     token = %job.token,
                     bytes = bytes.len(),
@@ -263,8 +259,7 @@ impl Sandbox for NaiveSandbox {
                     .spawn()
                     .map_err(|e| SandboxError::Spawn(format!("compile spawn: {e}")))?;
 
-                let out = match tokio::time::timeout(wall_budget, child.wait_with_output()).await
-                {
+                let out = match tokio::time::timeout(wall_budget, child.wait_with_output()).await {
                     Ok(r) => r.map_err(|e| SandboxError::Wait(format!("compile wait: {e}")))?,
                     Err(_) => {
                         // Compile timed out — user code never ran, so wall/cpu = 0.
@@ -281,6 +276,7 @@ impl Sandbox for NaiveSandbox {
                             signal: Some(Signal::Sigkill),
                             cpu_time: Duration::ZERO,
                             wall_time: Duration::ZERO,
+                            compile_time: Duration::ZERO,
                             memory_kb: 0,
                             started_at,
                             finished_at: Utc::now(),
@@ -311,6 +307,7 @@ impl Sandbox for NaiveSandbox {
                         signal: None,
                         cpu_time: Duration::ZERO,
                         wall_time: Duration::ZERO,
+                        compile_time: Duration::ZERO,
                         memory_kb: 0,
                         started_at,
                         finished_at: Utc::now(),
@@ -386,6 +383,7 @@ impl Sandbox for NaiveSandbox {
                     signal: Some(Signal::Sigkill),
                     cpu_time: run_elapsed,
                     wall_time: run_elapsed,
+                    compile_time: Duration::ZERO,
                     memory_kb,
                     started_at,
                     finished_at: Utc::now(),
@@ -416,6 +414,7 @@ impl Sandbox for NaiveSandbox {
             signal: None,
             cpu_time: run_elapsed,
             wall_time: run_elapsed,
+            compile_time: Duration::ZERO,
             memory_kb,
             started_at,
             finished_at: Utc::now(),

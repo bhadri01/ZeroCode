@@ -94,6 +94,7 @@ pub async fn write_result(
              stdout = $4, stderr = $5, compile_output = $6, \
              exit_code = $7, signal = $8, \
              cpu_time = $9, wall_time = $10, memory_kb = $11, \
+             compile_time = $12, \
              finished_at = NOW() \
          WHERE token = $1",
         token.to_string(),
@@ -107,6 +108,9 @@ pub async fn write_result(
         result.cpu_time.as_secs_f32(),
         result.wall_time.as_secs_f32(),
         result.memory_kb as i32,
+        // NULL rather than 0.0 when no compile phase ran, so "did not compile"
+        // is distinguishable from "compiled instantly".
+        (!result.compile_time.is_zero()).then(|| result.compile_time.as_secs_f32()),
     )
     .execute(pool)
     .await?;
@@ -116,21 +120,31 @@ pub async fn write_result(
 /// Mark a submission as failed at the sandbox level (worker code error, not
 /// user code error). Distinct from a runtime sandbox return so customer
 /// support can tell them apart.
+///
+/// `elapsed` is how long the worker actually spent on the job. It is persisted
+/// as `wall_time` so the row does not report a physically impossible `0.0` for
+/// a submission that occupied a worker for seconds — that made these failures
+/// read like a verdict rather than an outage.
 pub async fn write_sandbox_failure(
     pool: &PgPool,
     token: Token,
-    msg: &str,
+    elapsed: f64,
+    // Intentionally not persisted: status_detail is stored as NULL below so the
+    // API deserializes `Status::SandboxFailure` cleanly. Callers log the message.
+    _msg: &str,
 ) -> Result<(), WorkerDbError> {
     sqlx::query!(
         "UPDATE submissions \
          SET status = 'sandbox_failure', \
             status_detail = $2, \
+             wall_time = $3, \
              finished_at = NOW() \
          WHERE token = $1",
         token.to_string(),
         // Store no structured detail for sandbox failures so the API can
         // deserialize the `Status::SandboxFailure` variant cleanly.
         Option::<serde_json::Value>::None,
+        elapsed as f32,
     )
     .execute(pool)
     .await?;

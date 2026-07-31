@@ -16,7 +16,11 @@ pub struct CachedOutcome {
     pub stderr: Vec<u8>,
     pub compile_output: Option<Vec<u8>>,
     pub exit_code: Option<i32>,
+    /// Run-phase CPU seconds (compile excluded — see `compile_time`).
     pub cpu_time: f64,
+    /// Wall-clock seconds the original compile phase took. Kept so a cache hit
+    /// reports the same shape as a fresh run; `None` for interpreted languages.
+    pub compile_time: Option<f64>,
     pub wall_time: f64,
     pub memory_kb: u32,
 }
@@ -72,6 +76,7 @@ mod tests {
             compile_output: None,
             exit_code: Some(0),
             cpu_time: 0.012,
+            compile_time: None,
             wall_time: 0.014,
             memory_kb: 8192,
         };

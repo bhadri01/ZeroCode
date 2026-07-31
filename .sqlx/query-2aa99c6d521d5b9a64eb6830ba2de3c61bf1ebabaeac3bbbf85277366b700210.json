@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT token, language_id, status, status_detail, cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, stdout, stderr, compile_output, exit_code, signal, cpu_time, wall_time, memory_kb, created_at, finished_at FROM submissions WHERE token = $1",
+  "query": "SELECT token, language_id, status, status_detail, cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, stdout, stderr, compile_output, exit_code, signal, cpu_time, wall_time, compile_time, memory_kb, created_at, finished_at FROM submissions WHERE token = $1",
   "describe": {
     "columns": [
       {
@@ -85,16 +85,21 @@
       },
       {
         "ordinal": 16,
+        "name": "compile_time",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 17,
         "name": "memory_kb",
         "type_info": "Int4"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
@@ -122,9 +127,10 @@
       true,
       true,
       true,
+      true,
       false,
       true
     ]
   },
-  "hash": "74a5da18fc2a06acf97193abe61e80d461f6f20e05fca0d158d4361932ac2eed"
+  "hash": "2aa99c6d521d5b9a64eb6830ba2de3c61bf1ebabaeac3bbbf85277366b700210"
 }

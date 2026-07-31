@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT token, language_id, status, status_detail, cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, stdout, stderr, compile_output, exit_code, signal, cpu_time, wall_time, memory_kb, created_at, finished_at FROM submissions WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+  "query": "SELECT token, language_id, status, status_detail, cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, stdout, stderr, compile_output, exit_code, signal, cpu_time, wall_time, compile_time, memory_kb, created_at, finished_at FROM submissions WHERE batch_id = $1 ORDER BY created_at, token",
   "describe": {
     "columns": [
       {
@@ -85,25 +85,28 @@
       },
       {
         "ordinal": 16,
+        "name": "compile_time",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 17,
         "name": "memory_kb",
         "type_info": "Int4"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "finished_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
@@ -124,9 +127,10 @@
       true,
       true,
       true,
+      true,
       false,
       true
     ]
   },
-  "hash": "a186b00595638f72b0d4c08ed438acfc480324437ab64e66c49acab52ea7c31d"
+  "hash": "1a5ed55fa7a856aa056a9922b57752dc916b77bd8609b3bdb47c476e9e241ba6"
 }

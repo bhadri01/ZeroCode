@@ -73,8 +73,15 @@ pub struct Submission {
     pub exit_code: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signal: Option<Signal>,
+    /// CPU seconds consumed by the **run phase**. For compiled languages the
+    /// compiler's CPU is billed to `compile_time` instead, so this is a measure
+    /// of the submitted program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_time: Option<f64>,
+    /// Wall-clock seconds spent compiling. `None` for interpreted languages and
+    /// for compile-cache hits, which never enter a compile phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compile_time: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_time: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

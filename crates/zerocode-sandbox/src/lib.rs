@@ -18,6 +18,11 @@ pub mod kernel_check;
 /// Compile-artifact (de)serialization for the compile cache — tar pack/unpack.
 pub mod artifact;
 
+/// PIDs the sandbox owns and will `waitpid` itself. The worker's orphan reaper
+/// consults this so its `waitpid(-1)` drain can't steal a sandbox child's exit
+/// status out from under `exec::wait_with_timeout`.
+pub mod owned_children;
+
 #[cfg(feature = "unsafe-naive")]
 pub mod naive;
 
@@ -57,8 +62,15 @@ pub struct SandboxResult {
     pub compile_output: Option<Bytes>,
     pub exit_code: Option<i32>,
     pub signal: Option<Signal>,
+    /// CPU consumed by the **run phase only**. For a compiled language the
+    /// compiler's CPU is excluded (it is reported as `compile_time` instead), so
+    /// this measures the submitted program rather than our toolchain.
     pub cpu_time: Duration,
+    /// Wall-clock for the whole submission — compile phase included.
     pub wall_time: Duration,
+    /// Wall-clock spent compiling. Zero for interpreted languages and for
+    /// compile-cache hits, which skip the compile phase entirely.
+    pub compile_time: Duration,
     pub memory_kb: u32,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
@@ -101,4 +113,31 @@ pub enum SandboxError {
     Io(#[from] std::io::Error),
     #[error("internal error: {0}")]
     Internal(String),
+}
+
+impl SandboxError {
+    /// Whether re-running the identical job could plausibly succeed.
+    ///
+    /// These are *infrastructure* faults — a fork that hit EAGAIN, a cgroup
+    /// that was still being torn down, a lost exit status. The user's program
+    /// either never ran or its verdict was destroyed, so the worker must retry
+    /// rather than write back a terminal status: a `sandbox_failure` with empty
+    /// stdout is indistinguishable from "wrong answer" to a grader, which is how
+    /// a correct submission gets silently marked wrong.
+    ///
+    /// The config-level variants (kernel feature missing, seccomp/landlock
+    /// policy rejected, feature gate off) are deliberately excluded: they fail
+    /// identically every time and retrying only delays the error.
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            SandboxError::CgroupSetup(_)
+                | SandboxError::MountSetup(_)
+                | SandboxError::NamespaceSetup(_)
+                | SandboxError::Spawn(_)
+                | SandboxError::Wait(_)
+                | SandboxError::Io(_)
+                | SandboxError::Internal(_)
+        )
+    }
 }

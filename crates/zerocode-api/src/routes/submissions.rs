@@ -128,7 +128,9 @@ pub async fn create(
     let shed_limit = state.submit_queue_limit();
     if shed_limit > 0 && state.cached_queue_depth() > shed_limit {
         metrics::counter!("zerocode_submissions_shed_total").increment(1);
-        return Err(ApiError::Backpressure { retry_after_secs: 5 });
+        return Err(ApiError::Backpressure {
+            retry_after_secs: 5,
+        });
     }
 
     // Insert + notify.
@@ -158,7 +160,12 @@ pub async fn create(
     // saturated, subscribe fails and we fall back to polling the query pool.
     if params.wait.unwrap_or(false) {
         if let Some(sub) = wait_for_completion(state.pool(), state.listener_pool(), token).await? {
-            if sub.is_done() {
+            // Only memoise judgements about the submitted code. A
+            // `sandbox_failure` / `internal_error` is a fault on our side, and
+            // caching one would replay a single transient blip to every
+            // identical submission for the rest of the TTL — making one bad
+            // moment look like a stable, reproducible wrong answer.
+            if sub.is_done() && sub.status.is_verdict() {
                 populate_result_cache(&state, &cache_key, &sub).await;
             }
             return Ok(Json(SubmissionView::from(sub)).into_response());
@@ -331,6 +338,11 @@ pub struct SubmissionView {
     pub signal: Option<Signal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time: Option<f64>,
+    /// Wall-clock seconds spent compiling. Absent for interpreted languages and
+    /// compile-cache hits. Reported separately so `time` measures the submitted
+    /// program rather than our toolchain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compile_time: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wall_time: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -353,6 +365,7 @@ impl From<Submission> for SubmissionView {
             exit_code: s.exit_code,
             signal: s.signal,
             time: s.cpu_time,
+            compile_time: s.compile_time,
             wall_time: s.wall_time,
             memory: s.memory_kb,
             created_at: s.created_at.to_rfc3339(),
@@ -381,6 +394,11 @@ pub struct Base64SubmissionView {
     pub signal: Option<Signal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time: Option<f64>,
+    /// Wall-clock seconds spent compiling. Absent for interpreted languages and
+    /// compile-cache hits. Reported separately so `time` measures the submitted
+    /// program rather than our toolchain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compile_time: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wall_time: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -403,6 +421,7 @@ impl From<Submission> for Base64SubmissionView {
             exit_code: s.exit_code,
             signal: s.signal,
             time: s.cpu_time,
+            compile_time: s.compile_time,
             wall_time: s.wall_time,
             memory: s.memory_kb,
             created_at: s.created_at.to_rfc3339(),
@@ -427,6 +446,7 @@ async fn populate_result_cache(state: &AppState, key: &CacheKey, sub: &Submissio
         compile_output: sub.compile_output.as_ref().map(|p| p.as_bytes().to_vec()),
         exit_code: sub.exit_code,
         cpu_time: sub.cpu_time.unwrap_or(0.0),
+        compile_time: sub.compile_time,
         wall_time: sub.wall_time.unwrap_or(0.0),
         memory_kb: sub.memory_kb.unwrap_or(0),
     };
@@ -449,6 +469,8 @@ pub struct CachedSubmissionView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     pub time: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compile_time: Option<f64>,
     pub wall_time: f64,
     pub memory: u32,
 }
@@ -463,6 +485,7 @@ impl From<zerocode_cache::CachedOutcome> for CachedSubmissionView {
             compile_output: c.compile_output.map(Payload::from),
             exit_code: c.exit_code,
             time: c.cpu_time,
+            compile_time: c.compile_time,
             wall_time: c.wall_time,
             memory: c.memory_kb,
         }
@@ -807,6 +830,7 @@ mod ops_tests {
             exit_code: Some(0),
             signal: Some(Signal::Sigsegv),
             cpu_time: Some(0.123),
+            compile_time: Some(0.789),
             wall_time: Some(0.456),
             memory_kb: Some(8192),
             created_at: now,
@@ -828,6 +852,7 @@ mod ops_tests {
             "exit_code",
             "signal",
             "time",
+            "compile_time",
             "wall_time",
             "memory",
             "created_at",
@@ -853,6 +878,7 @@ mod ops_tests {
             compile_output: None,
             exit_code: Some(0),
             cpu_time: 0.01,
+            compile_time: None,
             wall_time: 0.02,
             memory_kb: 4096,
         };

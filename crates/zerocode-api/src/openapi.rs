@@ -145,10 +145,24 @@ pub struct ResourceLimitsBody {
 pub struct SubmissionViewBody {
     pub token: String,
     pub language_id: u32,
-    /// One of: `queued`, `processing`, `accepted`, `compile_error`,
-    /// `runtime_error`, `time_limit_exceeded`, `memory_limit_exceeded`,
-    /// `output_limit_exceeded`, `non_zero_exit`, `sandbox_failure`,
-    /// `internal_error`, `cancelled`, `expired`.
+    /// Adjacently tagged: `{"kind": "...", "detail": ...}`. The complete `kind`
+    /// vocabulary, with terminal/verdict/retryable semantics for each, is in
+    /// `docs/STATUS.md`.
+    ///
+    /// Non-terminal: `queued`, `processing`.
+    ///
+    /// Verdicts on the submitted code (reproducible, safe to cache):
+    /// `accepted`, `compile_error`, `runtime_error`, `non_zero_exit`,
+    /// `time_limit_exceeded`, `memory_limit_exceeded`, `output_limit_exceeded`.
+    ///
+    /// Not verdicts — these describe a fault on our side or the submission's
+    /// lifecycle, and say nothing about the code. `sandbox_failure` and
+    /// `internal_error` are retryable; treat them (and any unrecognised kind) as
+    /// infrastructure errors, never as a result: they carry empty `stdout`, so
+    /// grading them scores a correct program as wrong. `cancelled`, `expired`
+    /// are terminal and not retryable.
+    ///
+    /// There is no `wrong_answer` — ZeroCode executes, it does not grade.
     pub status: serde_json::Value,
     pub limits: ResourceLimitsBody,
     /// UTF-8 string, or `{"_b64": "..."}` for binary, or omitted if absent.
@@ -158,10 +172,15 @@ pub struct SubmissionViewBody {
     pub exit_code: Option<i32>,
     /// POSIX signal name when killed (e.g. `"SIGSEGV"`).
     pub signal: Option<String>,
-    /// CPU time consumed (seconds).
+    /// CPU seconds consumed by the RUN phase only — the compiler's CPU is
+    /// billed to `compile_time` instead, so this measures the submitted program.
     pub time: Option<f64>,
+    /// Wall-clock seconds spent compiling. Absent for interpreted languages and
+    /// for compile-cache hits, which skip the compile phase.
+    pub compile_time: Option<f64>,
+    /// Wall-clock seconds for the whole submission, compile phase included.
     pub wall_time: Option<f64>,
-    /// Peak resident memory (KB).
+    /// Peak resident memory of the RUN phase (KB); the compiler is excluded.
     pub memory: Option<u32>,
     pub created_at: String,
     pub finished_at: Option<String>,

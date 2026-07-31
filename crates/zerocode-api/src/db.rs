@@ -84,7 +84,7 @@ pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Subm
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
-                exit_code, signal, cpu_time, wall_time, memory_kb, \
+                exit_code, signal, cpu_time, wall_time, compile_time, memory_kb, \
                 created_at, finished_at \
          FROM submissions WHERE token = $1",
         token.to_string(),
@@ -121,6 +121,7 @@ pub async fn fetch_submission(pool: &PgPool, token: Token) -> Result<Option<Subm
         exit_code: row.exit_code,
         signal: row.signal.map(Signal::from_raw),
         cpu_time: row.cpu_time.map(|f| f as f64),
+        compile_time: row.compile_time.map(|f| f as f64),
         wall_time: row.wall_time.map(|f| f as f64),
         memory_kb: row.memory_kb.map(|i| i as u32),
         created_at: row.created_at,
@@ -193,7 +194,7 @@ pub async fn list_submissions(
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
-                exit_code, signal, cpu_time, wall_time, memory_kb, \
+                exit_code, signal, cpu_time, wall_time, compile_time, memory_kb, \
                 created_at, finished_at \
          FROM submissions \
          WHERE ($1::text IS NULL OR status = $1) \
@@ -235,6 +236,7 @@ pub async fn list_submissions(
             exit_code: row.exit_code,
             signal: row.signal.map(Signal::from_raw),
             cpu_time: row.cpu_time.map(|f| f as f64),
+            compile_time: row.compile_time.map(|f| f as f64),
             wall_time: row.wall_time.map(|f| f as f64),
             memory_kb: row.memory_kb.map(|i| i as u32),
             created_at: row.created_at,
@@ -253,7 +255,7 @@ pub async fn list_batch(pool: &PgPool, batch_id: &str) -> Result<Vec<Submission>
         "SELECT token, language_id, status, status_detail, \
                 cpu_time_limit, wall_time_limit, memory_limit_mb, max_pids, enable_network, \
                 stdout, stderr, compile_output, \
-                exit_code, signal, cpu_time, wall_time, memory_kb, \
+                exit_code, signal, cpu_time, wall_time, compile_time, memory_kb, \
                 created_at, finished_at \
          FROM submissions \
          WHERE batch_id = $1 \
@@ -292,6 +294,7 @@ pub async fn list_batch(pool: &PgPool, batch_id: &str) -> Result<Vec<Submission>
             exit_code: row.exit_code,
             signal: row.signal.map(Signal::from_raw),
             cpu_time: row.cpu_time.map(|f| f as f64),
+            compile_time: row.compile_time.map(|f| f as f64),
             wall_time: row.wall_time.map(|f| f as f64),
             memory_kb: row.memory_kb.map(|i| i as u32),
             created_at: row.created_at,

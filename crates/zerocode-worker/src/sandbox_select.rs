@@ -146,6 +146,7 @@ mod tests {
                 signal: None,
                 cpu_time: Duration::ZERO,
                 wall_time: Duration::ZERO,
+                compile_time: Duration::ZERO,
                 memory_kb: 0,
                 started_at: Utc::now(),
                 finished_at: Utc::now(),
@@ -187,7 +188,10 @@ mod tests {
             native: Some(Arc::new(Marker { label: "native" })),
             wasm: Some(Arc::new(Marker { label: "wasm" })),
         };
-        let res = tiered.execute(job(spec(SandboxTier::Native))).await.unwrap();
+        let res = tiered
+            .execute(job(spec(SandboxTier::Native)))
+            .await
+            .unwrap();
         assert_eq!(&res.stdout[..], b"native");
     }
 

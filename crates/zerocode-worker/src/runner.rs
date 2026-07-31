@@ -61,9 +61,7 @@ impl Runner {
 
         let compile_cache = Arc::new(CompileCache::new(pool.clone()));
         // Clamp the budget into Tokio's permit ceiling; never below 1.
-        let mem_budget = (memory_budget_mb as usize)
-            .max(1)
-            .min(Semaphore::MAX_PERMITS);
+        let mem_budget = (memory_budget_mb as usize).clamp(1, Semaphore::MAX_PERMITS);
         Self {
             pool,
             worker_id,
@@ -188,10 +186,24 @@ impl Runner {
                 if let Err(e) = result {
                     tracing::error!(error = %e, %token, "submission failed at worker layer");
                     if let Err(write_err) =
-                        db::write_sandbox_failure(&pool, token, &e.to_string()).await
+                        db::write_sandbox_failure(&pool, token, elapsed, &e.to_string()).await
                     {
                         tracing::error!(error = %write_err, %token, "could not write failure row");
                     }
+                    // Publish the terminal event on the failure path too. Without
+                    // this, a `?wait=true` caller never learns the row went
+                    // terminal and blocks for the API's full 30 s WAIT_TIMEOUT
+                    // before falling back to a final poll — which is exactly the
+                    // "30-second hang, then sandbox_failure" symptom.
+                    let _ = publish_event(
+                        &pool,
+                        token,
+                        &Event::Finished {
+                            status: serde_json::to_value(Status::SandboxFailure)
+                                .unwrap_or_default(),
+                        },
+                    )
+                    .await;
                 }
                 drop(_mem);
                 drop(permit);
@@ -253,7 +265,7 @@ async fn process(
         cached_binary,
     };
 
-    let result = match sandbox.execute(job).await {
+    let result = match execute_with_retry(sandbox.as_ref(), job, token).await {
         Ok(r) => r,
         Err(e) => {
             return Err(anyhow::anyhow!("sandbox: {e}"));
@@ -301,6 +313,49 @@ async fn process(
     }
 
     Ok(())
+}
+
+/// How many times a single submission may be handed to the sandbox. Only
+/// *infrastructure* faults are retried (see [`SandboxError::is_retryable`]) —
+/// never a verdict. One extra attempt is enough for the transient class we see
+/// (fork EAGAIN under burst, a cgroup mid-teardown, a lost exit status): those
+/// are uncorrelated with the submission, so a second attempt succeeds
+/// essentially always, and capping at two bounds the blast radius if a worker
+/// is genuinely sick.
+const MAX_SANDBOX_ATTEMPTS: u32 = 2;
+
+/// Run the job, retrying infrastructure faults instead of turning them into a
+/// terminal `sandbox_failure`.
+///
+/// This matters more than it looks: a `sandbox_failure` carries empty stdout, so
+/// a grader that compares stdout to expected output scores it as a wrong answer.
+/// A transient fault in the harness must never be allowed to look like a verdict
+/// on the user's code.
+async fn execute_with_retry(
+    sandbox: &dyn Sandbox,
+    job: SandboxJob,
+    token: zerocode_core::Token,
+) -> Result<SandboxResult, zerocode_sandbox::SandboxError> {
+    let mut attempt = 1;
+    loop {
+        match sandbox.execute(job.clone()).await {
+            Ok(r) => return Ok(r),
+            Err(e) if e.is_retryable() && attempt < MAX_SANDBOX_ATTEMPTS => {
+                tracing::warn!(
+                    %token,
+                    attempt,
+                    error = %e,
+                    "sandbox execution failed with a retryable fault; re-running"
+                );
+                metrics::counter!("zerocode_sandbox_retries_total").increment(1);
+                attempt += 1;
+                // Brief pause so whatever was transient (a cgroup still being
+                // torn down, a fork that hit EAGAIN) has a moment to clear.
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 fn record_outcome(token: &zerocode_core::Token, result: &SandboxResult) {

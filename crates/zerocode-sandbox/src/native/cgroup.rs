@@ -106,17 +106,7 @@ impl Cgroup {
 
     /// Total CPU time the cgroup consumed since creation.
     pub fn cpu_time(&self) -> Duration {
-        let txt = match fs::read_to_string(self.path.join("cpu.stat")) {
-            Ok(s) => s,
-            Err(_) => return Duration::ZERO,
-        };
-        for line in txt.lines() {
-            if let Some(rest) = line.strip_prefix("usage_usec ") {
-                let us: u64 = rest.trim().parse().unwrap_or(0);
-                return Duration::from_micros(us);
-            }
-        }
-        Duration::ZERO
+        cpu_time_at(&self.path)
     }
 
     /// Best-effort cleanup. Logs and continues on error — the worker process
@@ -143,6 +133,23 @@ pub fn reset_run_baseline_at(path: &Path) {
     let _ = write_file(&path.join("memory.reclaim"), "1073741824");
     // Writing any value resets the peak to current usage (kernel ≥6.8).
     let _ = write_file(&path.join("memory.peak"), "0");
+}
+
+/// Free-function form of [`Cgroup::cpu_time`], usable from a thread that only
+/// holds the cgroup path. The compile→run barrier reads it at the phase
+/// boundary so triage can bill compile and run CPU separately.
+pub fn cpu_time_at(path: &Path) -> Duration {
+    let txt = match fs::read_to_string(path.join("cpu.stat")) {
+        Ok(s) => s,
+        Err(_) => return Duration::ZERO,
+    };
+    for line in txt.lines() {
+        if let Some(rest) = line.strip_prefix("usage_usec ") {
+            let us: u64 = rest.trim().parse().unwrap_or(0);
+            return Duration::from_micros(us);
+        }
+    }
+    Duration::ZERO
 }
 
 /// Lower (or raise) `memory.max` mid-job. Used at the compile→run barrier to
