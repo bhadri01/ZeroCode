@@ -96,7 +96,17 @@ services:
       # Load shedding: reject new submissions with 503 + Retry-After once queue
       # depth exceeds this (sits below the readiness gate of 10000; 0 disables).
       ZEROCODE_SUBMIT_QUEUE_LIMIT: ${ZEROCODE_SUBMIT_QUEUE_LIMIT:-5000}
-      RUST_LOG: info,zerocode=debug
+      # RUST_LOG: plain `info`, deliberately.
+      # Do NOT add a `zerocode*=debug` target directive here. Verified on this
+      # stack across eight filter strings: any target directive that raises a
+      # `zerocode*` target to DEBUG (`info,zerocode=debug`, `zerocode=debug`,
+      # `info,zerocode_worker::runner=debug`) silences that target's INFO events
+      # outright — per-submission `claimed`/`accepted` lines vanish and only
+      # WARN/ERROR survive. `info`, `info,zerocode=info` and a global `debug`
+      # all behave correctly. The old `info,zerocode=debug` default is why the
+      # workers appeared to log nothing but the occasional error.
+      # For verbose digging use a global `debug` (adds sqlx query noise).
+      RUST_LOG: ${ZEROCODE_RUST_LOG:-info}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -146,7 +156,17 @@ services:
       # ZEROCODE_MAX_PARALLEL: "4"
       # ZEROCODE_MEMORY_BUDGET_MB: "3072"
       # ZEROCODE_WORKER_DB_POOL: "8"
-      RUST_LOG: info,zerocode=debug
+      # RUST_LOG: plain `info`, deliberately.
+      # Do NOT add a `zerocode*=debug` target directive here. Verified on this
+      # stack across eight filter strings: any target directive that raises a
+      # `zerocode*` target to DEBUG (`info,zerocode=debug`, `zerocode=debug`,
+      # `info,zerocode_worker::runner=debug`) silences that target's INFO events
+      # outright — per-submission `claimed`/`accepted` lines vanish and only
+      # WARN/ERROR survive. `info`, `info,zerocode=info` and a global `debug`
+      # all behave correctly. The old `info,zerocode=debug` default is why the
+      # workers appeared to log nothing but the occasional error.
+      # For verbose digging use a global `debug` (adds sqlx query noise).
+      RUST_LOG: ${ZEROCODE_RUST_LOG:-info}
     depends_on:
       migrate:
         condition: service_completed_successfully
