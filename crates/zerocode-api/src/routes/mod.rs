@@ -14,6 +14,27 @@ use utoipa::OpenApi;
 
 use crate::state::AppState;
 
+/// Convert a requests-per-second budget into the token-bucket replenishment
+/// *period* `tower_governor` actually wants.
+///
+/// Every `GovernorConfigBuilder::per_*` setter takes "the interval after which
+/// one element of the quota is replenished" — a period, not a rate. Passing the
+/// rate straight into `per_second()` therefore inverts the meaning: the
+/// configured 10,000 req/s became *one request every 10,000 seconds*.
+///
+/// The bug is invisible until a client spends its burst, because the bucket
+/// starts full. After that every request from that IP 429s with a
+/// `Retry-After` measured in hours (observed on this stack: `Wait for 9175s`)
+/// and never recovers until the process restarts — which is exactly the kind of
+/// mystery outage a benchmark harness replaying thousands of submissions from
+/// one address would run into.
+fn replenish_period(rps: u32) -> std::time::Duration {
+    // Nanosecond resolution so rates above 1000/s don't collapse to the same
+    // period; floor at 1 ns because `finish()` rejects a zero period.
+    let nanos = (1_000_000_000u64 / rps.max(1) as u64).max(1);
+    std::time::Duration::from_nanos(nanos)
+}
+
 pub mod batches;
 pub mod health;
 pub mod languages;
@@ -61,7 +82,7 @@ pub fn router(state: AppState) -> Router {
 
     let cfg = state.config();
     let governor_conf = GovernorConfigBuilder::default()
-        .per_second(cfg.governor_rps.max(1) as u64)
+        .period(replenish_period(cfg.governor_rps))
         .burst_size(cfg.governor_burst.max(1))
         .finish()
         .unwrap();
@@ -170,4 +191,39 @@ pub fn router(state: AppState) -> Router {
     }
 
     router.with_state(state)
+}
+
+#[cfg(test)]
+mod governor_tests {
+    use super::*;
+
+    #[test]
+    fn rps_becomes_a_period_not_an_interval_in_seconds() {
+        // The regression: `per_second(rps)` treated the rate as a period, so a
+        // 10,000 req/s budget replenished one request every 10,000 seconds.
+        assert_eq!(
+            replenish_period(10_000),
+            std::time::Duration::from_micros(100)
+        );
+        assert_eq!(replenish_period(1_000), std::time::Duration::from_millis(1));
+        assert_eq!(replenish_period(100), std::time::Duration::from_millis(10));
+        assert_eq!(replenish_period(1), std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn period_is_never_zero() {
+        // `GovernorConfigBuilder::finish()` returns None on a zero period, which
+        // would panic the unwrap at startup.
+        assert!(replenish_period(0) > std::time::Duration::ZERO);
+        assert!(replenish_period(u32::MAX) > std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn builder_accepts_the_deployed_configuration() {
+        let conf = GovernorConfigBuilder::default()
+            .period(replenish_period(10_000))
+            .burst_size(10_000)
+            .finish();
+        assert!(conf.is_some(), "deployed governor config must build");
+    }
 }
