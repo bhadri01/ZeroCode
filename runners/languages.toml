@@ -33,6 +33,22 @@
 #     heap knob — ${jvm_heap_mb}, GOMEMLIMIT, --max-old-space-size — so don't
 #     shrink those below a sane run heap.)
 # Reported `memory` reflects RUN-phase peak only.
+#
+# ⚠ ONLY `compile_limits.memory_mb` IS READ. `native/linux.rs` copies that single
+# field out of `compile_limits` and takes everything else from `default_limits`.
+# `compile_limits.cpu_time`, `.wall_time`, `.max_pids`, `.max_stdout`,
+# `.max_stderr` and `.enable_network` are inert — they are NOT a separate budget
+# for the compile phase. Consequences to keep in mind when tuning:
+#   • The wall-clock killer uses default_limits.wall_time for the WHOLE job, so
+#     that single budget has to cover compile + run. A language whose compile is
+#     slow (Go seeds a ~147 MB build cache; C++ parses <bits/stdc++.h>) needs its
+#     default_limits.wall_time sized for compile + the user's program, not just
+#     the program.
+#   • pids.max likewise comes from default_limits for both phases, so a compiler
+#     that spawns helpers (cc1plus/as/ld, javac threads) must fit in it.
+# Raising a compile_limits field other than memory_mb changes nothing at runtime.
+# Reported `time` is RUN-phase CPU; the compile phase is reported separately as
+# `compile_time` (see docs/STATUS.md).
 
 [[language]]
 id = 48
@@ -58,11 +74,28 @@ source_file = "main.cpp"
 compile_cmd = ["/usr/bin/g++-14", "-O0", "-pipe", "-std=c++23", "main.cpp", "-o", "prog", "-lm"]
 run_cmd = ["./prog"]
 env = []
-# Cold g++ parsing <iostream> peaks ~114 MB → compile_limits clears it (192);
-# the run is ~1 MB so default_limits drops to 128. memory.max is shrunk to the
-# run budget at the compile→run barrier; the reported figure is run-phase only.
+# COMPILE CEILING — sized for `#include <bits/stdc++.h>`, which is what real
+# student C++ actually looks like. Measured cold g++ peaks, 1 CPU:
+#   <iostream> only ...................  114 MB / ~0.3 s
+#   20 explicit std headers ...........  154 MB / ~1.5 s
+#   <bits/stdc++.h> WITH the baked PCH   106 MB / ~0.9 s
+#   <bits/stdc++.h> without the PCH ...  294 MB / ~3.4 s
+# The old 192 MB ceiling sat *between* the last two. The PCH (runners/Dockerfile)
+# keeps the common path at ~106 MB, but the fallback path still has to fit —
+# GCC silently ignores the PCH whenever the include isn't first in the
+# translation unit, so any student who writes `#include <iostream>` above their
+# `#include <bits/stdc++.h>` lands on the 294 MB path. At 192 MB that submission
+# did not fail cleanly: the footprint is mostly reclaimable page cache, so the
+# cgroup thrashed in reclaim rather than OOMing, and the job burned its whole
+# wall budget to report `time_limit_exceeded` with memory pinned at exactly the
+# ceiling. 512 MB clears the fallback with headroom.
+#
+# This does NOT change what the admission controller reserves: the worker
+# reserves default_limits.memory_mb (the RUN budget, 128 MB), and memory.max is
+# shrunk back to it at the compile→run barrier. Only the transient compile
+# ceiling moves.
 default_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 128, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
-compile_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 192, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits = { cpu_time = 10.0, wall_time = 15.0, memory_mb = 512, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]
@@ -70,33 +103,40 @@ id = 60
 name = "Go"
 version = "1.x-latest"
 source_file = "main.go"
-compile_cmd = ["/usr/local/go/bin/go", "build", "-o", "prog", "main.go"]
+# Go's build cache MUST be writable: `go build` writes new action outputs and a
+# periodic `trim.txt` into GOCACHE, so pointing it at the read-only baked rootfs
+# cache makes EVERY build fail with
+#   go: failed to trim cache: open /var/cache/go-build/trim.txt: permission denied
+# Instead, seed the prewarmed ~147 MB stdlib cache from the read-only image into
+# the per-job writable /tmp tmpfs, build against that copy, then delete it before
+# the run phase (the tmpfs is cgroup-accounted, and the compile->run barrier
+# shrinks memory.max back to default_limits.memory_mb — a leftover cache would
+# OOM the program). Cost: ~4.5 s copy + ~0.8 s build (vs ~11 s cold). Identical
+# resubmissions skip all of this via ZeroCode's own Postgres compile cache.
+# A writable overlay (lowerdir=baked cache, upperdir=tmpfs) in the sandbox mount
+# setup would avoid the per-build copy entirely — tracked as a follow-up.
+compile_cmd = ["/bin/sh", "-c", "cp -r /var/cache/go-build /tmp/gocache && /usr/local/go/bin/go build -o prog main.go && rm -rf /tmp/gocache"]
 run_cmd = ["./prog"]
 env = [
     # GOROOT must be set explicitly. Without it, Go falls back to deriving the
     # install dir from /proc/self/exe, which dies inside chroot'd sandboxes
     # with "go binary is trimmed and GOROOT is not set".
     ["GOROOT", "/usr/local/go"],
-    # Read-only stdlib build cache baked into the runner image (see
-    # runners/Dockerfile). GOTMPDIR (writable tmpfs) takes the user package's
-    # compile output, so the cache itself need not be writable. -trimpath MUST
-    # match the bake's flags or the content-hash cache keys won't hit.
-    ["GOCACHE", "/var/cache/go-build"],
+    # Writable seeded copy of the baked stdlib cache (populated in compile_cmd).
+    # -trimpath MUST match the bake's flags or the content-hash keys won't hit.
+    ["GOCACHE", "/tmp/gocache"],
     ["GOTMPDIR", "/tmp"],
     ["GOFLAGS", "-trimpath"],
     ["GOMAXPROCS", "1"],
     ["GOMEMLIMIT", "${memory_mb}MiB"],
 ]
-# With the prewarmed read-only stdlib cache (runners/Dockerfile), `go build` of a
-# typical program is ~0.3 s instead of ~11 s, so the old cold-build allowances
-# (15 s CPU / 30 s wall / 384–512 MB) are gone. A warm build of a json+sort
-# program fits in 256 MB at GOMAXPROCS=1.
-# NOTE: kept at 256 for both phases on purpose — `GOMEMLIMIT=${memory_mb}MiB`
-# feeds the runtime GC, so default_limits.memory_mb is the run heap knob and must
-# not be shrunk below what user programs need. (Per-phase memory.max shrink still
-# applies generally; here compile and run budgets are equal, so it's a no-op.)
+# Compile phase needs headroom for the 147 MB cache copy (it lands in the
+# cgroup-accounted /tmp tmpfs) plus the compiler/linker RSS, hence 1024 MB / 45 s
+# at compile. The run phase shrinks back to a lean 256 MB heap; GOMEMLIMIT feeds
+# the runtime GC off default_limits.memory_mb, so don't shrink that below what
+# user programs need.
 default_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 64, max_stdout = 65536, max_stderr = 65536, enable_network = false }
-compile_limits  = { cpu_time = 8.0, wall_time = 12.0, memory_mb = 256, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
+compile_limits  = { cpu_time = 30.0, wall_time = 45.0, memory_mb = 1024, max_pids = 96, max_stdout = 65536, max_stderr = 65536, enable_network = false }
 is_archived = false
 
 [[language]]

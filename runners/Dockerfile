@@ -240,6 +240,39 @@ RUN mkdir -p /var/cache/go-build \
        /usr/local/go/bin/go build std \
     && chmod -R a+rX /var/cache/go-build
 
+# ---- C++ precompiled header for <bits/stdc++.h> ----
+# `#include <bits/stdc++.h>` is the near-universal opening line of competitive
+# and campus-placement C++, and it is brutally expensive: it pulls in the entire
+# standard library, so a cold g++ parse costs ~3.4 s and peaks at ~294 MB RSS.
+# That blew straight through the compile-phase cgroup ceiling, and because most
+# of the footprint is reclaimable page cache the cgroup ground away in reclaim
+# instead of OOMing — the submission just sat there until the wall clock killed
+# it and reported `time_limit_exceeded` at exactly the memory ceiling.
+#
+# GCC automatically prefers `<header>.gch` next to a header it is about to
+# include, provided the PCH was built with compatible flags and the include is
+# the first thing in the translation unit. Precompiling it here takes those
+# ~3.4 s / 294 MB down to ~0.87 s / 106 MB, which fixes the failure and is also
+# the single biggest C++ latency win available.
+#
+# Flags MUST stay in sync with the id=52 compile_cmd in runners/languages.toml
+# (`-O0 -std=c++23`; `-pipe` does not participate in PCH validity). On a
+# mismatch GCC silently falls back to parsing the real header, so the build
+# verifies with `-H` that the PCH is actually consumed rather than trusting it.
+# Debian keeps this header in the target-specific include dir, so it is located
+# rather than hardcoded.
+RUN set -eux; \
+    hdr="$(find /usr/include -type f -path '*/bits/stdc++.h' | head -n1)"; \
+    [ -n "$hdr" ] || { echo "bits/stdc++.h not found in this image" >&2; exit 1; }; \
+    g++-14 -O0 -std=c++23 -x c++-header "$hdr" -o "$hdr.gch"; \
+    chmod a+r "$hdr.gch"; \
+    printf '#include <bits/stdc++.h>\nint main(){ std::vector<int> v{1}; std::cout << v.size(); }\n' > /tmp/pchprobe.cpp; \
+    g++-14 -O0 -pipe -std=c++23 -Winvalid-pch -H /tmp/pchprobe.cpp -o /tmp/pchprobe 2>/tmp/pchprobe.log; \
+    grep -q "^! .*stdc++\.h\.gch" /tmp/pchprobe.log \
+      || { echo "PCH built but not used by the runtime flags:" >&2; head -5 /tmp/pchprobe.log >&2; exit 1; }; \
+    /tmp/pchprobe; echo; \
+    rm -f /tmp/pchprobe /tmp/pchprobe.cpp /tmp/pchprobe.log
+
 # Create the directory tree the sandbox uses inside the runner rootfs.
 RUN mkdir -p /box /tmp && \
     chmod 1777 /tmp && \
