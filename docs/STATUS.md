@@ -17,6 +17,18 @@ kinds](#handling-unknown-kinds)), never as success. This list is the complete
 vocabulary as of the current release; new kinds are additive and announced
 before they ship.
 
+**Fetch it from the running engine instead of trusting this page:**
+
+```
+GET /v1/statuses
+```
+
+returns the same vocabulary machine-readably — every `kind` with `terminal`,
+`verdict` and `retryable` booleans, a `vocabulary_version`, and an
+`unknown_kind_policy` of `"not_a_verdict"`. It is generated from the same enum
+the engine dispatches on, so it cannot drift from the implementation. Assert
+against it at integration time rather than hard-coding this table.
+
 Source of truth: `Status` in `crates/zerocode-core/src/status.rs`. A test
 (`all_covers_every_variant`) fails the build if a variant is added without being
 listed here.
@@ -55,6 +67,27 @@ ZeroCode executes; it does not grade. A program that runs to completion is
 output is the caller's job. If you are mapping onto a Judge0-shaped enum,
 `accepted` is Judge0's status 3 and your own comparison decides between
 "Accepted" and "Wrong Answer".
+
+---
+
+## The `verdict` flag — the one-field version
+
+Every submission response carries a top-level boolean:
+
+```jsonc
+{ "status": {"kind": "accepted"},         "verdict": true,  "stdout": "42\n" }
+{ "status": {"kind": "sandbox_failure"},  "verdict": false, "stdout": "" }
+```
+
+`verdict: true` means the status is a judgement about the submitted code and may
+be graded. `verdict: false` means we could not produce a result — grade nothing,
+and in particular do **not** compare the empty `stdout` that comes with it. A
+grader needs one line:
+
+```python
+if not result["verdict"]:
+    raise EngineUnavailable(result["status"]["kind"])
+```
 
 ---
 
@@ -113,6 +146,54 @@ Three different clocks can end a request. Only the first produces a status.
 3. **The stuck-claim sweeper** — if a worker dies mid-job, its claim is returned
    to `queued` after `2 × wall_time_limit + 60 s` and the submission is executed
    again. Invisible to clients apart from the extra latency.
+
+---
+
+## Cold compiles, and why one language can look "degraded"
+
+The first submission of any given `(language, source)` pays a full compile. Every
+identical resubmission afterwards hits the compile cache and skips it entirely.
+The gap is large for languages with expensive toolchains:
+
+| Language | first submission | cached resubmission |
+|---|---|---|
+| Go | ~0.8–2.9 s | ~30 ms |
+| Rust | ~1.5 s | ~30 ms |
+| C++ (`<bits/stdc++.h>`) | ~1.0–1.5 s | ~30 ms |
+| C | ~0.4 s | ~30 ms |
+| Python / JS | no compile phase | — |
+
+Two consequences worth designing around:
+
+1. **Benchmarking a cold run against a warm re-run shows a 9–15× "slowdown" that
+   is really cache miss vs cache hit.** It is selective by language because the
+   compile cost is, and because interpreted languages have no compile phase at
+   all. It is *not* a subset of workers degrading — there are no per-language
+   workers; every worker serves every language from one queue.
+
+2. **Many concurrent first-time submissions of the same new solution all miss
+   together** and compile simultaneously, which is far slower than one alone.
+
+**Pre-warm before a timed exam.** Submit each solution once, in advance. The
+compile cache is keyed on `(language_id, source)` and is not evicted, so one
+warm-up submission per solution is enough regardless of how many test cases run
+against it later.
+
+To check warmth from outside, poll:
+
+```
+GET /v1/health/languages
+```
+
+Each language reports `state` (`ok` | `cold` | `degraded` | `no_data`),
+`warm_ratio` (fraction of recent submissions that skipped compilation), p50/p95
+wall and `fault_ratio`. `degraded` means engine faults were observed and an exam
+should not start; `cold` means first-run solutions are paying compile cost, which
+pre-warming fixes.
+
+Note the compile phase has its **own** wall budget, separate from the run's — a
+slow compile can no longer consume the program's time budget and surface as
+`time_limit_exceeded`.
 
 ---
 
