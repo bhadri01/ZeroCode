@@ -80,11 +80,28 @@ POST   /v1/submissions                    Submit code for execution
 GET    /v1/submissions/{token}            Get result by token
 GET    /v1/submissions                    List submissions (paginated)
 GET    /v1/submissions/{token}/stream     SSE real-time stdout/stderr
+POST   /v1/submissions/batch              Submit a batch of test cases
+GET    /v1/batches/{batch_id}             Batch results
 GET    /v1/languages                      List supported languages
+GET    /v1/statuses                       Status vocabulary (terminal/verdict/retryable)
 GET    /v1/health                         Liveness probe
 GET    /v1/ready                          Readiness (DB + queue depth)
+GET    /v1/health/languages               Per-language health + compile-cache warmth
 GET    /v1/about                          Version info
 ```
+
+Every submission response carries a top-level **`verdict`** boolean. It is true
+only when the status is a judgement about the submitted code; false means the
+engine could not produce a result, and the empty `stdout` that comes with it
+must not be compared against expected output. Graders need one line:
+
+```python
+if not result["verdict"]:
+    raise EngineUnavailable(result["status"]["kind"])
+```
+
+`GET /v1/statuses` publishes the full vocabulary machine-readably — see
+[docs/STATUS.md](docs/STATUS.md).
 
 ZeroCode runs as an open, unauthenticated backend — restrict access at the
 network layer (private subnet, firewall, reverse proxy with auth in front).

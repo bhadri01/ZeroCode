@@ -163,6 +163,42 @@ Liveness — unauthenticated. Returns `{"status":"ok"}` when the process is up.
 
 Readiness — gates on a DB ping plus queue depth. Unauthenticated.
 
+### `GET /v1/health/languages`
+
+Per-language health and compile-cache warmth. Poll this before committing a
+timed exam to the engine. Query param `window_mins` (default 15, max 1440).
+
+```jsonc
+{
+  "window_mins": 15,
+  "healthy": true,
+  "languages": [
+    { "language_id": 71, "name": "Python", "samples": 65, "warm_ratio": 1.0,
+      "p50_wall": 0.045, "p95_wall": 0.062, "fault_ratio": 0.0, "state": "ok" },
+    { "language_id": 60, "name": "Go", "samples": 16, "warm_ratio": 0.0,
+      "p50_wall": 4.978, "p95_wall": 8.6, "fault_ratio": 0.0, "state": "cold" }
+  ]
+}
+```
+
+| `state` | meaning |
+|---|---|
+| `ok` | warm and fault-free; latency is steady state |
+| `cold` | under half of recent submissions skipped compilation, so first-run solutions are paying a full compile. Expected, not a fault — pre-warm by submitting each solution once |
+| `degraded` | engine faults observed in the window. Do not start an exam |
+| `no_data` | nothing ran in the window; absence of evidence, not health |
+
+There are no per-language workers — every worker serves every language from one
+queue — so language-selective slowness is always compile cost and cache state,
+never a sick subset of workers.
+
+### `GET /v1/statuses`
+
+The complete status vocabulary, machine-readable, with `terminal` / `verdict` /
+`retryable` per kind. Generated from the same enum the engine dispatches on.
+Unauthenticated and not rate-limited, so a client can assert the contract at
+startup. See [Status discriminated union](#status-discriminated-union).
+
 ### `GET /metrics`
 
 Prometheus exposition. Unauthenticated. Counters for submissions, cache
@@ -177,22 +213,46 @@ OpenAPI 3.1 spec generated from `utoipa` annotations. Feed it to
 
 ## Status discriminated union
 
-The `status` field is `{ "kind": "...", "detail"?: ... }`:
+The `status` field is `{ "kind": "...", "detail"?: ... }`. Fetch the
+authoritative list at runtime from **`GET /v1/statuses`** — it is generated from
+the same enum the engine dispatches on, so it cannot drift from this page.
 
-| kind | meaning |
-|---|---|
-| `queued` | accepted into DB, not yet picked up |
-| `processing` | worker has claimed the row |
-| `accepted` | program exited 0 inside the limits |
-| `time_limit_exceeded` | wall- or CPU-time limit hit; `detail` is `wall` or `cpu` |
-| `memory_limit_exceeded` | cgroup `memory.oom_kill` fired |
-| `output_limit_exceeded` | stdout or stderr exceeded the ring-buffer cap |
-| `compile_error` | sentinel exit 253 from the compile sub-child |
-| `runtime_error` | non-zero exit or fatal signal; `detail` carries signal name |
-| `non_zero_exit` | clean exit with a non-zero code |
-| `sandbox_failure` | the sandbox itself errored (not user code) |
-| `cancelled` | the row was cancelled before terminal status |
-| `expired` | retention window elapsed before terminal status |
+`verdict` marks the statuses that are a judgement about the **submitted code**.
+Only those may be graded.
+
+| kind | terminal | verdict | retryable | meaning |
+|---|---|---|---|---|
+| `queued` | no | – | – | accepted into DB, not yet picked up |
+| `processing` | no | – | – | worker has claimed the row |
+| `accepted` | yes | yes | no | program exited 0 inside the limits |
+| `compile_error` | yes | yes | no | the compile phase exited non-zero; diagnostics in `compile_output` |
+| `runtime_error` | yes | yes | no | killed by a signal; `detail` carries the signal name |
+| `non_zero_exit` | yes | yes | no | clean exit with a non-zero code |
+| `time_limit_exceeded` | yes | yes | no | `detail` is `wall` or `cpu`; the compile phase has its own budget, so this always refers to the program |
+| `memory_limit_exceeded` | yes | yes | no | cgroup `memory.oom_kill` fired during the run |
+| `output_limit_exceeded` | yes | yes | no | stdout or stderr exceeded the cap |
+| `sandbox_failure` | yes | **no** | **yes** | we could not execute the submission — says nothing about the code |
+| `internal_error` | yes | **no** | **yes** | any other fault on our side |
+| `cancelled` | yes | no | no | cancelled before completion |
+| `expired` | yes | no | no | retention window elapsed |
+
+There is no `wrong_answer`: ZeroCode executes, it does not grade. Comparing
+`stdout` to expected output is the caller's job.
+
+### The `verdict` flag
+
+Every submission response carries a top-level boolean, so a grader never has to
+enumerate the enum:
+
+```python
+if not result["verdict"]:
+    raise EngineUnavailable(result["status"]["kind"])
+```
+
+`verdict: false` means we could not produce a result. The empty `stdout` that
+accompanies it must **not** be compared against expected output — doing so
+scores a correct program as wrong. Treat any `kind` you do not recognise the
+same way.
 
 ## Errors
 

@@ -64,9 +64,11 @@ answer.
 
 ZeroCode executes; it does not grade. A program that runs to completion is
 `accepted` regardless of what it printed. Comparing `stdout` against expected
-output is the caller's job. If you are mapping onto a Judge0-shaped enum,
-`accepted` is Judge0's status 3 and your own comparison decides between
-"Accepted" and "Wrong Answer".
+output is the caller's job.
+
+So if your own model has a "wrong answer" state, it is produced by *your*
+comparison against an `accepted` submission — never by a status from us. Do the
+comparison only when `verdict` is true.
 
 ---
 

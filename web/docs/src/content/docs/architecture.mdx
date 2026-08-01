@@ -71,7 +71,7 @@ failed before the run phase started."
 |---|---|
 | LISTEN/NOTIFY dispatch | < 5 ms p99 wake (no poll loop) |
 | Moka result cache (10k entries, 5 min TTL) | Skip the sandbox for identical submissions |
-| Compile-artifact cache (key = source + flags + arch) | Skip the compile phase on cache hit; binary bind-mounted into `/box/prog` |
+| Compile-artifact cache (key = blake3 of `language_id` + source) | Skip the compile phase entirely on a hit. The whole post-compile `/box` directory is stored, so JVM/.NET multi-file output benefits as much as a single binary. Streamed out over a CLOEXEC pipe before user code runs, so a submission cannot poison it. |
 | HTTP/2 h2c (auto-negotiated by hyper) | Multiplexed SSE streams, no head-of-line blocking |
 | `cargo bench` suite | `core_ops` + `cache_key` benchmarks; regression-gate via CI |
 
