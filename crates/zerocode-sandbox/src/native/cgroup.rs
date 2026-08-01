@@ -152,6 +152,14 @@ pub fn cpu_time_at(path: &Path) -> Duration {
     Duration::ZERO
 }
 
+/// Lower `pids.max` mid-job, mirroring [`set_memory_max_at`]. Called at the
+/// compile→run barrier so the run phase is bounded by its own (smaller) process
+/// budget rather than the compiler's. Writing a value below the current count is
+/// legal — it simply refuses further forks — so this cannot fail the running job.
+pub fn set_pids_max_at(path: &Path, max: u32) {
+    let _ = write_file(&path.join("pids.max"), &format!("{max}"));
+}
+
 /// Lower (or raise) `memory.max` mid-job. Used at the compile→run barrier to
 /// drop the cgroup ceiling from the compile budget to the (smaller) run budget
 /// once the compiler has exited — so the admission controller's per-job

@@ -112,7 +112,27 @@ pub fn run(
     limits: &ResourceLimits,
     has_cached_binary: bool,
 ) -> Result<RawOutcome, SandboxError> {
-    let wall_time = std::time::Duration::from_secs_f64(limits.wall_time);
+    // PER-PHASE WALL BUDGETS. The run phase gets `limits.wall_time` measured
+    // from the compile→run barrier, NOT from job start.
+    //
+    // Sharing one budget across both phases is what turns a slow compile into a
+    // *wrong grade*: a graded submission whose compile ate the budget comes back
+    // `time_limit_exceeded` with empty stdout, and a grader comparing stdout to
+    // expected output scores the student's correct program as wrong. Measured on
+    // Go, whose cold compile seeds a 147 MB build cache: 8 concurrent cold
+    // compiles took 8.3–8.7 s each against a 12 s shared budget — 2.8 s of
+    // headroom before the killer fires, and a busier host crosses it.
+    //
+    // The compile phase gets `compile_limits.wall_time` when the spec declares
+    // one. With no compile phase (interpreted languages, compile-cache hits)
+    // both budgets are `limits.wall_time` and behaviour is unchanged.
+    let run_wall = std::time::Duration::from_secs_f64(limits.wall_time);
+    let will_compile =
+        spec.compile_cmd.as_ref().is_some_and(|c| !c.is_empty()) && !has_cached_binary;
+    let compile_wall = match (will_compile, spec.compile_limits.as_ref()) {
+        (true, Some(cl)) => std::time::Duration::from_secs_f64(cl.wall_time.max(limits.wall_time)),
+        _ => run_wall,
+    };
     let max_stdout = limits.max_stdout as usize;
     let max_stderr = limits.max_stderr as usize;
     // Three pipes drive the parent ↔ child handshake:
@@ -220,10 +240,21 @@ pub fn run(
             // compile budget (see linux.rs); once the compiler has exited we drop
             // memory.max to this so the run is bounded — and reserved — at run size.
             let run_mem_mb = limits.memory_mb as u64;
+            // Same story for the process budget: the cgroup was created at the
+            // compile ceiling (compilers fork helpers), so drop it to the run
+            // budget once the compiler is gone.
+            let run_max_pids = limits.max_pids;
             let run_mem_kb = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let run_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let (rm, rdone) = (run_mem_kb.clone(), run_done.clone());
             let fork_inst = std::time::Instant::now();
+            // Published the moment the compile phase ends, so the wall-clock
+            // killer can restart the run budget from the phase boundary instead
+            // of charging the run for the compiler's time. `None` until then —
+            // and forever, for jobs that never compile.
+            let barrier_at: std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>> =
+                std::sync::Arc::new(std::sync::Mutex::new(None));
+            let barrier_at_w = barrier_at.clone();
             let barrier = std::thread::spawn(move || {
                 use std::sync::atomic::Ordering::Relaxed;
                 let mut b = [0u8; 1];
@@ -237,11 +268,18 @@ pub fn run(
                 // both clocks here — this instant is the phase boundary.
                 let compile_cpu = super::cgroup::cpu_time_at(&cg_path);
                 let compile_wall = fork_inst.elapsed();
+                // Hand the phase boundary to the wall-clock killer before doing
+                // any of the (potentially slow) reclaim work below, so the run
+                // budget starts at the instant the compiler actually finished.
+                if let Ok(mut slot) = barrier_at_w.lock() {
+                    *slot = Some(std::time::Instant::now());
+                }
                 // Reclaim the compiler's orphaned page cache, THEN shrink the
                 // ceiling to the run budget (reclaim-first so current < new max),
                 // THEN release the run exec.
                 super::cgroup::reset_run_baseline_at(&cg_path);
                 super::cgroup::set_memory_max_at(&cg_path, run_mem_mb);
+                super::cgroup::set_pids_max_at(&cg_path, run_max_pids);
                 let _ = write(&proceed_wr, b"1");
                 let current = cg_path.join("memory.current");
                 let sample = |p: &Path| -> u64 {
@@ -268,7 +306,7 @@ pub fn run(
             // Wall-clock budget; on overrun we ask the cgroup to atomically
             // SIGKILL every process in the sandbox. Signal the sampler and join
             // it (even on a wait error) before propagating, so it never leaks.
-            let wait_res = wait_with_timeout(child, wall_time, cgroup);
+            let wait_res = wait_with_timeout(child, compile_wall, run_wall, &barrier_at, cgroup);
             run_done.store(true, std::sync::atomic::Ordering::Relaxed);
             let barrier_out = barrier.join().unwrap_or_default();
             let run_phase_memory_kb = if barrier_out.fired {
@@ -712,18 +750,33 @@ fn read_capped(fd: OwnedFd, cap: usize) -> Bytes {
     Bytes::from(buf)
 }
 
+/// Wait for the sandbox child, enforcing a *per-phase* wall budget.
+///
+/// Before the compile→run barrier fires the deadline is `start + compile_wall`;
+/// after it, `barrier + run_wall`. So the user's program always gets its full
+/// declared wall budget no matter how long compilation took. For jobs with no
+/// compile phase `barrier_at` stays `None` and the two budgets are equal, which
+/// is the original single-deadline behaviour.
 fn wait_with_timeout(
     pid: Pid,
-    wall_time: std::time::Duration,
+    compile_wall: std::time::Duration,
+    run_wall: std::time::Duration,
+    barrier_at: &std::sync::Mutex<Option<std::time::Instant>>,
     cgroup: &Cgroup,
 ) -> Result<(WaitStatus, bool), SandboxError> {
     use nix::sys::wait::WaitPidFlag;
 
     let start = std::time::Instant::now();
     loop {
+        // Re-read every poll: the barrier can fire at any point mid-wait, and
+        // when it does the budget restarts from that instant.
+        let deadline = match barrier_at.lock().ok().and_then(|g| *g) {
+            Some(barrier) => barrier + run_wall,
+            None => start + compile_wall,
+        };
         match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => {
-                if start.elapsed() >= wall_time {
+                if std::time::Instant::now() >= deadline {
                     let _ = cgroup.kill();
                     let final_status = waitpid(pid, None)
                         .map_err(|e| SandboxError::Wait(format!("post-kill wait: {e}")))?;

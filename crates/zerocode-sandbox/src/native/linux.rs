@@ -18,22 +18,39 @@ pub fn execute(
     let scratch = Scratch::create(&config.scratch_dir, &job)?;
     let has_cached_binary = scratch.has_cached_binary();
 
-    // Per-phase memory: when a compile phase will actually run, create the cgroup
-    // at the (larger) compile budget so the compiler has headroom; the exec
-    // barrier then drops memory.max to job.limits.memory_mb (the run budget) once
-    // the compiler exits. With no compile phase (interpreted langs, cache hits)
-    // the cgroup is created at the run budget and never shrinks. Only memory_mb
-    // differs by phase — pids/cpu stay at job.limits the whole job (a higher
-    // pids ceiling reserves nothing). job.limits is Copy.
-    let will_compile = job.language.compile_cmd.is_some() && !has_cached_binary;
+    // Per-phase ceilings: when a compile phase will actually run, create the
+    // cgroup at the (larger) compile budget so the compiler has headroom; the
+    // exec barrier then drops both back to the run budget once the compiler
+    // exits. With no compile phase (interpreted langs, cache hits) the cgroup is
+    // created at the run budget and never shrinks. `job.limits` is Copy.
+    //
+    // `memory_mb` covers the compiler's RSS + any cgroup-accounted tmpfs it
+    // writes; `max_pids` covers the helper processes a compile driver forks
+    // (cc1plus/as/ld, javac's threads, the `sh -c` pipelines some entries use).
+    // Both are ceilings only — the worker's admission controller still reserves
+    // the smaller RUN budget, so a bigger compile ceiling reserves nothing.
+    // Must match `exec::run`'s predicate exactly. If this said "will compile"
+    // when exec did not, the compile→run barrier would never fire and the run
+    // phase would keep the (larger) compile ceiling for its whole life. An empty
+    // `compile_cmd = []` parses as `Some(vec![])`, hence the emptiness check.
+    let will_compile = job
+        .language
+        .compile_cmd
+        .as_ref()
+        .is_some_and(|c| !c.is_empty())
+        && !has_cached_binary;
     let mut cgroup_limits = job.limits;
     if will_compile {
         if let Some(cl) = job.language.compile_limits.as_ref() {
             cgroup_limits.memory_mb = cl.memory_mb.max(job.limits.memory_mb);
+            cgroup_limits.max_pids = cl.max_pids.max(job.limits.max_pids);
         }
     }
-    let cgroup = match Cgroup::create(&config.cgroup_parent, &job.token.to_string(), &cgroup_limits)
-    {
+    let cgroup = match Cgroup::create(
+        &config.cgroup_parent,
+        &job.token.to_string(),
+        &cgroup_limits,
+    ) {
         Ok(c) => c,
         Err(e) => {
             scratch.destroy();
