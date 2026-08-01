@@ -240,6 +240,50 @@ RUN mkdir -p /var/cache/go-build \
        /usr/local/go/bin/go build std \
     && chmod -R a+rX /var/cache/go-build
 
+# ---- Node.js: replace Debian's build with the official one ----
+# Debian's `nodejs` package is dramatically slower to start than the official
+# build, and interpreter startup IS the cost of a short JS submission. Measured
+# on this image, mean CPU per run of a trivial stdin->sum program, 1 CPU:
+#
+#     Debian nodejs 20.19.2 (apt) ....... 133 ms
+#     official Node 22 (nodejs.org) ......  45 ms
+#     official Node 24 (nodejs.org) ......  46 ms
+#
+# `node -e ""` alone costs 109 ms on the Debian build, so ~85% of a JS
+# submission's reported time was the interpreter booting, not the program. Wall
+# and CPU are equal (startup is single-threaded), which is why no thread-pool
+# flag helps: --v8-pool-size=0 and UV_THREADPOOL_SIZE=1 both measured flat.
+#
+# This layer also makes `version = "22"` in runners/languages.toml true — the
+# apt package shipped 20.19.2 while the registry advertised 22 to clients.
+#
+# Placed late so the expensive toolchain layers above stay cached. The Debian
+# packages are purged in this same layer so only one Node remains on the image;
+# tsx lives in /usr/local/lib/node_modules (not owned by apt) and survives, and
+# its `#!/usr/bin/env node` shebang resolves to the official binary below.
+ARG NODE_VERSION=22.20.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) nodearch=x64 ;; arm64) nodearch=arm64 ;; \
+      *) echo "unsupported arch $arch" >&2; exit 1 ;; esac; \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${nodearch}.tar.xz" \
+      -o /tmp/node.tar.xz; \
+    mkdir -p /usr/local/node; \
+    tar -C /usr/local/node --strip-components=1 -xJf /tmp/node.tar.xz; \
+    rm -f /tmp/node.tar.xz; \
+    apt-get purge -y nodejs npm 2>/dev/null || true; \
+    apt-get autoremove -y 2>/dev/null || true; \
+    rm -rf /var/lib/apt/lists/*; \
+    ln -sf /usr/local/node/bin/node /usr/bin/node; \
+    ln -sf /usr/local/node/bin/npm  /usr/bin/npm; \
+    ln -sf /usr/local/node/bin/npx  /usr/bin/npx; \
+    chmod -R a+rX /usr/local/node; \
+    node --version; \
+    # tsx (id 106) must still resolve and run against the replacement runtime.
+    printf 'const x: number = 6*7; console.log(x);\n' > /tmp/tsxprobe.ts; \
+    /usr/local/bin/tsx /tmp/tsxprobe.ts; \
+    rm -f /tmp/tsxprobe.ts
+
 # ---- C++ precompiled header for <bits/stdc++.h> ----
 # `#include <bits/stdc++.h>` is the near-universal opening line of competitive
 # and campus-placement C++, and it is brutally expensive: it pulls in the entire
