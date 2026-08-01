@@ -37,6 +37,19 @@ pub struct Runner {
     /// `parallelism` bounds count. Both must clear before a job executes.
     memory: Arc<Semaphore>,
     mem_budget: usize,
+    /// Signalled whenever a job finishes and returns its admission permits.
+    ///
+    /// Without it, `drain()` stops the instant the parallelism semaphore is
+    /// exhausted and NOTHING re-enters it when a slot frees — the only wakes are
+    /// a fresh `zerocode.jobs` NOTIFY or the 2 s poll. A backlog with no
+    /// incoming submissions therefore drained at `parallelism` jobs per poll
+    /// tick. Measured before this fix: 60 queued jobs drained at a flat 4 jobs
+    /// every 2.0 s = 2.0 jobs/s, against 57.8 req/s for the same jobs under
+    /// continuous load — a 29x gap. Continuous-load benchmarks cannot see it,
+    /// because every submission fires a NOTIFY that masks the stall; it shows up
+    /// exactly when it hurts most, draining a burst or recovering after a
+    /// restart or a sweeper re-queue.
+    slot_free: Arc<tokio::sync::Notify>,
     shutdown: Arc<tokio::sync::Notify>,
     http_client: reqwest::Client,
     webhook_secret: Arc<String>,
@@ -71,6 +84,7 @@ impl Runner {
             parallelism: Arc::new(Semaphore::new(max_parallel.max(1))),
             memory: Arc::new(Semaphore::new(mem_budget)),
             mem_budget,
+            slot_free: Arc::new(tokio::sync::Notify::new()),
             shutdown: Arc::new(tokio::sync::Notify::new()),
             http_client,
             webhook_secret: Arc::new(webhook_secret),
@@ -100,6 +114,9 @@ impl Runner {
                     tracing::info!("runner shutdown signalled");
                     break;
                 }
+                // A finished job freed a slot — go straight back to draining
+                // instead of idling until the next NOTIFY or poll tick.
+                _ = self.slot_free.notified() => {}
                 _ = self.wait_for_wake() => {}
             }
         }
@@ -155,6 +172,7 @@ impl Runner {
             let secret = self.webhook_secret.clone();
             let memory = self.memory.clone();
             let mem_budget = self.mem_budget;
+            let slot_free = self.slot_free.clone();
 
             tokio::spawn(async move {
                 // Reserve this job's memory cap before executing. If the budget
@@ -207,6 +225,14 @@ impl Runner {
                 }
                 drop(_mem);
                 drop(permit);
+                // Wake the drain loop now that this slot is back. Order matters:
+                // notify strictly AFTER both permits are released, or the drain
+                // wakes, fails `try_acquire_owned`, and goes back to sleep with
+                // no further wake coming. `notify_one` stores a permit when no
+                // one is waiting, so a wake landing mid-drain is not lost.
+                // (If this task ever panics the notify is skipped and the 2 s
+                // poll in `wait_for_wake` is the backstop.)
+                slot_free.notify_one();
             });
         }
     }
