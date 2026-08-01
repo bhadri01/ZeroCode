@@ -361,3 +361,54 @@ mod tests {
         );
     }
 }
+
+/// One row of the per-language health window backing `GET /v1/health/languages`.
+pub struct LanguageHealthRow {
+    pub language_id: i32,
+    pub samples: i64,
+    /// Submissions that skipped the compile phase — a compile-cache hit, or an
+    /// interpreted language. `compile_time IS NULL` is exactly that condition.
+    pub warm: i64,
+    /// Submissions that came back as an engine fault rather than a verdict.
+    pub faults: i64,
+    pub p50_wall: Option<f32>,
+    pub p95_wall: Option<f32>,
+}
+
+/// Aggregate recent terminal submissions per language.
+///
+/// Deliberately reads the `submissions` table rather than a counter: it needs no
+/// extra state, survives an API restart, and is correct across API replicas —
+/// each of which has its own in-process result cache but shares this table.
+pub async fn language_health(
+    pool: &PgPool,
+    window_mins: i64,
+) -> Result<Vec<LanguageHealthRow>, ApiError> {
+    let rows = sqlx::query!(
+        "SELECT language_id, \
+                COUNT(*) AS samples, \
+                COUNT(*) FILTER (WHERE compile_time IS NULL) AS warm, \
+                COUNT(*) FILTER (WHERE status IN ('sandbox_failure','internal_error')) AS faults, \
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wall_time) AS p50_wall, \
+                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY wall_time) AS p95_wall \
+         FROM submissions \
+         WHERE finished_at IS NOT NULL \
+           AND finished_at > NOW() - ($1 || ' minutes')::interval \
+         GROUP BY language_id",
+        window_mins.to_string(),
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| LanguageHealthRow {
+            language_id: r.language_id,
+            samples: r.samples.unwrap_or(0),
+            warm: r.warm.unwrap_or(0),
+            faults: r.faults.unwrap_or(0),
+            p50_wall: r.p50_wall.map(|v| v as f32),
+            p95_wall: r.p95_wall.map(|v| v as f32),
+        })
+        .collect())
+}

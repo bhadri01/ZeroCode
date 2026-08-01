@@ -37,9 +37,11 @@ fn replenish_period(rps: u32) -> std::time::Duration {
 
 pub mod batches;
 pub mod health;
+pub mod lang_health;
 pub mod languages;
 pub mod meta;
 mod metrics;
+pub mod statuses;
 pub mod streaming;
 pub mod submissions;
 
@@ -78,6 +80,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/ready", get(health::readiness))
         .route("/v1/about", get(meta::about))
         .route("/v1/openapi.json", get(openapi_spec))
+        // Deliberately in the PUBLIC tier: an integrator must be able to fetch
+        // the status contract without a rate-limit budget, and a grader that
+        // validates the vocabulary at startup must never be throttled out of it.
+        .route("/v1/statuses", get(statuses::list))
+        .route("/v1/health/languages", get(lang_health::languages))
         .route("/metrics", get(metrics::prometheus));
 
     let cfg = state.config();

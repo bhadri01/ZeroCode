@@ -29,6 +29,8 @@ use utoipa::{OpenApi, ToSchema};
         crate::routes::health::liveness_doc,
         crate::routes::health::readiness_doc,
         crate::routes::meta::about_doc,
+        crate::routes::statuses::list_doc,
+        crate::routes::lang_health::languages_doc,
         crate::routes::languages::list_doc,
         crate::routes::submissions::create_doc,
         crate::routes::submissions::get_doc,
@@ -164,6 +166,14 @@ pub struct SubmissionViewBody {
     ///
     /// There is no `wrong_answer` — ZeroCode executes, it does not grade.
     pub status: serde_json::Value,
+    /// True only when `status` is a judgement about the SUBMITTED CODE.
+    ///
+    /// The one-field form of the contract in `GET /v1/statuses`, so a grader
+    /// need not enumerate the enum: `if not r["verdict"]: engine_fault()`.
+    /// When false we could not produce a result, and the empty `stdout` that
+    /// accompanies it must NOT be compared against expected output — doing so
+    /// scores a correct program as wrong.
+    pub verdict: bool,
     pub limits: ResourceLimitsBody,
     /// UTF-8 string, or `{"_b64": "..."}` for binary, or omitted if absent.
     pub stdout: Option<serde_json::Value>,

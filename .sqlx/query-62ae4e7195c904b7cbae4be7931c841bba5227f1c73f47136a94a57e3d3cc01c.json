@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT language_id, COUNT(*) AS samples, COUNT(*) FILTER (WHERE compile_time IS NULL) AS warm, COUNT(*) FILTER (WHERE status IN ('sandbox_failure','internal_error')) AS faults, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wall_time) AS p50_wall, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY wall_time) AS p95_wall FROM submissions WHERE finished_at IS NOT NULL AND finished_at > NOW() - ($1 || ' minutes')::interval GROUP BY language_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "language_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "samples",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "warm",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "faults",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "p50_wall",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "p95_wall",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "62ae4e7195c904b7cbae4be7931c841bba5227f1c73f47136a94a57e3d3cc01c"
+}

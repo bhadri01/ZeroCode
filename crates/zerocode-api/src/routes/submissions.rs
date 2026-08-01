@@ -325,6 +325,14 @@ pub struct SubmissionView {
     pub token: String,
     pub language_id: u32,
     pub status: Status,
+    /// True only when `status` is a judgement about the SUBMITTED CODE.
+    ///
+    /// A one-field version of the contract in `GET /v1/statuses`, so a grader
+    /// never has to enumerate our enum: `if not r["verdict"]: engine_fault()`.
+    /// False means we could not produce a result — `sandbox_failure`,
+    /// `internal_error`, or a non-terminal state — and the empty `stdout` that
+    /// comes with it must NOT be compared against expected output.
+    pub verdict: bool,
     pub limits: ResourceLimits,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout: Option<Payload>,
@@ -358,6 +366,7 @@ impl From<Submission> for SubmissionView {
             token: s.token.to_string(),
             language_id: s.language_id,
             status: s.status,
+            verdict: s.status.is_verdict(),
             limits: s.limits,
             stdout: s.stdout,
             stderr: s.stderr,
@@ -381,6 +390,14 @@ pub struct Base64SubmissionView {
     pub token: String,
     pub language_id: u32,
     pub status: Status,
+    /// True only when `status` is a judgement about the SUBMITTED CODE.
+    ///
+    /// A one-field version of the contract in `GET /v1/statuses`, so a grader
+    /// never has to enumerate our enum: `if not r["verdict"]: engine_fault()`.
+    /// False means we could not produce a result — `sandbox_failure`,
+    /// `internal_error`, or a non-terminal state — and the empty `stdout` that
+    /// comes with it must NOT be compared against expected output.
+    pub verdict: bool,
     pub limits: ResourceLimits,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stdout: Option<String>,
@@ -414,6 +431,7 @@ impl From<Submission> for Base64SubmissionView {
             token: s.token.to_string(),
             language_id: s.language_id,
             status: s.status,
+            verdict: s.status.is_verdict(),
             limits: s.limits,
             stdout: s.stdout.as_ref().map(Payload::to_base64),
             stderr: s.stderr.as_ref().map(Payload::to_base64),
@@ -460,6 +478,9 @@ async fn populate_result_cache(state: &AppState, key: &CacheKey, sub: &Submissio
 pub struct CachedSubmissionView {
     pub cached: bool,
     pub status: serde_json::Value,
+    /// Always true — only verdicts are ever memoised (see `Status::is_verdict`),
+    /// so a cache hit is by construction a judgement about the code.
+    pub verdict: bool,
     #[serde(skip_serializing_if = "Payload::is_empty")]
     pub stdout: Payload,
     #[serde(skip_serializing_if = "Payload::is_empty")]
@@ -480,6 +501,7 @@ impl From<zerocode_cache::CachedOutcome> for CachedSubmissionView {
         Self {
             cached: true,
             status: c.status_json,
+            verdict: true,
             stdout: Payload::from(c.stdout),
             stderr: Payload::from(c.stderr),
             compile_output: c.compile_output.map(Payload::from),
