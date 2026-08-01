@@ -373,17 +373,34 @@ id = 121
 name = "Scala"
 version = "3.x"
 source_file = "main.scala"
-compile_cmd = ["/usr/bin/scalac", "main.scala"]
+# The entrypoint class name is DETECTED, not assumed. Scala 3 names the class
+# after the entry point, not the file, so hardcoding one name only ever works
+# for one source shape:
+#
+#   @main def main()                    -> main.class        (the old hardcoded name)
+#   object Main { def main(...) }       -> Main.class        <- classic idiom, FAILED
+#   @main def run()                     -> run.class         <- FAILED
+#
+# Both failures surfaced as `Error: Could not find or load main class main` with
+# a non_zero_exit status — i.e. idiomatic Scala looked like the student's bug.
+#
+# scalac also emits companion/synthetic classes (`Main$`, `main$package`,
+# `main$package$`), and in all three shapes above the entry point is the unique
+# emitted class whose name contains NO `$`. So: filter those out, prefer `Main`
+# then `main` for the case where user-defined helper classes add candidates, and
+# write the winner to `.entry`. That file lives in /box, so it is captured in the
+# compile-cache artifact and restored on a cache hit alongside the .class files.
+compile_cmd = ["/bin/sh", "-c", "/usr/bin/scalac main.scala && ls *.class | grep -v '\\$' | sed 's/\\.class$//' > .cands && { grep -qx Main .cands && echo Main || { grep -qx main .cands && echo main || head -1 .cands; }; } > .entry && rm -f .cands"]
 # Run the compiled class directly with `java`, mirroring the plain-Java entry.
 # We can't use the default Scala 3 `scala` (the Scala-CLI runner that fetches
 # the toolchain over the network and can't run offline), and the classic
 # `scala_legacy` launcher invokes the deprecated dotty.tools.MainGenericRunner,
 # which prints a "MainGenericRunner ... deprecated since Scala 3.5.0" warning to
 # stderr on every run. Running java directly avoids both: scala.jar bundles the
-# scala3 + scala2.13 standard library, so `-cp .:scala.jar main` runs offline
+# scala3 + scala2.13 standard library, so `-cp .:scala.jar <entry>` runs offline
 # and warning-free. JVM flags go inline here because plain java (unlike the
 # wrapper scripts) does NOT read JAVA_OPTS.
-run_cmd = ["/usr/bin/java", "-XX:+UseSerialGC", "-Xmx${jvm_heap_mb}m", "-Xss512k", "-XX:MaxMetaspaceSize=128m", "-XX:ReservedCodeCacheSize=64m", "-XX:+ExitOnOutOfMemoryError", "-cp", ".:/usr/local/scala3-3.5.2/lib/scala.jar", "main"]
+run_cmd = ["/bin/sh", "-c", "exec /usr/bin/java -XX:+UseSerialGC -Xmx${jvm_heap_mb}m -Xss512k -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m -XX:+ExitOnOutOfMemoryError -cp .:/usr/local/scala3-3.5.2/lib/scala.jar \"$(cat .entry)\""]
 env = [
     # JAVA_OPTS bounds the scalac wrapper during the compile phase (scalac reads
     # JAVA_OPTS and passes it to java — unlike JAVA_TOOL_OPTIONS, it doesn't
