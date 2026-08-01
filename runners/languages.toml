@@ -34,19 +34,21 @@
 #     shrink those below a sane run heap.)
 # Reported `memory` reflects RUN-phase peak only.
 #
-# ⚠ ONLY `compile_limits.memory_mb` IS READ. `native/linux.rs` copies that single
-# field out of `compile_limits` and takes everything else from `default_limits`.
-# `compile_limits.cpu_time`, `.wall_time`, `.max_pids`, `.max_stdout`,
-# `.max_stderr` and `.enable_network` are inert — they are NOT a separate budget
-# for the compile phase. Consequences to keep in mind when tuning:
-#   • The wall-clock killer uses default_limits.wall_time for the WHOLE job, so
-#     that single budget has to cover compile + run. A language whose compile is
-#     slow (Go seeds a ~147 MB build cache; C++ parses <bits/stdc++.h>) needs its
-#     default_limits.wall_time sized for compile + the user's program, not just
-#     the program.
-#   • pids.max likewise comes from default_limits for both phases, so a compiler
-#     that spawns helpers (cc1plus/as/ld, javac threads) must fit in it.
-# Raising a compile_limits field other than memory_mb changes nothing at runtime.
+# WHICH `compile_limits` FIELDS ARE HONOURED:
+#   • memory_mb  — yes. cgroup created at it, shrunk to the run budget at the barrier.
+#   • wall_time  — yes. The compile phase is killed at `compile_limits.wall_time`;
+#                  the RUN phase then gets a FRESH `default_limits.wall_time`
+#                  measured from the barrier, not from job start. Sharing one
+#                  budget is what let a slow compile surface as
+#                  `time_limit_exceeded` with empty stdout on a correct program —
+#                  i.e. a wrong grade. Size each phase for its own work.
+#   • max_pids   — yes. Compile gets the larger ceiling (compilers fork helpers:
+#                  cc1plus/as/ld, javac threads, `sh -c` pipelines), then it
+#                  drops to the run budget at the barrier.
+#   • cpu_time   — NOT read, and it no longer matters: the reported `time` and the
+#                  CPU-limit check are both run-phase-only, so the compiler's CPU
+#                  is never charged against the submission's cpu_time_limit.
+#   • max_stdout / max_stderr / enable_network — not read; taken from default_limits.
 # Reported `time` is RUN-phase CPU; the compile phase is reported separately as
 # `compile_time` (see docs/STATUS.md).
 
@@ -104,18 +106,37 @@ name = "Go"
 version = "1.x-latest"
 source_file = "main.go"
 # Go's build cache MUST be writable: `go build` writes new action outputs and a
-# periodic `trim.txt` into GOCACHE, so pointing it at the read-only baked rootfs
-# cache makes EVERY build fail with
+# periodic `trim.txt` into GOCACHE, so pointing it straight at the read-only
+# baked rootfs cache fails with
 #   go: failed to trim cache: open /var/cache/go-build/trim.txt: permission denied
-# Instead, seed the prewarmed ~147 MB stdlib cache from the read-only image into
-# the per-job writable /tmp tmpfs, build against that copy, then delete it before
-# the run phase (the tmpfs is cgroup-accounted, and the compile->run barrier
-# shrinks memory.max back to default_limits.memory_mb — a leftover cache would
-# OOM the program). Cost: ~4.5 s copy + ~0.8 s build (vs ~11 s cold). Identical
-# resubmissions skip all of this via ZeroCode's own Postgres compile cache.
-# A writable overlay (lowerdir=baked cache, upperdir=tmpfs) in the sandbox mount
-# setup would avoid the per-build copy entirely — tracked as a follow-up.
-compile_cmd = ["/bin/sh", "-c", "cp -r /var/cache/go-build /tmp/gocache && /usr/local/go/bin/go build -o prog main.go && rm -rf /tmp/gocache"]
+#
+# We used to seed it with `cp -r`, copying the whole ~147 MB stdlib cache into
+# the per-job /tmp tmpfs. That copy was the single most expensive thing in the
+# engine and it scaled terribly: the tmpfs is cgroup-accounted, so N concurrent
+# cold Go compiles meant N x 147 MB of memory churn. Measured: 8 concurrent cold
+# compiles took 8.3-8.7 s each (vs ~2.9 s alone) — enough to threaten the wall
+# budget, and a wall-killed graded submission comes back with EMPTY STDOUT,
+# which a grader scores as a wrong answer against a correct program.
+#
+# `cp -rs` builds a farm of SYMLINKS into the baked cache instead of copying it.
+# Go reads straight through them and writes only genuinely new entries as real
+# files in the farm. Measured on a read-only rootfs, single CPU:
+#     cp -r  : 2012 ms seed + 836 ms build = 2848 ms,  147 MB of tmpfs
+#     cp -rs :  241 ms seed + 567 ms build =  808 ms,  9.5 MB of tmpfs
+# 3.5x faster and 15x less memory, which is what actually removes the
+# concurrency cliff.
+#
+# `rm -f trim.txt` is REQUIRED and its absence is a time bomb, not a style nit:
+# Go trims at most once per `trimInterval` (24 h, cmd/go/internal/cache/cache.go)
+# by rewriting trim.txt. Through the farm that path resolves into the read-only
+# image, so builds keep working for exactly 24 h after each image build and then
+# every Go submission starts failing. Deleting the symlink makes Go create a real
+# writable trim.txt in the farm, which is time-independent.
+#
+# The farm is still torn down before the run phase: /tmp is cgroup-accounted and
+# the compile->run barrier shrinks memory.max back to default_limits.memory_mb.
+# Identical resubmissions skip all of this via ZeroCode's Postgres compile cache.
+compile_cmd = ["/bin/sh", "-c", "cp -rs /var/cache/go-build /tmp/gocache && rm -f /tmp/gocache/trim.txt && /usr/local/go/bin/go build -o prog main.go && rm -rf /tmp/gocache"]
 run_cmd = ["./prog"]
 env = [
     # GOROOT must be set explicitly. Without it, Go falls back to deriving the
